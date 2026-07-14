@@ -86,9 +86,42 @@ raiden/
 └── README.md     # 操作與修改說明
 ```
 
+## 🔐 安全與發布流程
+
+這個 repository 已內建推送前安全檢查：
+
+```bash
+./scripts/install-hooks.sh
+```
+
+之後每次 `git push` 前會自動執行：
+
+- `scripts/secret-scan.py`：檢查常見 API key、token、private key、password assignment
+- `git diff --check`：檢查 whitespace 錯誤
+
+GitHub Actions 也會在每次 push / pull request 執行相同檢查。若掃描失敗，先移除秘密，再重新 push；若秘密曾經進入 Git history，必須撤銷並重新產生該 credential。
+
+### 不應提交的內容
+
+- `.env`、credentials、token、cookies
+- API keys、private keys、SSH keys
+- 真實使用者資料或 production database
+- 任何放進 frontend 後會公開給瀏覽器的秘密
+
+### GitHub Pages
+
+本專案已部署到：
+
+```text
+https://hermesaweidog-glitch.github.io/web-playground/
+```
+
+`main` branch 每次更新後，GitHub Pages workflow 會自動重新部署。
+
 ## ✅ 已驗證
 
 - `node --check` 驗證 inline JavaScript 語法通過。
 - 使用本機 HTTP server 開啟頁面成功。
 - Browser console 無 JavaScript error。
-- 已用瀏覽器實際啟動遊戲，確認 HUD、開始畫面、敵人、射擊、狀態 API 正常。
+- GitHub Actions Security scan：成功。
+- GitHub Pages Deploy workflow：成功。
