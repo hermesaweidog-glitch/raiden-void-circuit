@@ -1,0 +1,43 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account.json
+token.json
+cookies.json
+
+# SSH and cloud credentials
+.ssh/
+.aws/
+.gcloud/
+.azure/
+
+# Local databases and runtime state
+*.sqlite
+*.sqlite3
+*.db
+state.db
+
+# Logs, caches, and generated output
+*.log
+.cache/
+tmp/
+dist/
+build/
+node_modules/
+__pycache__/
+.venv/
+venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local editor files
+.vscode/
+.idea/
