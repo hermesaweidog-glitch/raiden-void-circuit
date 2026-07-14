@@ -1,0 +1,11 @@
+{
+  "name": "Raiden: Void Circuit",
+  "short_name": "Void Circuit",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#02040c",
+  "theme_color": "#050816",
+  "description": "A mobile-ready roguelite vertical shooter.",
+  "icons": []
+}

@@ -38,6 +38,7 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Local editor files
+# Local editor and Hermes planning files
 .vscode/
 .idea/
+.hermes/
