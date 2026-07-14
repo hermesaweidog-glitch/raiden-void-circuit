@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AIRCRAFT, SECONDARIES, PASSIVES, STAGES, BOSSES, WORLD } from '../src/config.js';
+import { AIRCRAFT, SECONDARIES, PASSIVES, STAGES, BOSSES, ENEMY_TYPES, WORLD } from '../src/config.js';
 
 test('final content roster is complete', () => {
   assert.equal(Object.keys(AIRCRAFT).length, 3);
@@ -34,4 +34,13 @@ test('every boss has at least three phases and a unique title', () => {
     titles.add(boss.name);
   }
   assert.equal(titles.size, 5);
+});
+
+test('every sector has enough waves and a mandatory midboss checkpoint', () => {
+  assert.ok(ENEMY_TYPES.midboss, 'midboss archetype must exist');
+  for (const stage of STAGES) {
+    assert.ok(stage.waves >= 8, `${stage.name} needs at least eight waves`);
+    assert.ok(stage.midbossWave >= 3, `${stage.name} checkpoint is too early`);
+    assert.ok(stage.midbossWave <= stage.waves - 2, `${stage.name} needs waves after its checkpoint`);
+  }
 });

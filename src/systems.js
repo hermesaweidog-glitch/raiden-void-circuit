@@ -3,6 +3,14 @@ import { SECONDARIES, PASSIVES } from './config.js';
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const distanceSq = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
 
+export function shouldCullEnemyBullet(bullet, width, height) {
+  const radius = bullet.radius || 0;
+  return bullet.x + radius < 0
+    || bullet.x - radius > width
+    || bullet.y + radius < 0
+    || bullet.y - radius > height;
+}
+
 export function seededShuffle(items, random = Math.random) {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i -= 1) {
@@ -73,7 +81,17 @@ export function updateGuidance(missile, enemies, position) {
 }
 
 export function xpForLevel(level) {
-  return Math.round(28 + level * 12 + level ** 1.35 * 4);
+  return Math.round(20 + level * 9 + level ** 1.28 * 3);
+}
+
+export function midbossProgress(stage) {
+  return clamp(stage.midbossWave / (stage.waves + 1), 0, 1);
+}
+
+export function stageProgress(stage, waveIndex, mode = 'playing') {
+  if (mode === 'stageIntro') return 0;
+  if (['bossWarning', 'boss', 'stageClear', 'victory'].includes(mode)) return 1;
+  return clamp((waveIndex + 1) / (stage.waves + 1), 0, 1);
 }
 
 export function stagePressure(stage, waveIndex) {

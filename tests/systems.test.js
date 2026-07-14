@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeUpgradeChoices, makeUpgradePool, updateGuidance } from '../src/systems.js';
+import { makeUpgradeChoices, makeUpgradePool, midbossProgress, shouldCullEnemyBullet, stageProgress, updateGuidance, xpForLevel } from '../src/systems.js';
 
 test('upgrade choices are unique and omit maxed items', () => {
   const build = {
@@ -51,4 +51,26 @@ test('homing missile steers only toward its original live target', () => {
   assert.equal(result.guidanceActive, true);
   assert.equal(result.targetId, 7);
   assert.ok(result.vx > 0);
+});
+
+test('enemy bullets remain alive until their full body crosses the playfield edge', () => {
+  assert.equal(shouldCullEnemyBullet({ x: 240, y: 400, radius: 5, life: 0 }, 480, 800), false);
+  assert.equal(shouldCullEnemyBullet({ x: -4, y: 400, radius: 5, life: -20 }, 480, 800), false);
+  assert.equal(shouldCullEnemyBullet({ x: -6, y: 400, radius: 5, life: 300 }, 480, 800), true);
+  assert.equal(shouldCullEnemyBullet({ x: 240, y: 804, radius: 5, life: 300 }, 480, 800), false);
+  assert.equal(shouldCullEnemyBullet({ x: 240, y: 806, radius: 5, life: 300 }, 480, 800), true);
+});
+
+test('early XP pacing awards the first earned level by the second opening wave', () => {
+  assert.equal(xpForLevel(1), 32);
+  assert.ok(xpForLevel(2) > xpForLevel(1));
+});
+
+test('route progress reaches and holds explicit midboss and boss nodes', () => {
+  const stage = { waves: 8, midbossWave: 4 };
+  assert.equal(stageProgress(stage, -1, 'stageIntro'), 0);
+  assert.equal(stageProgress(stage, 3, 'playing'), midbossProgress(stage));
+  assert.equal(stageProgress(stage, 7, 'playing'), 8 / 9);
+  assert.equal(stageProgress(stage, 7, 'bossWarning'), 1);
+  assert.equal(stageProgress(stage, 7, 'stageClear'), 1);
 });

@@ -37,11 +37,11 @@ export const PASSIVES = {
 };
 
 export const STAGES = [
-  { id: 1, name: 'NEON OUTSKIRTS', subtitle: '霓虹外環', theme: ['#031525', '#062d3a'], enemySpeed: 0.85, bulletSpeed: 0.90, bulletCount: 1.00, fireRate: 0.85, enemyHp: 1.00, bossHp: 1.00, waves: 5, boss: 'manta' },
-  { id: 2, name: 'ORBITAL FOUNDRY', subtitle: '軌道鑄造廠', theme: ['#1b102a', '#42153f'], enemySpeed: 0.95, bulletSpeed: 1.00, bulletCount: 1.15, fireRate: 1.00, enemyHp: 1.25, bossHp: 1.45, waves: 6, boss: 'carrier' },
-  { id: 3, name: 'CRYSTAL TEMPEST', subtitle: '水晶風暴', theme: ['#071a35', '#123f63'], enemySpeed: 1.08, bulletSpeed: 1.12, bulletCount: 1.35, fireRate: 1.15, enemyHp: 1.55, bossHp: 2.00, waves: 6, boss: 'seraph' },
-  { id: 4, name: 'SOLAR CITADEL', subtitle: '日冕要塞', theme: ['#2a0c07', '#6c2510'], enemySpeed: 1.22, bulletSpeed: 1.25, bulletCount: 1.60, fireRate: 1.30, enemyHp: 1.90, bossHp: 2.70, waves: 7, boss: 'leviathan' },
-  { id: 5, name: 'VOID THRONE', subtitle: '虛空王座', theme: ['#09051b', '#26094b'], enemySpeed: 1.38, bulletSpeed: 1.40, bulletCount: 1.90, fireRate: 1.48, enemyHp: 2.35, bossHp: 3.60, waves: 8, boss: 'raijin' },
+  { id: 1, name: 'NEON OUTSKIRTS', subtitle: '霓虹外環', theme: ['#031525', '#062d3a'], enemySpeed: 0.85, bulletSpeed: 0.90, bulletCount: 1.00, fireRate: 0.85, enemyHp: 1.00, bossHp: 1.00, waves: 8, midbossWave: 4, boss: 'manta' },
+  { id: 2, name: 'ORBITAL FOUNDRY', subtitle: '軌道鑄造廠', theme: ['#1b102a', '#42153f'], enemySpeed: 0.95, bulletSpeed: 1.00, bulletCount: 1.15, fireRate: 1.00, enemyHp: 1.25, bossHp: 1.45, waves: 9, midbossWave: 4, boss: 'carrier' },
+  { id: 3, name: 'CRYSTAL TEMPEST', subtitle: '水晶風暴', theme: ['#071a35', '#123f63'], enemySpeed: 1.08, bulletSpeed: 1.12, bulletCount: 1.35, fireRate: 1.15, enemyHp: 1.55, bossHp: 2.00, waves: 10, midbossWave: 5, boss: 'seraph' },
+  { id: 4, name: 'SOLAR CITADEL', subtitle: '日冕要塞', theme: ['#2a0c07', '#6c2510'], enemySpeed: 1.22, bulletSpeed: 1.25, bulletCount: 1.60, fireRate: 1.30, enemyHp: 1.90, bossHp: 2.70, waves: 11, midbossWave: 5, boss: 'leviathan' },
+  { id: 5, name: 'VOID THRONE', subtitle: '虛空王座', theme: ['#09051b', '#26094b'], enemySpeed: 1.38, bulletSpeed: 1.40, bulletCount: 1.90, fireRate: 1.48, enemyHp: 2.35, bossHp: 3.60, waves: 12, midbossWave: 6, boss: 'raijin' },
 ];
 
 export const BOSSES = {
@@ -57,4 +57,5 @@ export const ENEMY_TYPES = {
   striker: { hp: 14, speed: 1.35, radius: 17, score: 180, xp: 7, color: '#fb923c' },
   gunship: { hp: 24, speed: 0.9, radius: 21, score: 300, xp: 11, color: '#a78bfa' },
   elite: { hp: 62, speed: 0.72, radius: 27, score: 800, xp: 28, color: '#facc15' },
+  midboss: { hp: 78, speed: 0.62, radius: 34, score: 1800, xp: 40, color: '#22d3ee' },
 };

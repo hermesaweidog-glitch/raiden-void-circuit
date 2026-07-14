@@ -21,12 +21,20 @@
 
     <section class="hud" aria-label="遊戲狀態">
       <div><small>SCORE</small><b id="score">0000000</b></div>
-      <div><small>STAGE</small><b id="stage">1-1</b></div>
+      <div><small>SECTOR</small><b id="stage">—</b></div>
       <div><small>LEVEL</small><b id="level">01</b></div>
       <div><small>HP</small><b id="hp">●●●●</b></div>
       <div><small>BOMB</small><b id="bombs">◆◆</b></div>
     </section>
-    <div class="xp-track"><div id="xp-bar"></div></div>
+    <section id="route-progress" class="route-progress" aria-label="戰區進度">
+      <div class="route-meta"><span id="route-label">AWAITING DEPLOYMENT</span><b id="route-status">STANDBY</b></div>
+      <div class="route-track">
+        <div id="route-fill"></div>
+        <span id="midboss-node" class="route-node midboss-node" title="中頭目檢查點" aria-label="中頭目檢查點"></span>
+        <span id="boss-node" class="route-node boss-node" title="戰區頭目" aria-label="戰區頭目"></span>
+      </div>
+    </section>
+    <div class="xp-track" aria-label="升級經驗"><div id="xp-bar"></div></div>
 
     <section class="game-frame">
       <canvas id="game" width="480" height="800" aria-label="Raiden roguelite shooting game"></canvas>
@@ -42,7 +50,7 @@
       </section>
 
       <section id="upgrade-overlay" class="overlay upgrade-overlay hidden" aria-live="polite">
-        <div class="upgrade-heading"><small>LEVEL UP</small><h2>選擇一項強化</h2></div>
+        <div class="upgrade-heading"><small id="upgrade-kicker">LEVEL UP</small><h2 id="upgrade-title">選擇一項強化</h2></div>
         <div id="upgrade-options" class="upgrade-options"></div>
       </section>
 

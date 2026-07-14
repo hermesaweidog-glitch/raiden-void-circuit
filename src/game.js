@@ -1,5 +1,5 @@
 import { AIRCRAFT, SECONDARIES, PASSIVES, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
-import { clamp, distanceSq, makeUpgradeChoices, pickNearestTarget, stagePressure, updateGuidance, xpForLevel } from './systems.js';
+import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, stagePressure, stageProgress, updateGuidance, xpForLevel } from './systems.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -13,8 +13,9 @@ export class Game {
     this.h = WORLD.height;
     this.dom = Object.fromEntries([
       'score', 'stage', 'level', 'hp', 'bombs', 'xp-bar', 'title-overlay', 'upgrade-overlay',
-      'upgrade-options', 'end-overlay', 'end-kicker', 'end-title', 'run-summary', 'announcement',
+      'upgrade-options', 'upgrade-kicker', 'upgrade-title', 'end-overlay', 'end-kicker', 'end-title', 'run-summary', 'announcement',
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
+      'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node',
     ].map(id => [id, document.getElementById(id)]));
     this.mode = 'title';
     this.frame = 0;
@@ -119,7 +120,7 @@ export class Game {
       x: this.w / 2, y: this.h - 92, targetX: this.w / 2, targetY: this.h - 92,
       radius: 15, hitRadius: 5, craftId, craft, hp: craft.hp, maxHp: craft.hp,
       bombs: 2, maxBombs: 3, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
-      level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: 0,
+      level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: 1,
       build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: 2, passiveSlots: 4 },
       bombLock: 0,
     };
@@ -128,6 +129,7 @@ export class Game {
     document.getElementById('bomb-button').classList.remove('hidden');
     this.initAudio();
     this.startStage(0);
+    this.showUpgrade();
   }
 
   showTitle() {
@@ -224,19 +226,26 @@ export class Game {
     this.waveIndex += 1;
     const stage = STAGES[this.stageIndex];
     const pressure = stagePressure(stage, this.waveIndex);
+    const waveNumber = this.waveIndex + 1;
+    const isMidbossWave = waveNumber === stage.midbossWave;
     const isEliteWave = this.waveIndex === stage.waves - 1;
     const count = 4 + this.stageIndex + Math.floor(this.waveIndex * .7);
     const formation = this.waveIndex % 4;
-    for (let i = 0; i < count; i += 1) {
-      let type = 'scout';
-      if (this.stageIndex >= 1 && (i + this.waveIndex) % 4 === 0) type = 'striker';
-      if (this.stageIndex >= 2 && (i + this.waveIndex) % 5 === 0) type = 'gunship';
-      const xBase = formation === 0 ? 70 + (i % 6) * 68 : formation === 1 ? this.w / 2 + (i - count / 2) * 45 : rand(45, this.w - 45);
-      this.spawnEnemy(type, xBase, -45 - Math.floor(i / 6) * 55 - i * 8, pressure, formation, i);
+    if (isMidbossWave) {
+      this.spawnEnemy('midboss', this.w / 2, -110, pressure, 4, 0);
+    } else {
+      for (let i = 0; i < count; i += 1) {
+        let type = 'scout';
+        if (this.stageIndex >= 1 && (i + this.waveIndex) % 4 === 0) type = 'striker';
+        if (this.stageIndex >= 2 && (i + this.waveIndex) % 5 === 0) type = 'gunship';
+        const xBase = formation === 0 ? 70 + (i % 6) * 68 : formation === 1 ? this.w / 2 + (i - count / 2) * 45 : rand(45, this.w - 45);
+        this.spawnEnemy(type, xBase, -45 - Math.floor(i / 6) * 55 - i * 8, pressure, formation, i);
+      }
+      if (isEliteWave) this.spawnEnemy('elite', this.w / 2, -125, pressure, 3, count + 1);
     }
-    if (isEliteWave) this.spawnEnemy('elite', this.w / 2, -125, pressure, 3, count + 1);
     this.waveCooldown = 115 + Math.max(0, 40 - this.stageIndex * 8);
-    this.announce(`WAVE ${this.waveIndex + 1}/${stage.waves}`, isEliteWave ? 'ELITE SIGNATURE DETECTED' : 'HOSTILES INBOUND', 850);
+    const signal = isMidbossWave ? 'MIDBOSS CHECKPOINT · DESTROY TO ADVANCE' : isEliteWave ? 'ELITE SIGNATURE DETECTED' : 'HOSTILES INBOUND';
+    this.announce(isMidbossWave ? 'CHECKPOINT LOCKED' : `WAVE ${waveNumber}/${stage.waves}`, signal, isMidbossWave ? 1500 : 850);
   }
 
   spawnEnemy(type, x, y, pressure, formation, index) {
@@ -260,7 +269,7 @@ export class Game {
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
-      age: 0, phase: 0, score: 10000 * stage.id, xp: 65 + stage.id * 15, pressure: 1,
+      age: 0, phase: 0, hitFlash: 0, score: 10000 * stage.id, xp: 65 + stage.id * 15, pressure: 1,
     });
     this.announce(data.name, data.title, 1700);
     this.sound('boss');
@@ -423,6 +432,7 @@ export class Game {
       if (!enemy.alive) { this.enemies.splice(i, 1); continue; }
       enemy.age += 1;
       if (enemy.type === 'boss') this.updateBoss(enemy);
+      else if (enemy.type === 'midboss') this.updateMidboss(enemy);
       else {
         if (enemy.formation === 0) enemy.x = enemy.originX + Math.sin(enemy.age / 32 + enemy.index) * 25;
         else if (enemy.formation === 1) enemy.x = enemy.originX + Math.sin(enemy.age / 18 + enemy.index * .7) * 42;
@@ -435,6 +445,22 @@ export class Game {
       }
       const rr = enemy.radius + this.player.hitRadius;
       if (this.player.invincible <= 0 && distanceSq(enemy, this.player) < rr * rr) this.hitPlayer();
+    }
+  }
+
+  updateMidboss(enemy) {
+    const stage = STAGES[this.stageIndex];
+    enemy.hitFlash = Math.max(0, (enemy.hitFlash || 0) - 1);
+    if (enemy.y < 145) enemy.y += 1.15;
+    else {
+      enemy.x = this.w / 2 + Math.sin(enemy.age / 42) * 118;
+      enemy.y = 145 + Math.sin(enemy.age / 31) * 12;
+    }
+    enemy.cooldown -= 1;
+    if (enemy.y >= 80 && enemy.cooldown <= 0) {
+      const speed = (1.55 + this.stageIndex * .1) * stage.bulletSpeed;
+      for (let n = -2; n <= 2; n += 1) this.aim(enemy, speed, n * .16);
+      enemy.cooldown = Math.max(38, 78 / stage.fireRate);
     }
   }
 
@@ -471,6 +497,7 @@ export class Game {
   }
 
   updateBoss(boss) {
+    boss.hitFlash = Math.max(0, (boss.hitFlash || 0) - 1);
     if (boss.y < 118) boss.y += 1.35;
     else {
       boss.x = this.w / 2 + Math.sin(boss.age / (50 - this.stageIndex * 3)) * (105 + this.stageIndex * 8);
@@ -483,7 +510,7 @@ export class Game {
       boss.cooldown = 45;
       this.enemyBullets = [];
       this.announce(`PHASE ${phase + 1}`, BOSSES[boss.bossId].phases[phase].toUpperCase(), 950);
-      this.spawnBurst(boss.x, boss.y, 35, boss.color);
+      this.spawnBurst(boss.x, boss.y, 24, boss.color);
     }
     boss.cooldown -= 1;
     if (boss.y >= 105 && boss.cooldown <= 0) {
@@ -528,14 +555,15 @@ export class Game {
       bullet.x += bullet.vx; bullet.y += bullet.vy; bullet.life -= 1;
       const rr = bullet.radius + this.player.hitRadius;
       if (this.player.invincible <= 0 && distanceSq(bullet, this.player) < rr * rr) { this.enemyBullets.splice(i, 1); this.hitPlayer(); continue; }
-      if (bullet.life <= 0 || bullet.x < -35 || bullet.x > this.w + 35 || bullet.y < -50 || bullet.y > this.h + 45) this.enemyBullets.splice(i, 1);
+      if (shouldCullEnemyBullet(bullet, this.w, this.h)) this.enemyBullets.splice(i, 1);
     }
   }
 
   damageEnemy(enemy, damage, particles = true) {
     if (!enemy.alive) return;
     enemy.hp -= damage;
-    if (particles) this.spawnBurst(enemy.x, enemy.y, 2, enemy.color);
+    if (particles && (enemy.type === 'boss' || enemy.type === 'midboss')) enemy.hitFlash = 4;
+    else if (particles) this.spawnBurst(enemy.x, enemy.y, 2, enemy.color);
     if (enemy.hp <= 0) this.killEnemy(enemy);
   }
 
@@ -549,7 +577,7 @@ export class Game {
     if (!enemy.alive) return;
     enemy.alive = false;
     this.score += enemy.score;
-    this.spawnBurst(enemy.x, enemy.y, enemy.type === 'boss' ? 90 : enemy.type === 'elite' ? 32 : 12, enemy.color);
+    this.spawnBurst(enemy.x, enemy.y, enemy.type === 'boss' ? 56 : enemy.type === 'midboss' ? 34 : enemy.type === 'elite' ? 28 : 12, enemy.color);
     this.sound(enemy.type === 'boss' ? 'bossDown' : 'boom');
     if (enemy.type === 'boss') {
       this.grantXp(enemy.xp, true);
@@ -606,10 +634,14 @@ export class Game {
 
   showUpgrade() {
     if (this.player.pendingLevels <= 0) return;
+    this.upgradeReturnMode = this.mode;
     this.mode = 'levelup';
     this.pointer.active = false;
     this.keys.clear();
     this.currentChoices = makeUpgradeChoices(this.player.build);
+    const isStarterUpgrade = this.upgradeReturnMode === 'stageIntro' && this.player.level === 1;
+    this.dom['upgrade-kicker'].textContent = isStarterUpgrade ? 'PRE-FLIGHT UPGRADE' : 'LEVEL UP';
+    this.dom['upgrade-title'].textContent = isStarterUpgrade ? '選擇開局強化' : '選擇一項強化';
     const holder = this.dom['upgrade-options']; holder.textContent = '';
     this.currentChoices.forEach((choice, index) => {
       const button = document.createElement('button');
@@ -641,7 +673,7 @@ export class Game {
     this.pointer.active = false;
     this.keys.clear();
     this.dom['upgrade-overlay'].classList.add('hidden');
-    this.mode = 'playing';
+    this.mode = this.upgradeReturnMode || 'playing';
     this.updateHud();
     if (p.pendingLevels > 0) setTimeout(() => this.showUpgrade(), 100);
   }
@@ -750,8 +782,9 @@ export class Game {
   }
 
   spawnBurst(x, y, count, color) {
-    for (let i = 0; i < count; i += 1) {
-      if (this.particles.length >= WORLD.maxParticles) this.particles.shift();
+    const available = Math.max(0, WORLD.maxParticles - this.particles.length);
+    const accepted = Math.min(count, available);
+    for (let i = 0; i < accepted; i += 1) {
       const angle = Math.random() * TAU; const speed = rand(.8, 5.5);
       this.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: rand(14, 42), maxLife: 42, color: Array.isArray(color) ? choose(color) : color, size: rand(1.2, 3.8) });
     }
@@ -759,13 +792,41 @@ export class Game {
 
   updateHud() {
     const p = this.player;
+    const stage = STAGES[this.stageIndex] || STAGES[0];
+    const waveNumber = Math.max(0, this.waveIndex + 1);
+    const midboss = this.enemies.find(enemy => enemy.type === 'midboss' && enemy.alive);
+    const boss = this.enemies.find(enemy => enemy.type === 'boss' && enemy.alive);
+    const routeMode = boss ? 'boss' : this.mode === 'levelup' ? (this.upgradeReturnMode || 'playing') : this.mode;
+    const progress = p ? stageProgress(stage, this.waveIndex, routeMode) : 0;
+    const checkpointReached = waveNumber >= stage.midbossWave;
+    const checkpointCleared = checkpointReached && !midboss;
+    let routeStatus = 'STANDBY';
+    if (p) {
+      if (routeMode === 'stageIntro') routeStatus = 'DEPLOY';
+      else if (midboss) routeStatus = 'CHECKPOINT';
+      else if (boss || routeMode === 'bossWarning') routeStatus = 'BOSS';
+      else if (routeMode === 'stageClear') routeStatus = 'CLEAR';
+      else routeStatus = `WAVE ${Math.max(1, waveNumber)}/${stage.waves}`;
+    }
     this.dom.score.textContent = String(this.score).padStart(7, '0');
-    this.dom.stage.textContent = p ? `${this.stageIndex + 1}-${Math.max(1, this.waveIndex + 1)}` : '—';
+    this.dom.stage.textContent = p ? `S${String(stage.id).padStart(2, '0')}` : '—';
     this.dom.level.textContent = p ? String(p.level).padStart(2, '0') : '—';
     this.dom.hp.textContent = p ? '●'.repeat(p.hp) + '○'.repeat(Math.max(0, p.maxHp - p.hp)) : '—';
     this.dom.bombs.textContent = p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—';
     this.dom['bomb-count'].textContent = p?.bombs ?? 0;
     this.dom['xp-bar'].style.width = p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%';
+    this.dom['route-label'].textContent = p ? `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT';
+    this.dom['route-status'].textContent = routeStatus;
+    this.dom['route-fill'].style.width = `${progress * 100}%`;
+    this.dom['midboss-node'].style.left = `${midbossProgress(stage) * 100}%`;
+    this.dom['midboss-node'].classList.remove('active');
+    this.dom['midboss-node'].classList.remove('cleared');
+    this.dom['boss-node'].classList.remove('active');
+    this.dom['boss-node'].classList.remove('cleared');
+    if (midboss) this.dom['midboss-node'].classList.add('active');
+    else if (checkpointCleared) this.dom['midboss-node'].classList.add('cleared');
+    if (boss || routeMode === 'bossWarning') this.dom['boss-node'].classList.add('active');
+    else if (routeMode === 'stageClear' || routeMode === 'victory') this.dom['boss-node'].classList.add('cleared');
     this.dom['primary-build'].textContent = p ? `${p.craft.name} ${p.craft.primary.toUpperCase()} Lv.${p.build.primaryLevel}` : '—';
     this.dom['secondary-build'].textContent = p ? Object.entries(p.build.secondaries).map(([id,l]) => `${SECONDARIES[id].name} ${l}`).join(' · ') || '尚未取得' : '—';
     this.dom['passive-build'].textContent = p ? Object.entries(p.build.passives).map(([id,l]) => `${PASSIVES[id].name} ${l}`).join(' · ') || '尚未取得' : '—';
@@ -800,12 +861,13 @@ export class Game {
   }
 
   drawEnemies(ctx) {
-    for (const e of this.enemies) { if(!e.alive)continue; ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.arc(0,0,e.radius*1.45,0,TAU);ctx.fill();ctx.fillStyle=e.color;ctx.strokeStyle='rgba(255,255,255,.5)';ctx.lineWidth=1.5;
+    for (const e of this.enemies) { if(!e.alive)continue; ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.arc(0,0,e.radius*1.45,0,TAU);ctx.fill();ctx.fillStyle=e.hitFlash>0?'#fff':e.color;ctx.strokeStyle='rgba(255,255,255,.5)';ctx.lineWidth=1.5;
       if(e.type==='boss'){const sides=6+this.stageIndex;ctx.beginPath();for(let n=0;n<sides;n++){const a=n/sides*TAU-Math.PI/2;const r=n%2?e.radius*.72:e.radius;if(n===0)ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='#07111d';ctx.fillRect(-28,-10,56,20);ctx.fillStyle='#fff';ctx.fillRect(-18,-5,36,7);}
+      else if(e.type==='midboss'){ctx.rotate(Math.PI/4);ctx.fillRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.strokeRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.rotate(-Math.PI/4);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(0,0,13,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-8,-3,16,6);}
       else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
       ctx.restore();
-      if(e.type==='boss'||e.type==='elite'){
-        const width=e.type==='boss'?180:55;
+      if(e.type==='boss'||e.type==='elite'||e.type==='midboss'){
+        const width=e.type==='boss'?180:e.type==='midboss'?110:55;
         const barX=e.x-width/2;
         const barY=e.y-e.radius-14;
         ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(barX,barY,width,6);
