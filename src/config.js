@@ -11,6 +11,8 @@ export const WORLD = {
   maxUpgradeRank: 3,
 };
 
+export const BUILD_LIMITS = { secondary: 3, passive: 6 };
+
 export const AIRCRAFT = {
   falcon: { id: 'falcon', name: 'FALCON', subtitle: '散射突擊機', color: '#ff3158', speed: 5.8, hp: 4, primary: 'vulcan', description: '寬角火力與高機動，適合近距離壓制。' },
   lancer: { id: 'lancer', name: 'LANCER', subtitle: '貫通雷射機', color: '#42e8ff', speed: 5.1, hp: 4, primary: 'laser', description: '窄角貫通雷射，對大型目標有優勢。' },
@@ -24,6 +26,9 @@ export const SECONDARIES = {
   mines: { id: 'mines', name: '磁暴地雷', max: 3, color: '#fb7185', description: '在後方留下延遲爆炸地雷。' },
   rail: { id: 'rail', name: '磁軌爆發', max: 3, color: '#f8fafc', description: '定時發射高傷害貫通彈。' },
   bombard: { id: 'bombard', name: '轟炸莢艙', max: 3, color: '#fb923c', description: '標記敵群位置後進行範圍轟炸。' },
+  gravity: { id: 'gravity', name: '微型重力井', max: 3, color: '#c084fc', description: '週期性生成奇點，牽引並持續傷害敵群。' },
+  prism: { id: 'prism', name: '稜鏡衛星', max: 3, color: '#f0abfc', description: '折射光束同時貫穿多個目標。' },
+  interceptor: { id: 'interceptor', name: '攔截蜂群', max: 3, color: '#34d399', description: '自動攔截鄰近敵彈並轉化為反擊脈衝。' },
 };
 
 export const PASSIVES = {
@@ -32,9 +37,12 @@ export const PASSIVES = {
   armor: { id: 'armor', name: '反應裝甲', max: 3, description: '提升最大生命與受傷無敵時間。' },
   critical: { id: 'critical', name: '暴擊矩陣', max: 3, description: '增加暴擊機率與傷害。' },
   salvage: { id: 'salvage', name: '戰場回收', max: 3, description: '提升補給與治療機率。' },
-  guidance: { id: 'guidance', name: '導引電腦', max: 3, description: '提升追蹤轉向；滿級允許一次重新鎖定。' },
+  guidance: { id: 'guidance', name: '導引電腦', max: 3, requiresSecondary: 'homing', description: '提升追蹤轉向；滿級允許一次重新鎖定。' },
   bombcap: { id: 'bombcap', name: '炸彈電容', max: 3, description: '增加炸彈上限與爆炸傷害。' },
   engine: { id: 'engine', name: '引擎調校', max: 3, description: '提升移動速度。' },
+  incendiary: { id: 'incendiary', name: '熔蝕彈頭', max: 3, requiresPrimaryLevel: 3, description: '主武器滿級後解鎖燃燒彈；持續灼燒目標。' },
+  cryo: { id: 'cryo', name: '霜凍透鏡', max: 3, requiresPrimaryLevel: 3, description: '主武器滿級後解鎖冰晶彈；緩速並凍結小型敵人。' },
+  voltaic: { id: 'voltaic', name: '電弧增幅器', max: 3, requiresPrimaryLevel: 3, description: '主武器滿級後解鎖電弧彈；向鄰近目標跳躍。' },
 };
 
 export const STAGES = [

@@ -1,4 +1,4 @@
-import { SECONDARIES, PASSIVES } from './config.js';
+import { BUILD_LIMITS, SECONDARIES, PASSIVES } from './config.js';
 
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const distanceSq = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
@@ -29,7 +29,7 @@ export function makeUpgradePool(build) {
   for (const item of Object.values(SECONDARIES)) {
     const level = secondaries[item.id] || 0;
     if (level >= item.max) continue;
-    if (level > 0 || Object.keys(secondaries).length < (build.secondarySlots || 2)) {
+    if (level > 0 || Object.keys(secondaries).length < (build.secondarySlots || BUILD_LIMITS.secondary)) {
       pool.push({ ...item, category: 'secondary', level });
     }
   }
@@ -37,7 +37,9 @@ export function makeUpgradePool(build) {
   for (const item of Object.values(PASSIVES)) {
     const level = passives[item.id] || 0;
     if (level >= item.max) continue;
-    if (level > 0 || Object.keys(passives).length < (build.passiveSlots || 4)) {
+    if (level === 0 && item.requiresSecondary && !secondaries[item.requiresSecondary]) continue;
+    if (level === 0 && item.requiresPrimaryLevel && (build.primaryLevel || 1) < item.requiresPrimaryLevel) continue;
+    if (level > 0 || Object.keys(passives).length < (build.passiveSlots || BUILD_LIMITS.passive)) {
       pool.push({ ...item, category: 'passive', level });
     }
   }
@@ -78,6 +80,22 @@ export function upgradePower(rank) {
 
 export function xpForLevel(level) {
   return Math.round(20 + level * 9 + level ** 1.28 * 3);
+}
+
+export function xpValueForStage(baseValue, stageIndex) {
+  return Math.max(1, Math.round(baseValue * (1 + Math.max(0, stageIndex) * .22)));
+}
+
+export function splitXpValue(total) {
+  const values = [];
+  let remaining = Math.max(0, Math.round(total));
+  for (const denomination of [20, 8, 3, 1]) {
+    while (remaining >= denomination) {
+      values.push(denomination);
+      remaining -= denomination;
+    }
+  }
+  return values;
 }
 
 export function midbossProgress(stage) {

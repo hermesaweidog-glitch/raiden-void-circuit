@@ -1,5 +1,5 @@
-import { AIRCRAFT, SECONDARIES, PASSIVES, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
-import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, stagePressure, stageProgress, updateGuidance, upgradePower, xpForLevel } from './systems.js';
+import { AIRCRAFT, BUILD_LIMITS, SECONDARIES, PASSIVES, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
+import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -27,11 +27,13 @@ export class Game {
     ].map(id => [id, document.getElementById(id)]));
     this.mode = 'title';
     this.frame = 0;
+    this.worldScroll = 0;
     this.score = 0;
     this.best = Number(readStorage('void-circuit-best', '0'));
     this.stageIndex = 0;
     this.waveIndex = -1;
     this.waveCooldown = 0;
+    this.routeProgress = 0;
     this.transitionTimer = 0;
     this.transitionDeadline = 0;
     this.entityId = 1;
@@ -116,6 +118,7 @@ export class Game {
     const craft = AIRCRAFT[craftId] || AIRCRAFT.falcon;
     this.lastCraftId = craft.id;
     this.frame = 0;
+    this.worldScroll = 0;
     this.score = 0;
     this.stageIndex = 0;
     this.waveIndex = -1;
@@ -132,7 +135,7 @@ export class Game {
       radius: 15, hitRadius: 5, craftId, craft, hp: craft.hp, maxHp: craft.hp,
       bombs: 2, maxBombs: 3, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: 1,
-      build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: 2, passiveSlots: 4 },
+      build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive },
       bombLock: 0,
     };
     this.dom['title-overlay'].classList.add('hidden');
@@ -164,6 +167,7 @@ export class Game {
     this.stageIndex = clamp(index, 0, STAGES.length - 1);
     this.waveIndex = -1;
     this.waveCooldown = 0;
+    this.routeProgress = 0;
     this.mode = 'stageIntro';
     this.transitionTimer = 75;
     this.transitionDeadline = performance.now() + 1250;
@@ -171,6 +175,9 @@ export class Game {
     this.playerBullets = [];
     this.enemyBullets = [];
     this.effects = [];
+    this.player.y = this.h + 64;
+    this.player.targetY = this.h - 92;
+    this.player.targetX = clamp(this.player.x, 24, this.w - 24);
     this.player.invincible = Math.max(this.player.invincible, 120);
     const stage = STAGES[this.stageIndex];
     this.announce(`STAGE ${stage.id} — ${stage.name}`, stage.subtitle, 1900);
@@ -201,8 +208,10 @@ export class Game {
 
   update() {
     this.frame += 1;
+    if (this.player && ['stageIntro', 'bossWarning', 'playing', 'stageClear'].includes(this.mode)) this.worldScroll += this.worldScrollSpeed();
     this.updateParticles();
     if (!this.player || ['title', 'paused', 'levelup', 'gameover', 'victory'].includes(this.mode)) return;
+    this.updateRouteProgress();
     if (this.mode === 'stageIntro') {
       this.updatePlayer(true);
       if (this.transitionElapsed()) { this.mode = 'playing'; this.spawnNextWave(); }
@@ -211,18 +220,18 @@ export class Game {
     if (this.mode === 'bossWarning') {
       this.updatePlayer(true);
       this.updatePlayerBullets();
+      this.updateXpOrbs();
+      this.updateEffects();
       if (this.transitionElapsed()) { this.mode = 'playing'; this.spawnBoss(); }
       return;
     }
     if (this.mode === 'stageClear') {
       this.updatePlayer(true);
       this.updateXpOrbs();
+      this.updateEffects();
       if (this.transitionElapsed()) {
         if (this.stageIndex >= STAGES.length - 1) this.endRun(true);
-        else {
-          this.startStage(this.stageIndex + 1);
-          if (this.player.pendingLevels > 0) this.showUpgrade();
-        }
+        else this.startStage(this.stageIndex + 1);
       }
       return;
     }
@@ -235,6 +244,30 @@ export class Game {
     this.updateEffects();
     this.updateDirector();
     this.updateHud();
+  }
+
+  worldScrollSpeed() {
+    return 1.2 + this.stageIndex * .14;
+  }
+
+  updateRouteProgress() {
+    const stage = STAGES[this.stageIndex];
+    if (!stage || this.mode === 'stageIntro') return;
+    if (this.mode === 'stageClear') {
+      this.routeProgress = Math.min(1, this.routeProgress + .025);
+      return;
+    }
+    const boss = this.enemies.find(enemy => enemy.type === 'boss' && enemy.alive);
+    if (this.mode === 'bossWarning' || boss) {
+      this.routeProgress = Math.min(1, this.routeProgress + .006);
+      return;
+    }
+    const waveNumber = Math.max(0, this.waveIndex + 1);
+    const midboss = this.enemies.find(enemy => enemy.type === 'midboss' && enemy.alive);
+    const checkpoint = midbossProgress(stage);
+    const cap = waveNumber >= stage.midbossWave && !midboss ? .985 : checkpoint;
+    const speed = 1 / (stage.waves * 300);
+    this.routeProgress = Math.min(cap, this.routeProgress + speed);
   }
 
   updateDirector() {
@@ -319,18 +352,21 @@ export class Game {
     const player = this.player;
     const passive = id => upgradePower(player.build.passives[id] || 0);
     const speed = player.craft.speed * (1 + passive('engine') * .06);
-    let dx = 0; let dy = 0;
-    if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) dx -= 1;
-    if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) dx += 1;
-    if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) dy -= 1;
-    if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) dy += 1;
-    if (dx || dy) {
-      const length = Math.hypot(dx, dy) || 1;
-      player.targetX = clamp(player.x + dx / length * speed, 22, this.w - 22);
-      player.targetY = clamp(player.y + dy / length * speed, this.h * .28, this.h - 30);
+    if (!transitionOnly) {
+      let dx = 0; let dy = 0;
+      if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) dx -= 1;
+      if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) dx += 1;
+      if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) dy -= 1;
+      if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) dy += 1;
+      if (dx || dy) {
+        const length = Math.hypot(dx, dy) || 1;
+        player.targetX = clamp(player.x + dx / length * speed, 22, this.w - 22);
+        player.targetY = clamp(player.y + dy / length * speed, this.h * .28, this.h - 30);
+      }
     }
-    player.x += (player.targetX - player.x) * (this.pointer.active ? .32 : .7);
-    player.y += (player.targetY - player.y) * (this.pointer.active ? .32 : .7);
+    const easing = transitionOnly ? .08 : this.pointer.active ? .32 : .7;
+    player.x += (player.targetX - player.x) * easing;
+    player.y += (player.targetY - player.y) * easing;
     player.invincible = Math.max(0, player.invincible - 1);
     player.fireCooldown = Math.max(0, player.fireCooldown - 1);
     player.bombLock = Math.max(0, player.bombLock - 1);
@@ -359,28 +395,31 @@ export class Game {
     const level = upgradePower(p.build.primaryLevel);
     const overclock = upgradePower(p.build.passives.overclock || 0);
     const rate = 1 + overclock * .075;
+    const elementRanks = { burn: p.build.passives.incendiary || 0, chill: p.build.passives.cryo || 0, shock: p.build.passives.voltaic || 0 };
+    const statuses = Object.entries(elementRanks).filter(([, rank]) => rank > 0).map(([status]) => status);
+    const statusPowers = Object.fromEntries(Object.entries(elementRanks).map(([status, rank]) => [status, upgradePower(rank)]));
     const add = (vx, vy, options = {}) => this.addPlayerBullet({
       id: this.entityId++, x: p.x + (options.ox || 0), y: p.y - 22 + (options.oy || 0), vx, vy,
       radius: options.radius || 4, damage: options.damage || 1, life: options.life || 110,
       color: options.color || p.craft.color, kind: options.kind || 'bolt', pierce: options.pierce || 0,
       splash: options.splash || 0, targetId: options.targetId, guidanceActive: options.guidanceActive,
-      turn: options.turn || .055, reacquired: false, status: options.status, statusPower: options.statusPower || level,
+      turn: options.turn || .055, reacquired: false, statuses: options.statuses || statuses, statusPowers: options.statusPowers || statusPowers,
     });
     if (p.craft.primary === 'vulcan') {
       p.fireCooldown = Math.max(4, Math.round((11 - level) / rate));
       const count = 1 + Math.floor(level / 2) * 2;
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
-        add(offset * .72, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267', status: 'burn' });
+        add(offset * .72, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
       }
     } else if (p.craft.primary === 'laser') {
       p.fireCooldown = Math.max(5, Math.round((14 - level * 1.2) / rate));
-      add(0, -13.6, { damage: 2.1 + level * .48, radius: 3 + level * .5, pierce: 1 + Math.floor(level / 2), kind: 'laser', color: '#7df5ff', status: 'chill' });
-      if (level >= 4) { add(-.3, -12.7, { damage: 1.1, radius: 2.5, ox: -10, pierce: 1, color: '#42e8ff', status: 'chill' }); add(.3, -12.7, { damage: 1.1, radius: 2.5, ox: 10, pierce: 1, color: '#42e8ff', status: 'chill' }); }
+      add(0, -13.6, { damage: 2.1 + level * .48, radius: 3 + level * .5, pierce: 1 + Math.floor(level / 2), kind: 'laser', color: '#7df5ff' });
+      if (level >= 4) { add(-.3, -12.7, { damage: 1.1, radius: 2.5, ox: -10, pierce: 1, color: '#42e8ff' }); add(.3, -12.7, { damage: 1.1, radius: 2.5, ox: 10, pierce: 1, color: '#42e8ff' }); }
     } else {
       p.fireCooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
-      add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166', status: 'shock' });
-      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, color: '#fb923c', status: 'shock' }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, color: '#fb923c', status: 'shock' }); }
+      add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166' });
+      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, color: '#fb923c' }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, color: '#fb923c' }); }
     }
     this.sound('shoot');
   }
@@ -430,6 +469,31 @@ export class Game {
         const target = pickNearestTarget(p, this.enemies);
         if (target) this.addEffect({ type: 'bombard', x: target.x, y: target.y, timer: 45, maxTimer: 45, radius: 35 + level * 5, damage: 7 + level * 3.2 });
         p.secondaryCooldowns[id] = Math.max(65, 145 - level * 11);
+      } else if (id === 'gravity') {
+        const target = pickNearestTarget(p, this.enemies);
+        if (target) this.addEffect({ type: 'gravity', x: target.x, y: target.y, radius: 52 + level * 6, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0 });
+        p.secondaryCooldowns[id] = Math.max(95, 190 - level * 15);
+      } else if (id === 'prism') {
+        const targets = [...this.enemies].filter(enemy => enemy.alive).sort((a, b) => distanceSq(p, a) - distanceSq(p, b)).slice(0, Math.min(5, 1 + level));
+        if (targets.length) {
+          const points = [{ x: p.x, y: p.y }, ...targets.map(target => ({ x: target.x, y: target.y }))];
+          for (const target of targets) this.damageEnemy(target, 2.2 + level * 1.05, false);
+          this.addEffect({ type: 'prism', points, life: 16, maxLife: 16 });
+        }
+        p.secondaryCooldowns[id] = Math.max(48, 120 - level * 10);
+      } else if (id === 'interceptor') {
+        const count = Math.min(6, 1 + level);
+        for (let n = 0; n < count; n += 1) {
+          let bestIndex = -1; let bestDistance = 245 ** 2;
+          for (let i = 0; i < this.enemyBullets.length; i += 1) {
+            const d2 = distanceSq(p, this.enemyBullets[i]);
+            if (d2 < bestDistance) { bestDistance = d2; bestIndex = i; }
+          }
+          if (bestIndex < 0) break;
+          const [bullet] = this.enemyBullets.splice(bestIndex, 1);
+          this.addEffect({ type: 'ring', x: bullet.x, y: bullet.y, radius: 2, maxRadius: 18, life: 12, maxLife: 12, color: '#34d399' });
+        }
+        p.secondaryCooldowns[id] = Math.max(28, 82 - level * 8);
       }
     }
   }
@@ -469,38 +533,46 @@ export class Game {
   }
 
   applyBulletStatus(bullet, enemy) {
-    if (!bullet.status) return;
-    const power = bullet.statusPower || 1;
-    if (bullet.status === 'burn') {
-      enemy.burnTimer = Math.max(enemy.burnTimer || 0, 90 + power * 12);
-      enemy.burnDamage = Math.max(enemy.burnDamage || 0, .08 + power * .035);
-    } else if (bullet.status === 'chill') {
-      enemy.chillTimer = Math.max(enemy.chillTimer || 0, 75 + power * 6);
-      enemy.chillStacks = (enemy.chillStacks || 0) + 1;
-      if (enemy.chillStacks >= 6) { enemy.freezeTimer = 20 + power * 4; enemy.chillStacks = 0; }
-    } else if (bullet.status === 'shock' && (enemy.shockCooldown || 0) <= 0) {
-      const targets = this.enemies
-        .filter(target => target.alive && target.id !== enemy.id && distanceSq(target, enemy) <= 180 ** 2)
-        .sort((a, b) => distanceSq(a, enemy) - distanceSq(b, enemy))
-        .slice(0, Math.min(3, 1 + Math.floor(power / 2)));
-      if (targets.length) {
-        const points = [{ x: enemy.x, y: enemy.y }];
-        for (const target of targets) { this.damageEnemy(target, bullet.damage * .32, false); points.push({ x: target.x, y: target.y }); }
-        this.addEffect({ type: 'arc', points, life: 9, maxLife: 9 });
+    const statuses = bullet.statuses || (bullet.status ? [bullet.status] : []);
+    for (const status of statuses) {
+      const power = bullet.statusPowers?.[status] || bullet.statusPower || 1;
+      enemy.statusFlash = 10;
+      enemy.statusFlashColor = { burn: '#ff8a4c', chill: '#42e8ff', shock: '#facc15' }[status];
+      if (status === 'burn') {
+        enemy.burnTimer = Math.max(enemy.burnTimer || 0, 90 + power * 12);
+        enemy.burnDamage = Math.max(enemy.burnDamage || 0, .08 + power * .035);
+      } else if (status === 'chill') {
+        enemy.chillTimer = Math.max(enemy.chillTimer || 0, 75 + power * 6);
+        enemy.chillStacks = (enemy.chillStacks || 0) + 1;
+        if (enemy.chillStacks >= 6) { enemy.freezeTimer = 20 + power * 4; enemy.chillStacks = 0; }
+      } else if (status === 'shock' && (enemy.shockCooldown || 0) <= 0) {
+        const targets = this.enemies
+          .filter(target => target.alive && target.id !== enemy.id && distanceSq(target, enemy) <= 180 ** 2)
+          .sort((a, b) => distanceSq(a, enemy) - distanceSq(b, enemy))
+          .slice(0, Math.min(3, 1 + Math.floor(power / 2)));
+        if (targets.length) {
+          const points = [{ x: enemy.x, y: enemy.y }];
+          for (const target of targets) { this.damageEnemy(target, bullet.damage * .32, false); points.push({ x: target.x, y: target.y }); }
+          this.addEffect({ type: 'arc', points, life: 12, maxLife: 12 });
+        }
+        enemy.shockCooldown = 10;
       }
-      enemy.shockCooldown = 10;
     }
   }
 
   updateEnemyStatus(enemy) {
+    enemy.hitFlash = Math.max(0, (enemy.hitFlash || 0) - 1);
+    enemy.statusFlash = Math.max(0, (enemy.statusFlash || 0) - 1);
     enemy.shockCooldown = Math.max(0, (enemy.shockCooldown || 0) - 1);
     enemy.burnTimer = Math.max(0, (enemy.burnTimer || 0) - 1);
     enemy.chillTimer = Math.max(0, (enemy.chillTimer || 0) - 1);
     enemy.freezeTimer = Math.max(0, (enemy.freezeTimer || 0) - 1);
     if (enemy.burnTimer > 0 && this.frame % 15 === 0) this.damageEnemy(enemy, enemy.burnDamage || .1, false);
     if (!enemy.alive) return 0;
-    if (enemy.freezeTimer > 0) return .18;
-    if (enemy.chillTimer > 0) return .62;
+    if (enemy.chillTimer <= 0 && enemy.freezeTimer <= 0) enemy.chillStacks = 0;
+    const heavy = ['elite', 'midboss', 'boss'].includes(enemy.type);
+    if (enemy.freezeTimer > 0) return heavy ? .82 : .18;
+    if (enemy.chillTimer > 0) return heavy ? .88 : .62;
     return 1;
   }
 
@@ -534,7 +606,6 @@ export class Game {
 
   updateMidboss(enemy) {
     const stage = STAGES[this.stageIndex];
-    enemy.hitFlash = Math.max(0, (enemy.hitFlash || 0) - 1);
     const motionScale = enemy.motionScale || 1;
     if (enemy.y < 145) enemy.y += 1.15 * motionScale;
     else {
@@ -583,7 +654,6 @@ export class Game {
 
   updateBoss(boss) {
     const motionScale = boss.motionScale || 1;
-    boss.hitFlash = Math.max(0, (boss.hitFlash || 0) - 1);
     if (boss.y < 118) boss.y += 1.35 * motionScale;
     else {
       boss.x = this.w / 2 + Math.sin(boss.age / (50 - this.stageIndex * 3)) * (105 + this.stageIndex * 8);
@@ -651,7 +721,7 @@ export class Game {
   damageEnemy(enemy, damage, particles = true) {
     if (!enemy.alive) return;
     enemy.hp -= damage;
-    if (particles && (enemy.type === 'boss' || enemy.type === 'midboss')) enemy.hitFlash = 4;
+    if (particles && ['boss', 'midboss', 'elite'].includes(enemy.type)) enemy.hitFlash = 4;
     else if (particles) this.spawnBurst(enemy.x, enemy.y, 2, enemy.color);
     if (enemy.hp <= 0) this.killEnemy(enemy);
   }
@@ -669,22 +739,50 @@ export class Game {
     this.spawnBurst(enemy.x, enemy.y, enemy.type === 'boss' ? 56 : enemy.type === 'midboss' ? 34 : enemy.type === 'elite' ? 28 : 12, enemy.color);
     this.sound(enemy.type === 'boss' ? 'bossDown' : 'boom');
     if (enemy.type === 'boss') {
-      this.grantXp(enemy.xp, true);
       this.completeStage();
+      this.player.pendingLevels += 1;
+      this.showUpgrade();
     } else {
       this.dropXp(enemy.x, enemy.y, enemy.xp);
-      if (enemy.type === 'elite') {
-        const salvage = upgradePower(this.player.build.passives.salvage || 0);
-        if (Math.random() < .08 + salvage * .055) this.addEffect({ type: 'supply', x: enemy.x, y: enemy.y, supply: Math.random() < .6 ? 'heal' : 'bomb', life: 420, radius: 11 });
-      }
+      this.maybeDropSupply(enemy);
     }
   }
 
-  dropXp(x, y, value) {
-    if (this.xpOrbs.length >= WORLD.maxXp) {
-      const orb = choose(this.xpOrbs); orb.value += value; orb.radius = Math.min(9, orb.radius + .3); return;
+  maybeDropSupply(enemy, random = Math.random) {
+    const needsHeal = this.player.hp < this.player.maxHp;
+    const needsBomb = this.player.bombs < this.player.maxBombs;
+    if (!needsHeal && !needsBomb) return false;
+    const salvage = upgradePower(this.player.build.passives.salvage || 0);
+    const baseChance = { scout: .0035, striker: .0045, gunship: .007, elite: .025, midboss: .04 }[enemy.type] || .0035;
+    if (random() >= Math.min(.07, baseChance + salvage * .003)) return false;
+    const supply = needsHeal && needsBomb ? (random() < .6 ? 'heal' : 'bomb') : needsHeal ? 'heal' : 'bomb';
+    if (this.effects.length >= WORLD.maxEffects) {
+      const visualIndex = this.effects.findIndex(effect => effect.type !== 'supply');
+      if (visualIndex < 0) return false;
+      this.effects.splice(visualIndex, 1);
     }
-    this.xpOrbs.push({ x, y, vx: 0, vy: 0, attracting: false, value, radius: 4 + Math.min(4, value / 10), life: 1200 });
+    return this.addEffect({ type: 'supply', x: enemy.x, y: enemy.y, supply, life: 520, radius: 16 });
+  }
+
+  xpOrbStyle(value) {
+    if (value >= 20) return { color: '#ff72f1', glow: 'rgba(255,114,241,.24)', radius: 8 };
+    if (value >= 8) return { color: '#ffd166', glow: 'rgba(255,209,102,.22)', radius: 6.5 };
+    if (value >= 3) return { color: '#42e8ff', glow: 'rgba(66,232,255,.2)', radius: 5 };
+    return { color: '#4cff9b', glow: 'rgba(76,255,155,.18)', radius: 4 };
+  }
+
+  dropXp(x, y, value) {
+    const values = splitXpValue(xpValueForStage(value, this.stageIndex));
+    for (const orbValue of values) {
+      if (this.xpOrbs.length >= WORLD.maxXp) {
+        const orb = choose(this.xpOrbs);
+        orb.value += orbValue;
+        Object.assign(orb, this.xpOrbStyle(orb.value));
+        continue;
+      }
+      const style = this.xpOrbStyle(orbValue);
+      this.xpOrbs.push({ x, y, vx: 0, vy: 0, attracting: false, value: orbValue, radius: style.radius, color: style.color, glow: style.glow, life: 1600 });
+    }
   }
 
   updateXpOrbs() {
@@ -696,6 +794,10 @@ export class Game {
       const dx = this.player.x - orb.x;
       const dy = this.player.y - orb.y;
       const d2 = dx * dx + dy * dy;
+      if (!orb.attracting) {
+        orb.y += this.worldScrollSpeed();
+        if (orb.y >= this.h - 150) orb.attracting = true;
+      }
       if (d2 < range * range || orb.attracting || this.mode === 'stageClear') {
         orb.attracting = true;
         const distance = Math.max(1, Math.sqrt(d2));
@@ -765,6 +867,10 @@ export class Game {
     this.keys.clear();
     this.dom['upgrade-overlay'].classList.add('hidden');
     this.mode = this.upgradeReturnMode || 'playing';
+    if (this.mode === 'stageClear') {
+      this.transitionTimer = 90;
+      this.transitionDeadline = performance.now() + 1500;
+    }
     this.updateHud();
     if (p.pendingLevels > 0) setTimeout(() => this.showUpgrade(), 100);
   }
@@ -779,10 +885,35 @@ export class Game {
       } else if (effect.type === 'bombard') {
         effect.timer -= 1;
         if (effect.timer <= 0) { this.areaDamage(effect.x, effect.y, effect.radius, effect.damage); this.spawnBurst(effect.x, effect.y, 30, '#fb923c'); this.effects.splice(i, 1); }
+      } else if (effect.type === 'gravity') {
+        effect.timer -= 1; effect.pulse += 1;
+        for (const enemy of this.enemies) {
+          if (!enemy.alive || enemy.type === 'boss') continue;
+          const d2 = distanceSq(effect, enemy);
+          if (d2 > effect.radius ** 2) continue;
+          enemy.x += (effect.x - enemy.x) * .035;
+          enemy.y += (effect.y - enemy.y) * .02;
+        }
+        if (effect.pulse % 12 === 0) this.areaDamage(effect.x, effect.y, effect.radius, effect.damage);
+        if (effect.timer <= 0) this.effects.splice(i, 1);
       } else if (effect.type === 'supply') {
-        effect.y += .65; effect.life -= 1;
-        if (distanceSq(effect, this.player) < 30 ** 2) { if (effect.supply === 'heal') this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1); else this.player.bombs = Math.min(this.player.maxBombs, this.player.bombs + 1); this.effects.splice(i, 1); this.sound('level'); }
-        else if (effect.life <= 0 || effect.y > this.h + 30) this.effects.splice(i, 1);
+        effect.life -= 1;
+        if (this.mode === 'stageClear' || effect.y >= this.h - 150) {
+          effect.attracting = true;
+          effect.x += (this.player.x - effect.x) * .12;
+          effect.y += (this.player.y - effect.y) * .12;
+        } else effect.y += .65;
+        if (distanceSq(effect, this.player) < 30 ** 2) {
+          if (effect.supply === 'heal') {
+            this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1);
+            this.announce('FIELD REPAIR', '+1 HP', 900);
+          } else {
+            this.player.bombs = Math.min(this.player.maxBombs, this.player.bombs + 1);
+            this.announce('BOMB RESTORED', '+1 BOMB', 900);
+          }
+          this.effects.splice(i, 1); this.sound('level'); this.updateHud();
+        }
+        else if (effect.life <= 0 || (!effect.attracting && effect.y > this.h + 30)) this.effects.splice(i, 1);
       } else { effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
     }
   }
@@ -816,8 +947,7 @@ export class Game {
 
   completeStage() {
     this.mode = 'stageClear'; this.transitionTimer = 90; this.transitionDeadline = performance.now() + 1500; this.enemyBullets = []; this.playerBullets = [];
-    this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1);
-    this.player.bombs = Math.min(this.player.maxBombs, this.player.bombs + 1);
+    this.player.targetY = -80;
     this.announce('STAGE CLEAR', `SECTOR ${this.stageIndex + 1} SECURED`, 2300);
   }
 
@@ -827,7 +957,7 @@ export class Game {
     this.dom['end-kicker'].textContent = victory ? 'VOID CIRCUIT COLLAPSED' : 'RUN TERMINATED';
     this.dom['end-title'].textContent = victory ? 'MISSION COMPLETE' : 'MISSION FAILED';
     this.dom['end-title'].style.color = victory ? '#4cff9b' : '#ff3158';
-    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>STAGE　${this.stageIndex + 1}/5<br>LEVEL　${this.player.level}<br>PRIMARY　LV ${this.player.build.primaryLevel}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length}/2　PASSIVE　${Object.keys(this.player.build.passives).length}/4`;
+    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>STAGE　${this.stageIndex + 1}/5<br>LEVEL　${this.player.level}<br>PRIMARY　LV ${this.player.build.primaryLevel}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length}/${BUILD_LIMITS.secondary}　PASSIVE　${Object.keys(this.player.build.passives).length}/${BUILD_LIMITS.passive}`;
     this.dom['end-overlay'].classList.remove('hidden');
     this.sound(victory ? 'victory' : 'gameover');
   }
@@ -891,7 +1021,7 @@ export class Game {
     const midboss = this.enemies.find(enemy => enemy.type === 'midboss' && enemy.alive);
     const boss = this.enemies.find(enemy => enemy.type === 'boss' && enemy.alive);
     const routeMode = boss ? 'boss' : this.mode === 'levelup' ? (this.upgradeReturnMode || 'playing') : this.mode;
-    const progress = p ? stageProgress(stage, this.waveIndex, routeMode) : 0;
+    const progress = p ? this.routeProgress : 0;
     const checkpointReached = waveNumber >= stage.midbossWave;
     const checkpointCleared = checkpointReached && !midboss;
     let routeStatus = 'STANDBY';
@@ -935,7 +1065,7 @@ export class Game {
   }
 
   drawBackground(ctx, stage) {
-    const scroll = this.frame * (1.2 + this.stageIndex * .14);
+    const scroll = this.worldScroll;
     ctx.save(); ctx.globalAlpha = .24; ctx.strokeStyle = stage.id % 2 ? '#42e8ff' : '#ff8a4c'; ctx.lineWidth = 1;
     for (let y = -80 + scroll % 80; y < this.h + 80; y += 80) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(this.w,y); ctx.stroke(); }
     for (let x = 0; x <= this.w; x += 60) { ctx.beginPath(); ctx.moveTo(this.w/2 + (x-this.w/2)*.25,0); ctx.lineTo(x,this.h); ctx.stroke(); }
@@ -954,11 +1084,13 @@ export class Game {
   }
 
   drawEnemies(ctx) {
-    for (const e of this.enemies) { if(!e.alive)continue; ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.arc(0,0,e.radius*1.45,0,TAU);ctx.fill();ctx.fillStyle=e.color;ctx.strokeStyle=e.hitFlash>0?'#fff':'rgba(255,255,255,.5)';ctx.lineWidth=e.hitFlash>0?3:1.5;
+    for (const e of this.enemies) { if(!e.alive)continue; ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.arc(0,0,e.radius*1.45,0,TAU);ctx.fill();ctx.fillStyle=e.color;ctx.strokeStyle='rgba(255,255,255,.5)';ctx.lineWidth=1.5;
       if(e.type==='boss'){const sides=6+this.stageIndex;ctx.beginPath();for(let n=0;n<sides;n++){const a=n/sides*TAU-Math.PI/2;const r=n%2?e.radius*.72:e.radius;if(n===0)ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='#07111d';ctx.fillRect(-28,-10,56,20);ctx.fillStyle='#fff';ctx.fillRect(-18,-5,36,7);}
       else if(e.type==='midboss'){ctx.rotate(Math.PI/4);ctx.fillRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.strokeRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.rotate(-Math.PI/4);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(0,0,13,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-8,-3,16,6);}
       else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
       if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0){ctx.globalAlpha=.72;ctx.strokeStyle=e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+      if(e.statusFlash>0){ctx.globalAlpha=e.statusFlash/14;ctx.strokeStyle=e.statusFlashColor||'#fff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,e.radius+8,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+      if(e.hitFlash>0){ctx.globalAlpha=e.hitFlash/8;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+4,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       ctx.restore();
       if(e.type==='boss'||e.type==='elite'||e.type==='midboss'){
         const width=e.type==='boss'?180:e.type==='midboss'?110:55;
@@ -976,18 +1108,19 @@ export class Game {
   }
 
   drawBullets(ctx) {
-    for(const b of this.playerBullets){ctx.fillStyle=b.color;ctx.globalAlpha=.22;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.5,0,TAU);ctx.fill();ctx.globalAlpha=1;if(b.kind==='laser'||b.kind==='rail'){ctx.fillRect(b.x-b.radius/2,b.y-16,b.radius,32);}else{ctx.beginPath();ctx.ellipse(b.x,b.y,b.radius,b.radius*(b.kind==='missile'?1.8:1.4),0,0,TAU);ctx.fill();}}
+    for(const b of this.playerBullets){ctx.fillStyle=b.color;ctx.globalAlpha=.22;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.5,0,TAU);ctx.fill();ctx.globalAlpha=1;if(b.kind==='laser'||b.kind==='rail'){ctx.fillRect(b.x-b.radius/2,b.y-16,b.radius,32);}else{ctx.beginPath();ctx.ellipse(b.x,b.y,b.radius,b.radius*(b.kind==='missile'?1.8:1.4),0,0,TAU);ctx.fill();}const colors={burn:'#ff8a4c',chill:'#42e8ff',shock:'#facc15'};(b.statuses||[]).forEach((status,index)=>{ctx.strokeStyle=colors[status];ctx.lineWidth=2;ctx.globalAlpha=.8;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*1.8+index*3,0,TAU);ctx.stroke();});ctx.globalAlpha=1;}
     for(const b of this.enemyBullets){ctx.fillStyle=b.color;ctx.globalAlpha=.18;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.2,0,TAU);ctx.fill();ctx.globalAlpha=1;ctx.beginPath();ctx.arc(b.x,b.y,b.radius,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.globalAlpha=.55;ctx.beginPath();ctx.arc(b.x-1.5,b.y-1.5,b.radius*.28,0,TAU);ctx.fill();ctx.globalAlpha=1;}
   }
 
-  drawXp(ctx) { for(const o of this.xpOrbs){ctx.save();ctx.translate(o.x,o.y);ctx.rotate(this.frame*.025);ctx.fillStyle='rgba(76,255,155,.18)';ctx.fillRect(-o.radius*1.8,-o.radius*1.8,o.radius*3.6,o.radius*3.6);ctx.fillStyle='#4cff9b';ctx.fillRect(-o.radius,-o.radius,o.radius*2,o.radius*2);ctx.fillStyle='#fff';ctx.fillRect(-1,-o.radius,2,o.radius*2);ctx.restore();} }
+  drawXp(ctx) { for(const o of this.xpOrbs){ctx.save();ctx.translate(o.x,o.y);ctx.rotate(this.frame*.025);ctx.fillStyle=o.glow||'rgba(76,255,155,.18)';ctx.fillRect(-o.radius*1.8,-o.radius*1.8,o.radius*3.6,o.radius*3.6);ctx.fillStyle=o.color||'#4cff9b';ctx.fillRect(-o.radius,-o.radius,o.radius*2,o.radius*2);ctx.fillStyle='#fff';ctx.fillRect(-1,-o.radius,2,o.radius*2);ctx.restore();} }
 
   drawEffects(ctx) {
-    for(const e of this.effects){if(e.type==='arc'){ctx.strokeStyle='#67e8f9';ctx.lineWidth=3;ctx.globalAlpha=e.life/e.maxLife;ctx.beginPath();e.points.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x+rand(-3,3),p.y+rand(-3,3));});ctx.stroke();ctx.globalAlpha=1;}
+    for(const e of this.effects){if(e.type==='arc'||e.type==='prism'){ctx.strokeStyle=e.type==='prism'?'#f0abfc':'#67e8f9';ctx.lineWidth=e.type==='prism'?5:3;ctx.globalAlpha=e.life/e.maxLife;ctx.beginPath();e.points.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x+rand(-3,3),p.y+rand(-3,3));});ctx.stroke();ctx.globalAlpha=1;}
       else if(e.type==='mine'){ctx.fillStyle='#fb7185';ctx.beginPath();ctx.arc(e.x,e.y,8+Math.sin(this.frame/5)*2,0,TAU);ctx.fill();ctx.strokeStyle='rgba(251,113,133,.35)';ctx.beginPath();ctx.arc(e.x,e.y,e.trigger,0,TAU);ctx.stroke();}
       else if(e.type==='bombard'){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
+      else if(e.type==='gravity'){ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,12+Math.sin(this.frame*.18)*5,0,TAU);ctx.stroke();}
       else if(e.type==='ring'){const t=1-e.life/e.maxLife;e.radius+=(e.maxRadius-e.radius)*.12;ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=4;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
-      else if(e.type==='supply'){ctx.fillStyle=e.supply==='heal'?'#ff3158':'#ffd166';ctx.beginPath();ctx.arc(e.x,e.y,11,0,TAU);ctx.fill();ctx.fillStyle='#07111d';ctx.font='bold 12px monospace';ctx.textAlign='center';ctx.fillText(e.supply==='heal'?'+':'B',e.x,e.y+4);}
+      else if(e.type==='supply'){const color=e.supply==='heal'?'#ff3158':'#ffd166';const radius=e.radius||16;ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.4;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,radius+5+Math.sin(this.frame*.16)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.shadowColor=color;ctx.shadowBlur=12;ctx.fillStyle=color;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#07111d';ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(e.supply==='heal'?'+':'B',e.x,e.y+1);ctx.restore();}
     }
   }
 

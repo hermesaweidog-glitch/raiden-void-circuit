@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeUpgradeChoices, makeUpgradePool, midbossProgress, shouldCullEnemyBullet, stageProgress, updateGuidance, upgradePower, xpForLevel } from '../src/systems.js';
+import { makeUpgradeChoices, makeUpgradePool, midbossProgress, shouldCullEnemyBullet, splitXpValue, stageProgress, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from '../src/systems.js';
 
 test('upgrade choices are unique and omit maxed items', () => {
   const build = {
     primaryLevel: 5,
     secondaries: { homing: 5, drone: 2 },
     passives: { magnet: 5 },
-    secondarySlots: 2,
-    passiveSlots: 4,
+    secondarySlots: 3,
+    passiveSlots: 6,
   };
   const choices = makeUpgradeChoices(build, () => 0.42);
   assert.equal(choices.length, 3);
@@ -19,16 +19,16 @@ test('upgrade choices are unique and omit maxed items', () => {
 test('full equipment slots only offer upgrades for owned equipment', () => {
   const build = {
     primaryLevel: 5,
-    secondaries: { homing: 2, rail: 1 },
-    passives: { magnet: 1, armor: 2, critical: 1, engine: 3 },
-    secondarySlots: 2,
-    passiveSlots: 4,
+    secondaries: { homing: 2, rail: 1, drone: 1 },
+    passives: { magnet: 1, armor: 2, critical: 1, engine: 3, overclock: 1, bombcap: 1 },
+    secondarySlots: 3,
+    passiveSlots: 6,
   };
   const pool = makeUpgradePool(build);
   const secondaryIds = pool.filter(item => item.category === 'secondary').map(item => item.id);
   const passiveIds = pool.filter(item => item.category === 'passive').map(item => item.id);
-  assert.deepEqual(new Set(secondaryIds), new Set(['homing', 'rail']));
-  assert.deepEqual(new Set(passiveIds), new Set(['magnet', 'armor', 'critical']));
+  assert.deepEqual(new Set(secondaryIds), new Set(['homing', 'rail', 'drone']));
+  assert.deepEqual(new Set(passiveIds), new Set(['magnet', 'armor', 'critical', 'overclock', 'bombcap']));
 });
 
 test('three visible ranks preserve the former 1, 3, and 5 power milestones', () => {
@@ -36,10 +36,25 @@ test('three visible ranks preserve the former 1, 3, and 5 power milestones', () 
 });
 
 test('opening choices are sampled from the whole pool without a guaranteed primary slot', () => {
-  const build = { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: 2, passiveSlots: 4 };
+  const build = { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: 3, passiveSlots: 6 };
   const choices = makeUpgradeChoices(build, () => 0);
   assert.equal(choices.length, 3);
   assert.ok(!choices.some(choice => choice.id === 'primary'));
+});
+
+test('dependent passives appear only after their weapon prerequisite is owned', () => {
+  const build = { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: 3, passiveSlots: 6 };
+  let pool = makeUpgradePool(build);
+  assert.ok(!pool.some(item => item.id === 'guidance'));
+  assert.ok(!pool.some(item => ['incendiary', 'cryo', 'voltaic'].includes(item.id)));
+
+  build.secondaries.homing = 1;
+  pool = makeUpgradePool(build);
+  assert.ok(pool.some(item => item.id === 'guidance'));
+
+  build.primaryLevel = 3;
+  pool = makeUpgradePool(build);
+  assert.ok(['incendiary', 'cryo', 'voltaic'].every(id => pool.some(item => item.id === id)));
 });
 
 test('homing missile never reacquires after target death', () => {
@@ -75,6 +90,14 @@ test('enemy bullets remain alive until their full body crosses the playfield edg
 test('early XP pacing awards the first earned level by the second opening wave', () => {
   assert.equal(xpForLevel(1), 32);
   assert.ok(xpForLevel(2) > xpForLevel(1));
+});
+
+test('later sectors award richer XP drops without changing opening balance', () => {
+  assert.equal(xpValueForStage(4, 0), 4);
+  assert.ok(xpValueForStage(4, 4) > xpValueForStage(4, 0));
+  const values = splitXpValue(37);
+  assert.equal(values.reduce((total, value) => total + value, 0), 37);
+  assert.ok(new Set(values).size >= 3, 'large drops should expose multiple visible denominations');
 });
 
 test('route progress reaches and holds explicit midboss and boss nodes', () => {

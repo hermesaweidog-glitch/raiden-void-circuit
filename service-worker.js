@@ -1,4 +1,4 @@
-const CACHE = 'raiden-void-circuit-v4';
+const CACHE = 'raiden-void-circuit-v5';
 const ASSETS = ['./', './index.html', './styles.css', './src/main.js', './src/game.js', './src/config.js', './src/systems.js', './manifest.webmanifest'];
 self.addEventListener('install', event => {
   self.skipWaiting();

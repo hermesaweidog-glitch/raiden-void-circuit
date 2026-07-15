@@ -4,8 +4,10 @@ import { AIRCRAFT, SECONDARIES, PASSIVES, STAGES, BOSSES, ENEMY_TYPES, WORLD } f
 
 test('final content roster is complete', () => {
   assert.equal(Object.keys(AIRCRAFT).length, 3);
-  assert.equal(Object.keys(SECONDARIES).length, 6);
-  assert.equal(Object.keys(PASSIVES).length, 8);
+  assert.ok(Object.keys(SECONDARIES).length >= 9);
+  assert.ok(['gravity', 'prism', 'interceptor'].every(id => SECONDARIES[id]));
+  assert.ok(Object.keys(PASSIVES).length >= 11);
+  assert.ok(['incendiary', 'cryo', 'voltaic'].every(id => PASSIVES[id]));
   assert.equal(STAGES.length, 5);
   assert.equal(Object.keys(BOSSES).length, 5);
 });
