@@ -20,6 +20,7 @@ document.querySelector('#bomb-button').addEventListener('pointerdown', event => 
   game.useBomb();
 });
 document.querySelector('#pause-button').addEventListener('click', () => game.togglePause());
+document.querySelector('#resume-button').addEventListener('click', () => game.togglePause());
 document.querySelector('#mute-button').addEventListener('click', () => game.toggleMute());
 document.querySelector('#retry-button').addEventListener('click', () => game.restart());
 

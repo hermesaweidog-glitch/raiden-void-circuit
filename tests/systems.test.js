@@ -42,19 +42,17 @@ test('opening choices are sampled from the whole pool without a guaranteed prima
   assert.ok(!choices.some(choice => choice.id === 'primary'));
 });
 
-test('dependent passives appear only after their weapon prerequisite is owned', () => {
+test('dependent passives appear only after their matching secondary is owned', () => {
   const build = { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: 3, passiveSlots: 6 };
   let pool = makeUpgradePool(build);
   assert.ok(!pool.some(item => item.id === 'guidance'));
-  assert.ok(!pool.some(item => ['incendiary', 'cryo', 'voltaic'].includes(item.id)));
+
 
   build.secondaries.homing = 1;
   pool = makeUpgradePool(build);
   assert.ok(pool.some(item => item.id === 'guidance'));
 
-  build.primaryLevel = 3;
-  pool = makeUpgradePool(build);
-  assert.ok(['incendiary', 'cryo', 'voltaic'].every(id => pool.some(item => item.id === id)));
+  assert.ok(!pool.some(item => ['incendiary', 'cryo', 'voltaic'].includes(item.id)));
 });
 
 test('homing missile never reacquires after target death', () => {

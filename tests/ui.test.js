@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const css = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
 
 test('page exposes complete desktop and mobile controls', () => {
   for (const id of ['game', 'aircraft-select', 'upgrade-overlay', 'bomb-button', 'pause-button', 'mute-button', 'end-overlay']) {
@@ -22,4 +23,13 @@ test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /type="module" src="\.\/src\/main\.js"/);
   assert.match(html, /viewport-fit=cover/);
+});
+
+test('pause overlay exposes the complete loadout without widening the game shell', () => {
+  for (const id of ['pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive', 'resume-button']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(css, /\.app-shell\{[^}]*width:min\(100%,520px\)[^}]*justify-self:center/);
+  assert.match(css, /\.build-strip>div\{[^}]*min-width:0/);
+  assert.match(css, /\.pause-loadout/);
 });

@@ -4,6 +4,7 @@ import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarg
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
 const choose = items => items[(Math.random() * items.length) | 0];
+const isLargeEnemyType = type => type === 'elite' || type === 'midboss' || type === 'boss';
 const readStorage = (key, fallback = null) => {
   try { return localStorage.getItem(key) ?? fallback; }
   catch { return fallback; }
@@ -24,8 +25,10 @@ export class Game {
       'upgrade-options', 'upgrade-kicker', 'upgrade-title', 'end-overlay', 'end-kicker', 'end-title', 'run-summary', 'announcement',
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
       'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node',
+      'pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive',
     ].map(id => [id, document.getElementById(id)]));
     this.mode = 'title';
+    this.hudBuildRevision = -1;
     this.frame = 0;
     this.worldScroll = 0;
     this.score = 0;
@@ -59,10 +62,7 @@ export class Game {
       this.accumulator = 0;
       this.lastTime = performance.now();
       this.pointer.active = false;
-      if (document.hidden && this.mode === 'playing') {
-        this.mode = 'paused';
-        this.dom['pause-button'].textContent = 'RESUME';
-      }
+      if (document.hidden && this.mode === 'playing') this.setPaused(true);
     });
     this.updateHud();
     requestAnimationFrame(time => this.loop(time));
@@ -135,11 +135,13 @@ export class Game {
       radius: 15, hitRadius: 5, craftId, craft, hp: craft.hp, maxHp: craft.hp,
       bombs: 2, maxBombs: 3, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: 1,
-      build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive },
+      build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive, revision: 0 },
       bombLock: 0,
     };
+    this.hudBuildRevision = -1;
     this.dom['title-overlay'].classList.add('hidden');
     this.dom['end-overlay'].classList.add('hidden');
+    this.dom['pause-overlay'].classList.add('hidden');
     document.getElementById('bomb-button').classList.remove('hidden');
     this.initAudio();
     this.startStage(0);
@@ -154,6 +156,7 @@ export class Game {
     this.mode = 'title';
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['upgrade-overlay'].classList.add('hidden');
+    this.dom['pause-overlay'].classList.add('hidden');
     this.dom['title-overlay'].classList.remove('hidden');
     document.getElementById('bomb-button').classList.add('hidden');
     this.player = null;
@@ -208,9 +211,9 @@ export class Game {
 
   update() {
     this.frame += 1;
-    if (this.player && ['stageIntro', 'bossWarning', 'playing', 'stageClear'].includes(this.mode)) this.worldScroll += this.worldScrollSpeed();
+    if (this.player && (this.mode === 'stageIntro' || this.mode === 'bossWarning' || this.mode === 'playing' || this.mode === 'stageClear')) this.worldScroll += this.worldScrollSpeed();
     this.updateParticles();
-    if (!this.player || ['title', 'paused', 'levelup', 'gameover', 'victory'].includes(this.mode)) return;
+    if (!this.player || this.mode === 'title' || this.mode === 'paused' || this.mode === 'levelup' || this.mode === 'gameover' || this.mode === 'victory') return;
     this.updateRouteProgress();
     if (this.mode === 'stageIntro') {
       this.updatePlayer(true);
@@ -322,7 +325,9 @@ export class Game {
   }
 
   spawnEnemy(type, x, y, pressure, formation, index) {
-    if (this.enemies.filter(enemy => enemy.alive).length >= WORLD.maxEnemies) return false;
+    let activeEnemies = 0;
+    for (const enemy of this.enemies) if (enemy.alive) activeEnemies += 1;
+    if (activeEnemies >= WORLD.maxEnemies) return false;
     const base = ENEMY_TYPES[type];
     const stage = STAGES[this.stageIndex];
     this.enemies.push({
@@ -395,15 +400,17 @@ export class Game {
     const level = upgradePower(p.build.primaryLevel);
     const overclock = upgradePower(p.build.passives.overclock || 0);
     const rate = 1 + overclock * .075;
-    const elementRanks = { burn: p.build.passives.incendiary || 0, chill: p.build.passives.cryo || 0, shock: p.build.passives.voltaic || 0 };
-    const statuses = Object.entries(elementRanks).filter(([, rank]) => rank > 0).map(([status]) => status);
-    const statusPowers = Object.fromEntries(Object.entries(elementRanks).map(([status, rank]) => [status, upgradePower(rank)]));
+    const primaryMaxed = p.build.primaryLevel >= WORLD.maxUpgradeRank;
+    const fixedStatus = primaryMaxed ? { vulcan: 'burn', laser: 'shock' }[p.craft.primary] : null;
+    const statuses = fixedStatus ? [fixedStatus] : [];
+    const statusPowers = fixedStatus ? { [fixedStatus]: level } : {};
     const add = (vx, vy, options = {}) => this.addPlayerBullet({
       id: this.entityId++, x: p.x + (options.ox || 0), y: p.y - 22 + (options.oy || 0), vx, vy,
       radius: options.radius || 4, damage: options.damage || 1, life: options.life || 110,
       color: options.color || p.craft.color, kind: options.kind || 'bolt', pierce: options.pierce || 0,
       splash: options.splash || 0, targetId: options.targetId, guidanceActive: options.guidanceActive,
       turn: options.turn || .055, reacquired: false, statuses: options.statuses || statuses, statusPowers: options.statusPowers || statusPowers,
+      thunderHammer: options.thunderHammer || false, hammerRadius: options.hammerRadius || 0, hammerDamage: options.hammerDamage || 0,
     });
     if (p.craft.primary === 'vulcan') {
       p.fireCooldown = Math.max(4, Math.round((11 - level) / rate));
@@ -413,15 +420,38 @@ export class Game {
         add(offset * .72, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
       }
     } else if (p.craft.primary === 'laser') {
-      p.fireCooldown = Math.max(5, Math.round((14 - level * 1.2) / rate));
-      add(0, -13.6, { damage: 2.1 + level * .48, radius: 3 + level * .5, pierce: 1 + Math.floor(level / 2), kind: 'laser', color: '#7df5ff' });
-      if (level >= 4) { add(-.3, -12.7, { damage: 1.1, radius: 2.5, ox: -10, pierce: 1, color: '#42e8ff' }); add(.3, -12.7, { damage: 1.1, radius: 2.5, ox: 10, pierce: 1, color: '#42e8ff' }); }
+      p.fireCooldown = 0;
+      const beamData = {
+        x: p.x, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: 3 + level * .55,
+        damage: .22 + level * .055, life: 2, color: '#7df5ff', kind: 'beam',
+        maxTargets: 1 + Math.floor(level / 2), statuses, statusPowers,
+      };
+      const beam = this.playerBullets.find(bullet => bullet.kind === 'beam');
+      if (beam) Object.assign(beam, beamData);
+      else this.addPlayerBullet({ id: this.entityId++, ...beamData });
     } else {
       p.fireCooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
-      add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166' });
-      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, color: '#fb923c' }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, color: '#fb923c' }); }
+      const hammer = primaryMaxed ? { thunderHammer: true, hammerRadius: 78 + level * 4, hammerDamage: 6 + level * 1.6 } : {};
+      add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166', ...hammer });
+      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, color: '#fb923c', ...hammer }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, color: '#fb923c', ...hammer }); }
     }
     this.sound('shoot');
+  }
+
+  nearestEnemies(origin, limit, maxDistanceSq = Infinity, excludedId = null) {
+    const selected = [];
+    while (selected.length < limit) {
+      let nearest = null;
+      let nearestDistance = maxDistanceSq;
+      for (const enemy of this.enemies) {
+        if (!enemy.alive || enemy.id === excludedId || selected.includes(enemy)) continue;
+        const d2 = distanceSq(origin, enemy);
+        if (d2 < nearestDistance) { nearest = enemy; nearestDistance = d2; }
+      }
+      if (!nearest) break;
+      selected.push(nearest);
+    }
+    return selected;
   }
 
   updateSecondaries() {
@@ -451,7 +481,7 @@ export class Game {
         }
         p.secondaryCooldowns[id] = Math.max(18, 48 - level * 5);
       } else if (id === 'chain') {
-        const targets = [...this.enemies].filter(e => e.alive).sort((a, b) => distanceSq(p, a) - distanceSq(p, b)).slice(0, Math.min(4, 1 + level));
+        const targets = this.nearestEnemies(p, Math.min(4, 1 + level));
         if (targets.length) {
           let previous = { x: p.x, y: p.y };
           const points = [{ ...previous }];
@@ -474,7 +504,7 @@ export class Game {
         if (target) this.addEffect({ type: 'gravity', x: target.x, y: target.y, radius: 52 + level * 6, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0 });
         p.secondaryCooldowns[id] = Math.max(95, 190 - level * 15);
       } else if (id === 'prism') {
-        const targets = [...this.enemies].filter(enemy => enemy.alive).sort((a, b) => distanceSq(p, a) - distanceSq(p, b)).slice(0, Math.min(5, 1 + level));
+        const targets = this.nearestEnemies(p, Math.min(5, 1 + level));
         if (targets.length) {
           const points = [{ x: p.x, y: p.y }, ...targets.map(target => ({ x: target.x, y: target.y }))];
           for (const target of targets) this.damageEnemy(target, 2.2 + level * 1.05, false);
@@ -501,6 +531,21 @@ export class Game {
   updatePlayerBullets() {
     for (let i = this.playerBullets.length - 1; i >= 0; i -= 1) {
       const bullet = this.playerBullets[i];
+      if (bullet.kind === 'beam') {
+        bullet.x = this.player.x;
+        bullet.y = this.player.y - 22;
+        bullet.life -= 1;
+        let targets = 0;
+        for (const enemy of this.enemies) {
+          if (!enemy.alive || enemy.y > bullet.y || Math.abs(enemy.x - bullet.x) > enemy.radius + bullet.radius) continue;
+          this.damageEnemy(enemy, this.rollDamage(bullet.damage), true);
+          this.applyBulletStatus(bullet, enemy);
+          targets += 1;
+          if (targets >= bullet.maxTargets) break;
+        }
+        if (bullet.life <= 0) this.playerBullets.splice(i, 1);
+        continue;
+      }
       if (bullet.kind === 'missile' && bullet.guidanceActive) {
         let guided = updateGuidance(bullet, this.enemies, bullet);
         if (!guided.guidanceActive && !bullet.reacquired && upgradePower(this.player.build.passives.guidance || 0) >= 5) {
@@ -516,9 +561,11 @@ export class Game {
         const rr = bullet.radius + enemy.radius;
         if (distanceSq(bullet, enemy) > rr * rr) continue;
         bullet.hitIds ||= new Set(); bullet.hitIds.add(enemy.id);
+        const wasAlive = enemy.alive;
         this.damageEnemy(enemy, this.rollDamage(bullet.damage), true);
         this.applyBulletStatus(bullet, enemy);
         if (bullet.splash) this.areaDamage(bullet.x, bullet.y, bullet.splash, bullet.damage * .45, enemy.id);
+        if (wasAlive && !enemy.alive && bullet.thunderHammer) this.triggerThunderHammer(enemy.x, enemy.y, bullet.hammerRadius, bullet.hammerDamage, enemy.id);
         if (bullet.pierce > 0) bullet.pierce -= 1;
         else { this.playerBullets.splice(i, 1); removed = true; }
         break;
@@ -546,10 +593,7 @@ export class Game {
         enemy.chillStacks = (enemy.chillStacks || 0) + 1;
         if (enemy.chillStacks >= 6) { enemy.freezeTimer = 20 + power * 4; enemy.chillStacks = 0; }
       } else if (status === 'shock' && (enemy.shockCooldown || 0) <= 0) {
-        const targets = this.enemies
-          .filter(target => target.alive && target.id !== enemy.id && distanceSq(target, enemy) <= 180 ** 2)
-          .sort((a, b) => distanceSq(a, enemy) - distanceSq(b, enemy))
-          .slice(0, Math.min(3, 1 + Math.floor(power / 2)));
+        const targets = this.nearestEnemies(enemy, Math.min(3, 1 + Math.floor(power / 2)), 180 ** 2, enemy.id);
         if (targets.length) {
           const points = [{ x: enemy.x, y: enemy.y }];
           for (const target of targets) { this.damageEnemy(target, bullet.damage * .32, false); points.push({ x: target.x, y: target.y }); }
@@ -570,7 +614,7 @@ export class Game {
     if (enemy.burnTimer > 0 && this.frame % 15 === 0) this.damageEnemy(enemy, enemy.burnDamage || .1, false);
     if (!enemy.alive) return 0;
     if (enemy.chillTimer <= 0 && enemy.freezeTimer <= 0) enemy.chillStacks = 0;
-    const heavy = ['elite', 'midboss', 'boss'].includes(enemy.type);
+    const heavy = isLargeEnemyType(enemy.type);
     if (enemy.freezeTimer > 0) return heavy ? .82 : .18;
     if (enemy.chillTimer > 0) return heavy ? .88 : .62;
     return 1;
@@ -607,10 +651,17 @@ export class Game {
   updateMidboss(enemy) {
     const stage = STAGES[this.stageIndex];
     const motionScale = enemy.motionScale || 1;
-    if (enemy.y < 145) enemy.y += 1.15 * motionScale;
-    else {
-      enemy.x = this.w / 2 + Math.sin(enemy.age / 42) * 118;
-      enemy.y = 145 + Math.sin(enemy.age / 31) * 12;
+    if (!enemy.orbiting) {
+      enemy.y = Math.min(145, enemy.y + 1.15 * motionScale);
+      if (enemy.y >= 145) {
+        enemy.orbiting = true;
+        enemy.orbitAge = 0;
+        enemy.orbitCenterX = enemy.x;
+      }
+    } else {
+      enemy.orbitAge += motionScale;
+      enemy.x = enemy.orbitCenterX + Math.sin(enemy.orbitAge / 42) * 118;
+      enemy.y = 145 + Math.sin(enemy.orbitAge / 31) * 12;
     }
     enemy.cooldown -= motionScale;
     if (enemy.y >= 80 && enemy.cooldown <= 0) {
@@ -654,17 +705,23 @@ export class Game {
 
   updateBoss(boss) {
     const motionScale = boss.motionScale || 1;
-    if (boss.y < 118) boss.y += 1.35 * motionScale;
-    else {
-      boss.x = this.w / 2 + Math.sin(boss.age / (50 - this.stageIndex * 3)) * (105 + this.stageIndex * 8);
-      boss.y = 118 + Math.sin(boss.age / 37) * 22;
+    if (!boss.orbiting) {
+      boss.y = Math.min(118, boss.y + 1.35 * motionScale);
+      if (boss.y >= 118) {
+        boss.orbiting = true;
+        boss.orbitAge = 0;
+        boss.orbitCenterX = boss.x;
+      }
+    } else {
+      boss.orbitAge += motionScale;
+      boss.x = boss.orbitCenterX + Math.sin(boss.orbitAge / (50 - this.stageIndex * 3)) * (105 + this.stageIndex * 8);
+      boss.y = 118 + Math.sin(boss.orbitAge / 37) * 22;
     }
     const ratio = boss.hp / boss.maxHp;
     const phase = ratio > .67 ? 0 : ratio > .34 ? 1 : 2;
     if (phase !== boss.phase) {
       boss.phase = phase;
       boss.cooldown = 45;
-      this.enemyBullets = [];
       this.announce(`PHASE ${phase + 1}`, BOSSES[boss.bossId].phases[phase].toUpperCase(), 950);
       this.spawnBurst(boss.x, boss.y, 24, boss.color);
     }
@@ -682,25 +739,25 @@ export class Game {
       for (let n = 0; n < count; n += 1) { if (skip(n)) continue; const a = n / count * TAU + offset; this.addEnemyBullet(boss.x, boss.y, Math.cos(a) * bulletSpeed, Math.sin(a) * bulletSpeed, 5, boss.color); }
     };
     if (boss.bossId === 'manta') {
-      if (boss.phase === 0) for (let n = -3; n <= 3; n += 1) this.aim(boss, speed, n * .13);
-      else if (boss.phase === 1) radial(10, speed * .88, boss.age * .025);
-      else { for (let x = 25; x < this.w; x += 42) if (Math.abs(x - this.player.x) > 45) this.addEnemyBullet(x, boss.y + 12, 0, speed * 1.28, 5.5, '#ff3158'); }
+      for (let n = -3; n <= 3; n += 1) this.aim(boss, speed, n * .13);
+      if (boss.phase >= 1) radial(10, speed * .88, boss.age * .025);
+      if (boss.phase >= 2) for (let x = 25; x < this.w; x += 42) if (Math.abs(x - this.player.x) > 45) this.addEnemyBullet(x, boss.y + 12, 0, speed * 1.28, 5.5, '#ff3158');
     } else if (boss.bossId === 'carrier') {
-      if (boss.phase === 0) { this.aim({ ...boss, x: boss.x - 38 }, speed); this.aim({ ...boss, x: boss.x + 38 }, speed); }
-      else if (boss.phase === 1) radial(12, speed * .58, boss.age * .01);
-      else { for (let i = 0; i < 2; i += 1) this.spawnEnemy('striker', boss.x + (i ? 55 : -55), boss.y + 20, 1.25, 2, i); for (let n = -3; n <= 3; n += 1) this.aim(boss, speed, n * .16); }
+      this.aim({ ...boss, x: boss.x - 38 }, speed); this.aim({ ...boss, x: boss.x + 38 }, speed);
+      if (boss.phase >= 1) radial(12, speed * .58, boss.age * .01);
+      if (boss.phase >= 2) { for (let i = 0; i < 2; i += 1) this.spawnEnemy('striker', boss.x + (i ? 55 : -55), boss.y + 20, 1.25, 2, i); for (let n = -3; n <= 3; n += 1) this.aim(boss, speed, n * .16); }
     } else if (boss.bossId === 'seraph') {
-      if (boss.phase === 0) { for (const x of [boss.x - 42, boss.x + 42]) for (let n = -1; n <= 1; n += 1) this.aim({ ...boss, x }, speed, n * .14); }
-      else if (boss.phase === 1) radial(16, speed * .78, boss.age * .055);
-      else { this.aim(boss, speed * 1.75); this.aim(boss, speed * 1.25, -.09); this.aim(boss, speed * 1.25, .09); }
+      for (const x of [boss.x - 42, boss.x + 42]) for (let n = -1; n <= 1; n += 1) this.aim({ ...boss, x }, speed, n * .14);
+      if (boss.phase >= 1) radial(16, speed * .78, boss.age * .055);
+      if (boss.phase >= 2) { this.aim(boss, speed * 1.75); this.aim(boss, speed * 1.25, -.09); this.aim(boss, speed * 1.25, .09); }
     } else if (boss.bossId === 'leviathan') {
-      if (boss.phase === 0) radial(14, speed * .7, Math.sin(boss.age / 30));
-      else if (boss.phase === 1) { for (let n = 0; n < 5; n += 1) this.aim(boss, speed * rand(.72, 1.12), rand(-.45, .45)); }
-      else radial(22, speed, boss.age * .02, n => n % 11 === 5 || n % 11 === 6);
+      radial(14, speed * .7, Math.sin(boss.age / 30));
+      if (boss.phase >= 1) for (let n = 0; n < 5; n += 1) this.aim(boss, speed * rand(.72, 1.12), rand(-.45, .45));
+      if (boss.phase >= 2) radial(22, speed, boss.age * .02, n => n % 11 === 5 || n % 11 === 6);
     } else {
-      if (boss.phase === 0) { for (const x of [28, this.w - 28]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, 100 + n * 40, x < this.w / 2 ? speed : -speed, speed * .45, 5, '#c084fc'); }
-      else if (boss.phase === 1) radial(20, speed * .82, boss.age * .075);
-      else { radial(28, speed * 1.05, boss.age * .028, n => n >= 12 && n <= 15); this.aim(boss, speed * 1.7); }
+      for (const x of [28, this.w - 28]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, 100 + n * 40, x < this.w / 2 ? speed : -speed, speed * .45, 5, '#c084fc');
+      if (boss.phase >= 1) radial(20, speed * .82, boss.age * .075);
+      if (boss.phase >= 2) { radial(28, speed * 1.05, boss.age * .028, n => n >= 12 && n <= 15); this.aim(boss, speed * 1.7); }
     }
     this.sound('enemy');
   }
@@ -721,15 +778,28 @@ export class Game {
   damageEnemy(enemy, damage, particles = true) {
     if (!enemy.alive) return;
     enemy.hp -= damage;
-    if (particles && ['boss', 'midboss', 'elite'].includes(enemy.type)) enemy.hitFlash = 4;
+    if (particles && isLargeEnemyType(enemy.type)) enemy.hitFlash = 4;
     else if (particles) this.spawnBurst(enemy.x, enemy.y, 2, enemy.color);
     if (enemy.hp <= 0) this.killEnemy(enemy);
   }
 
   areaDamage(x, y, radius, damage, ignoredId = null) {
     const r2 = radius * radius;
-    for (const enemy of this.enemies) if (enemy.alive && enemy.id !== ignoredId && distanceSq({ x, y }, enemy) <= r2) this.damageEnemy(enemy, damage, false);
+    for (const enemy of this.enemies) {
+      const dx = enemy.x - x; const dy = enemy.y - y;
+      if (enemy.alive && enemy.id !== ignoredId && dx * dx + dy * dy <= r2) this.damageEnemy(enemy, damage, false);
+    }
     this.addEffect({ type: 'ring', x, y, radius: 3, maxRadius: radius, life: 14, maxLife: 14, color: '#ffd166' });
+  }
+
+  triggerThunderHammer(x, y, radius, damage, ignoredId = null) {
+    const r2 = radius * radius;
+    for (const enemy of this.enemies) {
+      const dx = enemy.x - x; const dy = enemy.y - y;
+      if (enemy.alive && enemy.id !== ignoredId && dx * dx + dy * dy <= r2) this.damageEnemy(enemy, damage, false);
+    }
+    this.addEffect({ type: 'hammer', x, y, radius: 8, maxRadius: radius, life: 18, maxLife: 18, color: '#7dd3fc' });
+    this.spawnBurst(x, y, 18, ['#fff', '#7dd3fc', '#facc15']);
   }
 
   killEnemy(enemy) {
@@ -861,6 +931,7 @@ export class Game {
     } else if (choice.id === 'repair') p.hp = Math.min(p.maxHp, p.hp + 2);
     else if (choice.id === 'bomb') p.bombs = Math.min(p.maxBombs, p.bombs + 1);
     else this.score += 2500;
+    p.build.revision += 1;
     p.pendingLevels -= 1;
     p.inputLock = 18;
     this.pointer.active = false;
@@ -924,7 +995,8 @@ export class Game {
     this.enemyBullets = [];
     const level = upgradePower(this.player.build.passives.bombcap || 0);
     for (const enemy of [...this.enemies]) {
-      const damage = enemy.type === 'boss' ? Math.min(enemy.maxHp * .04, 42 + level * 8) : 9999;
+      const large = isLargeEnemyType(enemy.type);
+      const damage = large ? Math.min(enemy.maxHp * .25, 52 + level * 10) : enemy.hp + 1;
       this.damageEnemy(enemy, damage, false);
     }
     this.addEffect({ type: 'ring', x: this.player.x, y: this.player.y, radius: 10, maxRadius: 500, life: 42, maxLife: 42, color: '#ffd166' });
@@ -962,9 +1034,34 @@ export class Game {
     this.sound(victory ? 'victory' : 'gameover');
   }
 
+  updatePausePanel() {
+    if (!this.player) return;
+    const p = this.player;
+    const list = (items, catalog) => Object.entries(items).map(([id, rank]) => `${catalog[id].name} Lv.${rank}`).join('　/　') || '尚未取得';
+    const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${p.craft.mastery}` : '';
+    this.dom['pause-primary'].textContent = `${p.craft.name} · ${p.craft.primary.toUpperCase()} · Lv.${p.build.primaryLevel}${mastery}`;
+    this.dom['pause-secondary'].textContent = list(p.build.secondaries, SECONDARIES);
+    this.dom['pause-passive'].textContent = list(p.build.passives, PASSIVES);
+  }
+
+  setPaused(paused) {
+    if (paused && this.mode === 'playing') {
+      this.mode = 'paused';
+      this.pointer.active = false;
+      this.keys.clear();
+      this.updatePausePanel();
+      this.dom['pause-overlay'].classList.remove('hidden');
+      this.dom['pause-button'].textContent = 'RESUME';
+    } else if (!paused && this.mode === 'paused') {
+      this.mode = 'playing';
+      this.dom['pause-overlay'].classList.add('hidden');
+      this.dom['pause-button'].textContent = 'PAUSE';
+    }
+  }
+
   togglePause() {
-    if (this.mode === 'playing') { this.mode = 'paused'; this.dom['pause-button'].textContent = 'RESUME'; this.announce('PAUSED', '按 P / ESC 或 RESUME 繼續', 900); }
-    else if (this.mode === 'paused') { this.mode = 'playing'; this.dom['pause-button'].textContent = 'PAUSE'; }
+    if (this.mode === 'playing') this.setPaused(true);
+    else if (this.mode === 'paused') this.setPaused(false);
   }
 
   toggleMute() {
@@ -1038,7 +1135,8 @@ export class Game {
     setText('score', String(this.score).padStart(7, '0'));
     setText('stage', p ? `S${String(stage.id).padStart(2, '0')}` : '—');
     setText('level', p ? String(p.level).padStart(2, '0') : '—');
-    setText('hp', p ? '●'.repeat(p.hp) + '○'.repeat(Math.max(0, p.maxHp - p.hp)) : '—');
+    const displayedHp = p ? clamp(Math.ceil(p.hp), 0, p.maxHp) : 0;
+    setText('hp', p ? '●'.repeat(displayedHp) + '○'.repeat(p.maxHp - displayedHp) : '—');
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
     setText('bomb-count', p?.bombs ?? 0);
     setStyle('xp-bar', 'width', p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%');
@@ -1050,9 +1148,13 @@ export class Game {
     setClass('midboss-node', 'cleared', Boolean(!midboss && checkpointCleared));
     setClass('boss-node', 'active', Boolean(boss || routeMode === 'bossWarning'));
     setClass('boss-node', 'cleared', Boolean(!boss && routeMode !== 'bossWarning' && (routeMode === 'stageClear' || routeMode === 'victory')));
-    setText('primary-build', p ? `${p.craft.name} ${p.craft.primary.toUpperCase()} Lv.${p.build.primaryLevel}` : '—');
-    setText('secondary-build', p ? Object.entries(p.build.secondaries).map(([id,l]) => `${SECONDARIES[id].name} ${l}`).join(' · ') || '尚未取得' : '—');
-    setText('passive-build', p ? Object.entries(p.build.passives).map(([id,l]) => `${PASSIVES[id].name} ${l}`).join(' · ') || '尚未取得' : '—');
+    const buildRevision = p?.build.revision ?? -1;
+    if (buildRevision !== this.hudBuildRevision) {
+      setText('primary-build', p ? `${p.craft.name} ${p.craft.primary.toUpperCase()} Lv.${p.build.primaryLevel}` : '—');
+      setText('secondary-build', p ? Object.entries(p.build.secondaries).map(([id,l]) => `${SECONDARIES[id].name} ${l}`).join(' · ') || '尚未取得' : '—');
+      setText('passive-build', p ? Object.entries(p.build.passives).map(([id,l]) => `${PASSIVES[id].name} ${l}`).join(' · ') || '尚未取得' : '—');
+      this.hudBuildRevision = buildRevision;
+    }
     setText('mute-button', this.muted ? 'MUTED' : 'SOUND');
   }
 
@@ -1108,7 +1210,13 @@ export class Game {
   }
 
   drawBullets(ctx) {
-    for(const b of this.playerBullets){ctx.fillStyle=b.color;ctx.globalAlpha=.22;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.5,0,TAU);ctx.fill();ctx.globalAlpha=1;if(b.kind==='laser'||b.kind==='rail'){ctx.fillRect(b.x-b.radius/2,b.y-16,b.radius,32);}else{ctx.beginPath();ctx.ellipse(b.x,b.y,b.radius,b.radius*(b.kind==='missile'?1.8:1.4),0,0,TAU);ctx.fill();}const colors={burn:'#ff8a4c',chill:'#42e8ff',shock:'#facc15'};(b.statuses||[]).forEach((status,index)=>{ctx.strokeStyle=colors[status];ctx.lineWidth=2;ctx.globalAlpha=.8;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*1.8+index*3,0,TAU);ctx.stroke();});ctx.globalAlpha=1;}
+    for(const b of this.playerBullets){
+      if(b.kind==='beam'){
+        ctx.save();ctx.strokeStyle='#42e8ff';ctx.globalAlpha=.2;ctx.lineWidth=b.radius*3;ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x,b.endY);ctx.stroke();ctx.globalAlpha=.95;ctx.strokeStyle='#dffcff';ctx.lineWidth=Math.max(2,b.radius*.52);ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x,b.endY);ctx.stroke();
+        if(b.statuses?.includes('shock')){ctx.strokeStyle='#facc15';ctx.globalAlpha=.75;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(b.x,b.y);for(let y=b.y-24,step=0;y>b.endY;y-=24,step+=1)ctx.lineTo(b.x+(step%2?4:-4),Math.max(y,b.endY));ctx.stroke();}ctx.restore();continue;
+      }
+      ctx.fillStyle=b.color;ctx.globalAlpha=.22;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.5,0,TAU);ctx.fill();ctx.globalAlpha=1;if(b.kind==='rail'){ctx.fillRect(b.x-b.radius/2,b.y-16,b.radius,32);}else{ctx.beginPath();ctx.ellipse(b.x,b.y,b.radius,b.radius*(b.kind==='missile'?1.8:1.4),0,0,TAU);ctx.fill();}const colors={burn:'#ff8a4c',chill:'#42e8ff',shock:'#facc15'};(b.statuses||[]).forEach((status,index)=>{ctx.strokeStyle=colors[status];ctx.lineWidth=2;ctx.globalAlpha=.8;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*1.8+index*3,0,TAU);ctx.stroke();});ctx.globalAlpha=1;
+    }
     for(const b of this.enemyBullets){ctx.fillStyle=b.color;ctx.globalAlpha=.18;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.2,0,TAU);ctx.fill();ctx.globalAlpha=1;ctx.beginPath();ctx.arc(b.x,b.y,b.radius,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.globalAlpha=.55;ctx.beginPath();ctx.arc(b.x-1.5,b.y-1.5,b.radius*.28,0,TAU);ctx.fill();ctx.globalAlpha=1;}
   }
 
@@ -1119,6 +1227,7 @@ export class Game {
       else if(e.type==='mine'){ctx.fillStyle='#fb7185';ctx.beginPath();ctx.arc(e.x,e.y,8+Math.sin(this.frame/5)*2,0,TAU);ctx.fill();ctx.strokeStyle='rgba(251,113,133,.35)';ctx.beginPath();ctx.arc(e.x,e.y,e.trigger,0,TAU);ctx.stroke();}
       else if(e.type==='bombard'){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
       else if(e.type==='gravity'){ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,12+Math.sin(this.frame*.18)*5,0,TAU);ctx.stroke();}
+      else if(e.type==='hammer'){const t=1-e.life/e.maxLife;const radius=8+(e.maxRadius-8)*t;ctx.save();ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#facc15';ctx.lineWidth=2;for(let n=0;n<4;n+=1){const a=n/4*TAU+Math.PI/4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
       else if(e.type==='ring'){const t=1-e.life/e.maxLife;e.radius+=(e.maxRadius-e.radius)*.12;ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=4;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       else if(e.type==='supply'){const color=e.supply==='heal'?'#ff3158':'#ffd166';const radius=e.radius||16;ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.4;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,radius+5+Math.sin(this.frame*.16)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.shadowColor=color;ctx.shadowBlur=12;ctx.fillStyle=color;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#07111d';ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(e.supply==='heal'?'+':'B',e.x,e.y+1);ctx.restore();}
     }

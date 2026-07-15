@@ -14,9 +14,9 @@ export const WORLD = {
 export const BUILD_LIMITS = { secondary: 3, passive: 6 };
 
 export const AIRCRAFT = {
-  falcon: { id: 'falcon', name: 'FALCON', subtitle: '散射突擊機', color: '#ff3158', speed: 5.8, hp: 4, primary: 'vulcan', description: '寬角火力與高機動，適合近距離壓制。' },
-  lancer: { id: 'lancer', name: 'LANCER', subtitle: '貫通雷射機', color: '#42e8ff', speed: 5.1, hp: 4, primary: 'laser', description: '窄角貫通雷射，對大型目標有優勢。' },
-  wasp: { id: 'wasp', name: 'WASP', subtitle: '重型爆破機', color: '#ffd166', speed: 4.5, hp: 5, primary: 'cannon', description: '慢速爆破彈與高耐久，擅長範圍清場。' },
+  falcon: { id: 'falcon', name: 'FALCON', subtitle: '散射突擊機', color: '#ff3158', speed: 5.8, hp: 4, primary: 'vulcan', mastery: '熔蝕彈', description: '寬角火力與高機動；滿級追加火焰持續傷害。' },
+  lancer: { id: 'lancer', name: 'LANCER', subtitle: '貫通雷射機', color: '#42e8ff', speed: 5.1, hp: 4, primary: 'laser', mastery: '連鎖電擊', description: '連續貫通射線；滿級後命中會跳躍電擊。' },
+  wasp: { id: 'wasp', name: 'WASP', subtitle: '重型爆破機', color: '#ffd166', speed: 4.5, hp: 5, primary: 'cannon', mastery: '雷神之鎚', description: '慢速爆破彈；滿級後擊殺會引發範圍雷爆。' },
 };
 
 export const SECONDARIES = {
@@ -40,9 +40,6 @@ export const PASSIVES = {
   guidance: { id: 'guidance', name: '導引電腦', max: 3, requiresSecondary: 'homing', description: '提升追蹤轉向；滿級允許一次重新鎖定。' },
   bombcap: { id: 'bombcap', name: '炸彈電容', max: 3, description: '增加炸彈上限與爆炸傷害。' },
   engine: { id: 'engine', name: '引擎調校', max: 3, description: '提升移動速度。' },
-  incendiary: { id: 'incendiary', name: '熔蝕彈頭', max: 3, requiresPrimaryLevel: 3, description: '主武器滿級後解鎖燃燒彈；持續灼燒目標。' },
-  cryo: { id: 'cryo', name: '霜凍透鏡', max: 3, requiresPrimaryLevel: 3, description: '主武器滿級後解鎖冰晶彈；緩速並凍結小型敵人。' },
-  voltaic: { id: 'voltaic', name: '電弧增幅器', max: 3, requiresPrimaryLevel: 3, description: '主武器滿級後解鎖電弧彈；向鄰近目標跳躍。' },
 };
 
 export const STAGES = [

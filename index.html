@@ -54,6 +54,16 @@
         <div id="upgrade-options" class="upgrade-options"></div>
       </section>
 
+      <section id="pause-overlay" class="overlay pause-overlay hidden" aria-label="暫停與裝備狀態">
+        <div class="pause-heading"><small>TACTICAL STATUS</small><h2>PAUSED</h2></div>
+        <div class="pause-loadout">
+          <article><small>PRIMARY</small><p id="pause-primary">—</p></article>
+          <article><small>SECONDARY</small><p id="pause-secondary">—</p></article>
+          <article><small>PASSIVE</small><p id="pause-passive">—</p></article>
+        </div>
+        <button id="resume-button" class="primary-button">繼續作戰</button>
+      </section>
+
       <section id="end-overlay" class="overlay end-overlay hidden">
         <p id="end-kicker">RUN TERMINATED</p>
         <h2 id="end-title">MISSION FAILED</h2>

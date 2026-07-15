@@ -128,6 +128,31 @@ test('large-enemy hits use a stable flash instead of geometry shifts or impact b
   }
 });
 
+test('large enemies enter their orbit without snapping backward or sideways', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+
+  const midboss = {
+    id: 1, type: 'midboss', x: 240, y: 144.5, age: 220, motionScale: 1,
+    cooldown: 999, hp: 100, maxHp: 100, alive: true, radius: 34,
+  };
+  game.updateMidboss(midboss);
+  const midbossEntry = { x: midboss.x, y: midboss.y };
+  game.updateMidboss(midboss);
+  assert.ok(Math.hypot(midboss.x - midbossEntry.x, midboss.y - midbossEntry.y) < 4);
+
+  const boss = {
+    id: 2, type: 'boss', bossId: 'manta', x: 240, y: 117.5, age: 150, motionScale: 1,
+    cooldown: 999, phase: 0, hp: 100, maxHp: 100, alive: true, radius: 52, color: '#fff',
+  };
+  game.updateBoss(boss);
+  const bossEntry = { x: boss.x, y: boss.y };
+  game.updateBoss(boss);
+  assert.ok(Math.hypot(boss.x - bossEntry.x, boss.y - bossEntry.y) < 4);
+});
+
 test('particle saturation drops overflow work instead of shifting the entire array', () => {
   const { game } = makeGame();
   const marker = { id: 'oldest' };
@@ -165,6 +190,50 @@ test('destroying a boss grants one immediate upgrade without XP or a next-stage 
   assert.equal(game.player.pendingLevels, 0);
 });
 
+test('boss phase changes preserve bullets already in flight', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.debugForceBoss();
+  const boss = game.enemies.find(enemy => enemy.type === 'boss');
+  boss.y = 118;
+  boss.orbiting = true;
+  boss.orbitAge = 0;
+  boss.orbitCenterX = boss.x;
+  boss.cooldown = 999;
+  boss.hp = boss.maxHp * .5;
+  const existing = { x: 20, y: 20, vx: 0, vy: 1, radius: 5, life: 120 };
+  game.enemyBullets = [existing];
+
+  game.updateBoss(boss);
+
+  assert.equal(boss.phase, 1);
+  assert.ok(game.enemyBullets.includes(existing));
+});
+
+test('later boss phases combine every earlier attack pattern', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.debugForceBoss();
+  const boss = game.enemies.find(enemy => enemy.type === 'boss');
+  boss.y = 118;
+  boss.age = 120;
+
+  const bulletCounts = [0, 1, 2].map(phase => {
+    boss.phase = phase;
+    game.enemyBullets = [];
+    game.bossAttack(boss);
+    return game.enemyBullets.length;
+  });
+
+  assert.equal(bulletCounts[0], 7);
+  assert.ok(bulletCounts[1] >= bulletCounts[0] + 10);
+  assert.ok(bulletCounts[2] >= bulletCounts[1] + 7);
+});
+
 test('end screen remains actionable when browser storage rejects a new high score', () => {
   for (const victory of [false, true]) {
     const { game } = makeGame();
@@ -198,6 +267,14 @@ test('multiple enemy bullets hitting in one frame only damage the player once', 
   assert.doesNotThrow(() => game.updateEnemyBullets());
   assert.equal(game.player.hp, hp - 1);
   assert.equal(game.enemyBullets.length, 0);
+});
+
+test('HUD clamps invalid negative HP instead of crashing the frame loop', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.player.hp = -1;
+  assert.doesNotThrow(() => game.updateHud());
+  assert.equal(game.dom.hp.textContent, '○'.repeat(game.player.maxHp));
 });
 
 test('stage clear has a short frame fallback and a real-time deadline', () => {
@@ -283,6 +360,27 @@ test('world scrolling pauses with gameplay instead of drifting behind frozen pic
   assert.equal(game.worldScroll, pausedAt + game.worldScrollSpeed());
 });
 
+test('pause mode shows the complete primary, secondary, and passive loadout', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 3;
+  game.player.build.secondaries = { homing: 1, gravity: 2, interceptor: 3 };
+  game.player.build.passives = { magnet: 1, armor: 2, critical: 3, salvage: 1, engine: 2, bombcap: 3 };
+
+  game.togglePause();
+
+  assert.equal(game.mode, 'paused');
+  assert.equal(game.dom['pause-overlay'].classList.contains('hidden'), false);
+  assert.match(game.dom['pause-primary'].textContent, /FALCON.*Lv\.3/);
+  assert.match(game.dom['pause-secondary'].textContent, /追蹤飛彈.*微型重力井.*攔截蜂群/);
+  assert.match(game.dom['pause-passive'].textContent, /磁力核心.*炸彈電容/);
+
+  game.togglePause();
+  assert.equal(game.dom['pause-overlay'].classList.contains('hidden'), true);
+});
+
 test('later-sector XP drops split into visibly distinct denominations', () => {
   const { game } = makeGame();
   game.start('falcon');
@@ -358,9 +456,9 @@ test('new secondary archetypes create distinct gravity, prism, and interception 
   assert.equal(game.enemyBullets.length, 0);
 });
 
-test('primary weapons gain elemental payloads only from independent post-max passives', () => {
-  const expected = { incendiary: 'burn', cryo: 'chill', voltaic: 'shock' };
-  for (const craftId of ['falcon', 'lancer', 'wasp']) {
+test('maxed primaries use one fixed craft-specific payload', () => {
+  const expected = { falcon: 'burn', lancer: 'shock' };
+  for (const [craftId, payload] of Object.entries(expected)) {
     const { game } = makeGame();
     game.start(craftId);
     game.chooseUpgrade(0);
@@ -368,19 +466,81 @@ test('primary weapons gain elemental payloads only from independent post-max pas
     game.player.build.primaryLevel = 3;
     game.player.fireCooldown = 0;
     game.firePrimary();
-    assert.ok(game.playerBullets.every(bullet => !bullet.status && !bullet.statuses?.length));
+    assert.ok(game.playerBullets.length > 0);
+    assert.ok(game.playerBullets.every(bullet => bullet.statuses?.length === 1 && bullet.statuses[0] === payload));
   }
 
-  for (const [passive, payload] of Object.entries(expected)) {
-    const { game } = makeGame();
-    game.start('falcon');
-    game.chooseUpgrade(0);
-    game.mode = 'playing';
-    game.player.build.primaryLevel = 3;
-    game.player.build.passives[passive] = 1;
-    game.player.fireCooldown = 0;
-    game.firePrimary();
-    assert.ok(game.playerBullets.some(bullet => bullet.statuses?.includes(payload)), `${passive} should apply ${payload}`);
+  const { game } = makeGame();
+  game.start('wasp');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 3;
+  game.player.fireCooldown = 0;
+  game.firePrimary();
+  assert.ok(game.playerBullets.every(bullet => bullet.thunderHammer && !bullet.statuses?.length));
+});
+
+test('lancer maintains one continuous beam that damages targets every frame', () => {
+  const { game } = makeGame();
+  game.start('lancer');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 3;
+  game.player.fireCooldown = 0;
+  game.firePrimary();
+  game.firePrimary();
+
+  assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'beam').length, 1);
+  const beam = game.playerBullets.find(bullet => bullet.kind === 'beam');
+  assert.equal(beam.endY, 0);
+  const enemy = { id: 91, type: 'scout', x: game.player.x, y: 200, radius: 12, hp: 100, maxHp: 100, alive: true, score: 1, xp: 1, color: '#fff' };
+  game.enemies = [enemy];
+  game.updatePlayerBullets();
+  assert.ok(enemy.hp < 100);
+  assert.equal(beam.y, game.player.y - 22);
+});
+
+test('wasp thunder hammer explodes when a primary shot destroys an enemy', () => {
+  const { game } = makeGame();
+  game.start('wasp');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 3;
+  game.player.fireCooldown = 0;
+  game.firePrimary();
+  const target = { id: 92, type: 'scout', x: 100, y: 100, radius: 10, hp: .1, maxHp: 10, alive: true, score: 1, xp: 0, color: '#fff' };
+  const nearby = { id: 93, type: 'scout', x: 170, y: 100, radius: 10, hp: 100, maxHp: 100, alive: true, score: 1, xp: 0, color: '#fff' };
+  const bullet = game.playerBullets.find(item => item.thunderHammer);
+  Object.assign(bullet, { x: target.x, y: target.y, vx: 0, vy: 0 });
+  game.playerBullets = [bullet];
+  game.enemies = [target, nearby];
+
+  game.updatePlayerBullets();
+
+  assert.equal(target.alive, false);
+  assert.ok(nearby.hp < 100);
+  assert.ok(game.effects.some(effect => effect.type === 'hammer'));
+});
+
+test('bombs destroy ordinary enemies but only damage large targets', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.inputLock = 0;
+  const enemy = type => ({ id: game.entityId++, type, x: 100, y: 100, radius: 20, hp: 100, maxHp: 100, alive: true, score: 1, xp: 0, color: '#fff' });
+  const scout = enemy('scout');
+  const elite = enemy('elite');
+  const midboss = enemy('midboss');
+  const boss = { ...enemy('boss'), bossId: 'manta' };
+  game.enemies = [scout, elite, midboss, boss];
+
+  assert.equal(game.useBomb(), true);
+
+  assert.equal(scout.alive, false);
+  for (const large of [elite, midboss, boss]) {
+    assert.equal(large.alive, true);
+    assert.ok(large.hp < large.maxHp);
   }
 });
 
