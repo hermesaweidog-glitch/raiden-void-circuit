@@ -22,7 +22,7 @@ export function seededShuffle(items, random = Math.random) {
 
 export function makeUpgradePool(build) {
   const pool = [];
-  if ((build.primaryLevel || 1) < 5) {
+  if ((build.primaryLevel || 1) < 3) {
     pool.push({ id: 'primary', category: 'primary', name: '主武器強化', description: '提升主武器火力與彈道。' });
   }
   const secondaries = build.secondaries || {};
@@ -45,15 +45,7 @@ export function makeUpgradePool(build) {
 }
 
 export function makeUpgradeChoices(build, random = Math.random) {
-  const pool = makeUpgradePool(build);
-  const owned = pool.filter(item => (item.level || 0) > 0 || item.id === 'primary');
-  const fresh = pool.filter(item => !owned.includes(item));
-  const choices = [];
-  if (owned.length) choices.push(seededShuffle(owned, random)[0]);
-  for (const item of seededShuffle([...fresh, ...pool], random)) {
-    if (!choices.some(choice => choice.id === item.id)) choices.push(item);
-    if (choices.length === 3) break;
-  }
+  const choices = seededShuffle(makeUpgradePool(build), random).slice(0, 3);
   const fallbacks = [
     { id: 'repair', category: 'supply', name: '緊急維修', description: '恢復 2 點生命。' },
     { id: 'bomb', category: 'supply', name: '炸彈補給', description: '補充 1 枚炸彈。' },
@@ -78,6 +70,10 @@ export function updateGuidance(missile, enemies, position) {
   const next = current + clamp(delta, -missile.turn, missile.turn);
   const speed = Math.hypot(missile.vx, missile.vy);
   return { ...missile, vx: Math.cos(next) * speed, vy: Math.sin(next) * speed };
+}
+
+export function upgradePower(rank) {
+  return [0, 1, 3, 5][clamp(Math.round(rank), 0, 3)];
 }
 
 export function xpForLevel(level) {

@@ -19,6 +19,12 @@ test('runtime budgets are explicit and mobile-safe', () => {
   assert.equal(WORLD.maxLevel, 22);
 });
 
+test('all persistent upgrades use exactly three ranks', () => {
+  assert.ok(Object.values(SECONDARIES).every(item => item.max === 3));
+  assert.ok(Object.values(PASSIVES).every(item => item.max === 3));
+  assert.equal(WORLD.maxUpgradeRank, 3);
+});
+
 test('difficulty rises discretely across all five stages', () => {
   for (let i = 1; i < STAGES.length; i += 1) {
     for (const key of ['enemySpeed', 'bulletSpeed', 'bulletCount', 'fireRate', 'enemyHp', 'bossHp']) {

@@ -1,9 +1,17 @@
 import { AIRCRAFT, SECONDARIES, PASSIVES, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
-import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, stagePressure, stageProgress, updateGuidance, xpForLevel } from './systems.js';
+import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, stagePressure, stageProgress, updateGuidance, upgradePower, xpForLevel } from './systems.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
 const choose = items => items[(Math.random() * items.length) | 0];
+const readStorage = (key, fallback = null) => {
+  try { return localStorage.getItem(key) ?? fallback; }
+  catch { return fallback; }
+};
+const writeStorage = (key, value) => {
+  try { localStorage.setItem(key, value); return true; }
+  catch { return false; }
+};
 
 export class Game {
   constructor(canvas) {
@@ -20,11 +28,12 @@ export class Game {
     this.mode = 'title';
     this.frame = 0;
     this.score = 0;
-    this.best = Number(localStorage.getItem('void-circuit-best') || 0);
+    this.best = Number(readStorage('void-circuit-best', '0'));
     this.stageIndex = 0;
     this.waveIndex = -1;
     this.waveCooldown = 0;
     this.transitionTimer = 0;
+    this.transitionDeadline = 0;
     this.entityId = 1;
     this.enemies = [];
     this.playerBullets = [];
@@ -36,8 +45,9 @@ export class Game {
     this.keys = new Set();
     this.pointer = { active: false, id: null, x: 0, y: 0, startX: 0, startY: 0, playerX: 0, playerY: 0 };
     this.touchSeen = matchMedia('(pointer: coarse)').matches;
-    this.muted = localStorage.getItem('void-circuit-muted') === '1';
+    this.muted = readStorage('void-circuit-muted') === '1';
     this.audio = null;
+    this.lastSoundFrame = {};
     this.lastTime = 0;
     this.accumulator = 0;
     this.announcementToken = 0;
@@ -68,7 +78,7 @@ export class Game {
       if (['KeyX', 'KeyB', 'ShiftLeft', 'ShiftRight'].includes(event.code)) this.useBomb();
       if (event.code === 'KeyP' || event.code === 'Escape') this.togglePause();
       if (event.code === 'KeyM') this.toggleMute();
-      if (event.code === 'Space' && this.mode === 'gameover') this.showTitle();
+      if (event.code === 'Space' && this.mode === 'gameover') this.restart();
     }, { passive: false });
     window.addEventListener('keyup', event => this.keys.delete(event.code));
     const point = event => {
@@ -104,6 +114,7 @@ export class Game {
 
   start(craftId = 'falcon') {
     const craft = AIRCRAFT[craftId] || AIRCRAFT.falcon;
+    this.lastCraftId = craft.id;
     this.frame = 0;
     this.score = 0;
     this.stageIndex = 0;
@@ -132,6 +143,10 @@ export class Game {
     this.showUpgrade();
   }
 
+  restart() {
+    this.start(this.lastCraftId || 'falcon');
+  }
+
   showTitle() {
     this.mode = 'title';
     this.dom['end-overlay'].classList.add('hidden');
@@ -150,7 +165,8 @@ export class Game {
     this.waveIndex = -1;
     this.waveCooldown = 0;
     this.mode = 'stageIntro';
-    this.transitionTimer = 155;
+    this.transitionTimer = 75;
+    this.transitionDeadline = performance.now() + 1250;
     this.enemies = [];
     this.playerBullets = [];
     this.enemyBullets = [];
@@ -162,15 +178,25 @@ export class Game {
   }
 
   loop(time) {
-    if (!this.lastTime) this.lastTime = time;
-    this.accumulator += Math.min(50, time - this.lastTime);
-    this.lastTime = time;
-    while (this.accumulator >= 1000 / 60) {
-      this.update();
-      this.accumulator -= 1000 / 60;
+    try {
+      if (!this.lastTime) this.lastTime = time;
+      this.accumulator += Math.min(50, time - this.lastTime);
+      this.lastTime = time;
+      while (this.accumulator >= 1000 / 60) {
+        this.update();
+        this.accumulator -= 1000 / 60;
+      }
+      this.render();
+    } catch (error) {
+      this.accumulator = 0;
+      console.error('Raiden frame recovered after an unexpected error', error);
     }
-    this.render();
     requestAnimationFrame(next => this.loop(next));
+  }
+
+  transitionElapsed() {
+    this.transitionTimer -= 1;
+    return this.transitionTimer <= 0 || (this.transitionDeadline > 0 && performance.now() >= this.transitionDeadline);
   }
 
   update() {
@@ -179,21 +205,24 @@ export class Game {
     if (!this.player || ['title', 'paused', 'levelup', 'gameover', 'victory'].includes(this.mode)) return;
     if (this.mode === 'stageIntro') {
       this.updatePlayer(true);
-      if (--this.transitionTimer <= 0) { this.mode = 'playing'; this.spawnNextWave(); }
+      if (this.transitionElapsed()) { this.mode = 'playing'; this.spawnNextWave(); }
       return;
     }
     if (this.mode === 'bossWarning') {
       this.updatePlayer(true);
       this.updatePlayerBullets();
-      if (--this.transitionTimer <= 0) { this.mode = 'playing'; this.spawnBoss(); }
+      if (this.transitionElapsed()) { this.mode = 'playing'; this.spawnBoss(); }
       return;
     }
     if (this.mode === 'stageClear') {
       this.updatePlayer(true);
       this.updateXpOrbs();
-      if (--this.transitionTimer <= 0) {
+      if (this.transitionElapsed()) {
         if (this.stageIndex >= STAGES.length - 1) this.endRun(true);
-        else this.startStage(this.stageIndex + 1);
+        else {
+          this.startStage(this.stageIndex + 1);
+          if (this.player.pendingLevels > 0) this.showUpgrade();
+        }
       }
       return;
     }
@@ -215,7 +244,8 @@ export class Game {
     if (this.waveIndex + 1 < stage.waves) this.spawnNextWave();
     else {
       this.mode = 'bossWarning';
-      this.transitionTimer = 175;
+      this.transitionTimer = 100;
+      this.transitionDeadline = performance.now() + 1700;
       this.enemyBullets = [];
       this.announce('WARNING', `${BOSSES[stage.boss].name} APPROACHING`, 2400);
       this.sound('warning');
@@ -229,23 +259,33 @@ export class Game {
     const waveNumber = this.waveIndex + 1;
     const isMidbossWave = waveNumber === stage.midbossWave;
     const isEliteWave = this.waveIndex === stage.waves - 1;
-    const count = 4 + this.stageIndex + Math.floor(this.waveIndex * .7);
-    const formation = this.waveIndex % 4;
+    const count = 6 + this.stageIndex + Math.floor(this.waveIndex * .85);
+    const formation = (this.waveIndex * 3 + this.stageIndex) % 7;
     if (isMidbossWave) {
-      this.spawnEnemy('midboss', this.w / 2, -110, pressure, 4, 0);
+      this.spawnEnemy('midboss', this.w / 2, -110, pressure, 7, 0);
+      this.announce('CHECKPOINT LOCKED', 'MIDBOSS SIGNATURE · DESTROY TO ADVANCE', 1500);
     } else {
       for (let i = 0; i < count; i += 1) {
         let type = 'scout';
         if (this.stageIndex >= 1 && (i + this.waveIndex) % 4 === 0) type = 'striker';
         if (this.stageIndex >= 2 && (i + this.waveIndex) % 5 === 0) type = 'gunship';
-        const xBase = formation === 0 ? 70 + (i % 6) * 68 : formation === 1 ? this.w / 2 + (i - count / 2) * 45 : rand(45, this.w - 45);
-        this.spawnEnemy(type, xBase, -45 - Math.floor(i / 6) * 55 - i * 8, pressure, formation, i);
+        const centerOffset = i - (count - 1) / 2;
+        let x = 70 + (i % 6) * 68;
+        let y = -45 - Math.floor(i / 6) * 60;
+        if (formation === 1) { x = this.w / 2 + centerOffset * 39; y = -50 - Math.abs(centerOffset) * 25; }
+        else if (formation === 2) { x = i % 2 ? this.w - 58 - Math.floor(i / 2) * 26 : 58 + Math.floor(i / 2) * 26; y = -45 - i * 30; }
+        else if (formation === 3) { const a = count <= 1 ? 0 : i / (count - 1) * Math.PI; x = this.w / 2 + Math.cos(a) * 175; y = -70 - Math.sin(a) * 105; }
+        else if (formation === 4) { x = rand(42, this.w - 42); y = -45 - (i % 3) * 74 - Math.floor(i / 3) * 26; }
+        else if (formation === 5) { x = i % 2 ? this.w - 48 : 48; y = -48 - i * 38; }
+        else if (formation === 6) { x = (i % 3 + 1) * this.w / 4 + rand(-24, 24); y = -48 - Math.floor(i / 3) * 82 - (i % 3) * 12; }
+        this.spawnEnemy(type, x, y, pressure, formation, i);
       }
-      if (isEliteWave) this.spawnEnemy('elite', this.w / 2, -125, pressure, 3, count + 1);
+      if (isEliteWave) {
+        this.spawnEnemy('elite', this.w / 2, -125, pressure, 7, count + 1);
+        this.announce('ELITE SIGNATURE', 'HIGH-VALUE TARGET INBOUND', 950);
+      }
     }
-    this.waveCooldown = 115 + Math.max(0, 40 - this.stageIndex * 8);
-    const signal = isMidbossWave ? 'MIDBOSS CHECKPOINT · DESTROY TO ADVANCE' : isEliteWave ? 'ELITE SIGNATURE DETECTED' : 'HOSTILES INBOUND';
-    this.announce(isMidbossWave ? 'CHECKPOINT LOCKED' : `WAVE ${waveNumber}/${stage.waves}`, signal, isMidbossWave ? 1500 : 850);
+    this.waveCooldown = 95 + Math.max(0, 30 - this.stageIndex * 6);
   }
 
   spawnEnemy(type, x, y, pressure, formation, index) {
@@ -277,7 +317,7 @@ export class Game {
 
   updatePlayer(transitionOnly) {
     const player = this.player;
-    const passive = id => player.build.passives[id] || 0;
+    const passive = id => upgradePower(player.build.passives[id] || 0);
     const speed = player.craft.speed * (1 + passive('engine') * .06);
     let dx = 0; let dy = 0;
     if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) dx -= 1;
@@ -316,38 +356,39 @@ export class Game {
   firePrimary() {
     const p = this.player;
     if (p.fireCooldown > 0 || this.mode !== 'playing') return;
-    const level = p.build.primaryLevel;
-    const overclock = p.build.passives.overclock || 0;
+    const level = upgradePower(p.build.primaryLevel);
+    const overclock = upgradePower(p.build.passives.overclock || 0);
     const rate = 1 + overclock * .075;
     const add = (vx, vy, options = {}) => this.addPlayerBullet({
       id: this.entityId++, x: p.x + (options.ox || 0), y: p.y - 22 + (options.oy || 0), vx, vy,
       radius: options.radius || 4, damage: options.damage || 1, life: options.life || 110,
       color: options.color || p.craft.color, kind: options.kind || 'bolt', pierce: options.pierce || 0,
       splash: options.splash || 0, targetId: options.targetId, guidanceActive: options.guidanceActive,
-      turn: options.turn || .055, reacquired: false,
+      turn: options.turn || .055, reacquired: false, status: options.status, statusPower: options.statusPower || level,
     });
     if (p.craft.primary === 'vulcan') {
       p.fireCooldown = Math.max(4, Math.round((11 - level) / rate));
       const count = 1 + Math.floor(level / 2) * 2;
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
-        add(offset * .72, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
+        add(offset * .72, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267', status: 'burn' });
       }
     } else if (p.craft.primary === 'laser') {
       p.fireCooldown = Math.max(5, Math.round((14 - level * 1.2) / rate));
-      add(0, -13.6, { damage: 2.1 + level * .48, radius: 3 + level * .5, pierce: 1 + Math.floor(level / 2), kind: 'laser', color: '#7df5ff' });
-      if (level >= 4) { add(-.3, -12.7, { damage: 1.1, radius: 2.5, ox: -10, pierce: 1, color: '#42e8ff' }); add(.3, -12.7, { damage: 1.1, radius: 2.5, ox: 10, pierce: 1, color: '#42e8ff' }); }
+      add(0, -13.6, { damage: 2.1 + level * .48, radius: 3 + level * .5, pierce: 1 + Math.floor(level / 2), kind: 'laser', color: '#7df5ff', status: 'chill' });
+      if (level >= 4) { add(-.3, -12.7, { damage: 1.1, radius: 2.5, ox: -10, pierce: 1, color: '#42e8ff', status: 'chill' }); add(.3, -12.7, { damage: 1.1, radius: 2.5, ox: 10, pierce: 1, color: '#42e8ff', status: 'chill' }); }
     } else {
       p.fireCooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
-      add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166' });
-      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, color: '#fb923c' }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, color: '#fb923c' }); }
+      add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166', status: 'shock' });
+      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, color: '#fb923c', status: 'shock' }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, color: '#fb923c', status: 'shock' }); }
     }
     this.sound('shoot');
   }
 
   updateSecondaries() {
     const p = this.player;
-    for (const [id, level] of Object.entries(p.build.secondaries)) {
+    for (const [id, rank] of Object.entries(p.build.secondaries)) {
+      const level = upgradePower(rank);
       p.secondaryCooldowns[id] = (p.secondaryCooldowns[id] || 0) - 1;
       if (p.secondaryCooldowns[id] > 0) continue;
       if (id === 'homing') {
@@ -358,7 +399,7 @@ export class Game {
             id: this.entityId++, x: p.x + (i - (count - 1) / 2) * 18, y: p.y,
             vx: (i - (count - 1) / 2) * .7, vy: -6.2, radius: 5, damage: 3 + level * 1.15,
             life: 190, color: '#ffb703', kind: 'missile', pierce: 0, splash: 14 + level * 2,
-            targetId: target.id, guidanceActive: true, turn: .035 + level * .009 + (p.build.passives.guidance || 0) * .005,
+            targetId: target.id, guidanceActive: true, turn: .035 + level * .009 + upgradePower(p.build.passives.guidance || 0) * .005,
             reacquired: false,
           });
         }
@@ -398,7 +439,7 @@ export class Game {
       const bullet = this.playerBullets[i];
       if (bullet.kind === 'missile' && bullet.guidanceActive) {
         let guided = updateGuidance(bullet, this.enemies, bullet);
-        if (!guided.guidanceActive && !bullet.reacquired && (this.player.build.passives.guidance || 0) >= 5) {
+        if (!guided.guidanceActive && !bullet.reacquired && upgradePower(this.player.build.passives.guidance || 0) >= 5) {
           const next = pickNearestTarget(bullet, this.enemies);
           if (next) guided = { ...guided, targetId: next.id, guidanceActive: true, reacquired: true };
         }
@@ -412,6 +453,7 @@ export class Game {
         if (distanceSq(bullet, enemy) > rr * rr) continue;
         bullet.hitIds ||= new Set(); bullet.hitIds.add(enemy.id);
         this.damageEnemy(enemy, this.rollDamage(bullet.damage), true);
+        this.applyBulletStatus(bullet, enemy);
         if (bullet.splash) this.areaDamage(bullet.x, bullet.y, bullet.splash, bullet.damage * .45, enemy.id);
         if (bullet.pierce > 0) bullet.pierce -= 1;
         else { this.playerBullets.splice(i, 1); removed = true; }
@@ -422,24 +464,66 @@ export class Game {
   }
 
   rollDamage(base) {
-    const level = this.player.build.passives.critical || 0;
+    const level = upgradePower(this.player.build.passives.critical || 0);
     return Math.random() < level * .055 ? base * (1.65 + level * .07) : base;
+  }
+
+  applyBulletStatus(bullet, enemy) {
+    if (!bullet.status) return;
+    const power = bullet.statusPower || 1;
+    if (bullet.status === 'burn') {
+      enemy.burnTimer = Math.max(enemy.burnTimer || 0, 90 + power * 12);
+      enemy.burnDamage = Math.max(enemy.burnDamage || 0, .08 + power * .035);
+    } else if (bullet.status === 'chill') {
+      enemy.chillTimer = Math.max(enemy.chillTimer || 0, 75 + power * 6);
+      enemy.chillStacks = (enemy.chillStacks || 0) + 1;
+      if (enemy.chillStacks >= 6) { enemy.freezeTimer = 20 + power * 4; enemy.chillStacks = 0; }
+    } else if (bullet.status === 'shock' && (enemy.shockCooldown || 0) <= 0) {
+      const targets = this.enemies
+        .filter(target => target.alive && target.id !== enemy.id && distanceSq(target, enemy) <= 180 ** 2)
+        .sort((a, b) => distanceSq(a, enemy) - distanceSq(b, enemy))
+        .slice(0, Math.min(3, 1 + Math.floor(power / 2)));
+      if (targets.length) {
+        const points = [{ x: enemy.x, y: enemy.y }];
+        for (const target of targets) { this.damageEnemy(target, bullet.damage * .32, false); points.push({ x: target.x, y: target.y }); }
+        this.addEffect({ type: 'arc', points, life: 9, maxLife: 9 });
+      }
+      enemy.shockCooldown = 10;
+    }
+  }
+
+  updateEnemyStatus(enemy) {
+    enemy.shockCooldown = Math.max(0, (enemy.shockCooldown || 0) - 1);
+    enemy.burnTimer = Math.max(0, (enemy.burnTimer || 0) - 1);
+    enemy.chillTimer = Math.max(0, (enemy.chillTimer || 0) - 1);
+    enemy.freezeTimer = Math.max(0, (enemy.freezeTimer || 0) - 1);
+    if (enemy.burnTimer > 0 && this.frame % 15 === 0) this.damageEnemy(enemy, enemy.burnDamage || .1, false);
+    if (!enemy.alive) return 0;
+    if (enemy.freezeTimer > 0) return .18;
+    if (enemy.chillTimer > 0) return .62;
+    return 1;
   }
 
   updateEnemies() {
     for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
       const enemy = this.enemies[i];
       if (!enemy.alive) { this.enemies.splice(i, 1); continue; }
-      enemy.age += 1;
+      const motionScale = this.updateEnemyStatus(enemy);
+      if (!enemy.alive) { this.enemies.splice(i, 1); continue; }
+      enemy.age += motionScale;
+      enemy.motionScale = motionScale;
       if (enemy.type === 'boss') this.updateBoss(enemy);
       else if (enemy.type === 'midboss') this.updateMidboss(enemy);
       else {
         if (enemy.formation === 0) enemy.x = enemy.originX + Math.sin(enemy.age / 32 + enemy.index) * 25;
-        else if (enemy.formation === 1) enemy.x = enemy.originX + Math.sin(enemy.age / 18 + enemy.index * .7) * 42;
-        else if (enemy.formation === 2) enemy.x += Math.sin(enemy.age / 15 + enemy.index) * 1.25;
-        else enemy.x = this.w / 2 + Math.sin(enemy.age / 45 + enemy.index) * (110 + enemy.index % 3 * 20);
-        enemy.y += enemy.speed;
-        enemy.cooldown -= 1;
+        else if (enemy.formation === 1) enemy.x = enemy.originX + Math.sin(enemy.age / 20 + enemy.index * .7) * 28;
+        else if (enemy.formation === 2) enemy.x = enemy.originX + Math.sin(enemy.age / 15 + enemy.index) * 48;
+        else if (enemy.formation === 3) enemy.x = enemy.originX + Math.sin(enemy.age / 38 + enemy.index * .55) * 35;
+        else if (enemy.formation === 4) enemy.x = enemy.originX + Math.sin(enemy.age / 24 + enemy.index * 1.7) * 22;
+        else if (enemy.formation === 5) enemy.x = clamp(enemy.originX + (enemy.index % 2 ? -1 : 1) * enemy.age * .62, 20, this.w - 20);
+        else enemy.x = enemy.originX + Math.sin(enemy.age / 27 + enemy.index) * 18;
+        enemy.y += enemy.speed * motionScale;
+        enemy.cooldown -= motionScale;
         if (enemy.y > 30 && enemy.cooldown <= 0) { this.enemyShoot(enemy); enemy.cooldown = this.enemyCooldown(enemy); }
         if (enemy.y > this.h + 55) { enemy.alive = false; this.enemies.splice(i, 1); continue; }
       }
@@ -451,12 +535,13 @@ export class Game {
   updateMidboss(enemy) {
     const stage = STAGES[this.stageIndex];
     enemy.hitFlash = Math.max(0, (enemy.hitFlash || 0) - 1);
-    if (enemy.y < 145) enemy.y += 1.15;
+    const motionScale = enemy.motionScale || 1;
+    if (enemy.y < 145) enemy.y += 1.15 * motionScale;
     else {
       enemy.x = this.w / 2 + Math.sin(enemy.age / 42) * 118;
       enemy.y = 145 + Math.sin(enemy.age / 31) * 12;
     }
-    enemy.cooldown -= 1;
+    enemy.cooldown -= motionScale;
     if (enemy.y >= 80 && enemy.cooldown <= 0) {
       const speed = (1.55 + this.stageIndex * .1) * stage.bulletSpeed;
       for (let n = -2; n <= 2; n += 1) this.aim(enemy, speed, n * .16);
@@ -497,8 +582,9 @@ export class Game {
   }
 
   updateBoss(boss) {
+    const motionScale = boss.motionScale || 1;
     boss.hitFlash = Math.max(0, (boss.hitFlash || 0) - 1);
-    if (boss.y < 118) boss.y += 1.35;
+    if (boss.y < 118) boss.y += 1.35 * motionScale;
     else {
       boss.x = this.w / 2 + Math.sin(boss.age / (50 - this.stageIndex * 3)) * (105 + this.stageIndex * 8);
       boss.y = 118 + Math.sin(boss.age / 37) * 22;
@@ -512,7 +598,7 @@ export class Game {
       this.announce(`PHASE ${phase + 1}`, BOSSES[boss.bossId].phases[phase].toUpperCase(), 950);
       this.spawnBurst(boss.x, boss.y, 24, boss.color);
     }
-    boss.cooldown -= 1;
+    boss.cooldown -= motionScale;
     if (boss.y >= 105 && boss.cooldown <= 0) {
       this.bossAttack(boss);
       boss.cooldown = Math.max(24, (90 - phase * 14 - this.stageIndex * 5) / STAGES[this.stageIndex].fireRate);
@@ -550,13 +636,16 @@ export class Game {
   }
 
   updateEnemyBullets() {
+    const canHitPlayer = this.player.invincible <= 0;
+    let playerHit = false;
     for (let i = this.enemyBullets.length - 1; i >= 0; i -= 1) {
       const bullet = this.enemyBullets[i];
       bullet.x += bullet.vx; bullet.y += bullet.vy; bullet.life -= 1;
       const rr = bullet.radius + this.player.hitRadius;
-      if (this.player.invincible <= 0 && distanceSq(bullet, this.player) < rr * rr) { this.enemyBullets.splice(i, 1); this.hitPlayer(); continue; }
+      if (canHitPlayer && distanceSq(bullet, this.player) < rr * rr) { this.enemyBullets.splice(i, 1); playerHit = true; continue; }
       if (shouldCullEnemyBullet(bullet, this.w, this.h)) this.enemyBullets.splice(i, 1);
     }
+    if (playerHit) this.hitPlayer();
   }
 
   damageEnemy(enemy, damage, particles = true) {
@@ -585,7 +674,7 @@ export class Game {
     } else {
       this.dropXp(enemy.x, enemy.y, enemy.xp);
       if (enemy.type === 'elite') {
-        const salvage = this.player.build.passives.salvage || 0;
+        const salvage = upgradePower(this.player.build.passives.salvage || 0);
         if (Math.random() < .08 + salvage * .055) this.addEffect({ type: 'supply', x: enemy.x, y: enemy.y, supply: Math.random() < .6 ? 'heal' : 'bomb', life: 420, radius: 11 });
       }
     }
@@ -595,24 +684,26 @@ export class Game {
     if (this.xpOrbs.length >= WORLD.maxXp) {
       const orb = choose(this.xpOrbs); orb.value += value; orb.radius = Math.min(9, orb.radius + .3); return;
     }
-    this.xpOrbs.push({ x, y, vx: rand(-1.4, 1.4), vy: rand(-1.5, .3), value, radius: 4 + Math.min(4, value / 10), life: 1200 });
+    this.xpOrbs.push({ x, y, vx: 0, vy: 0, attracting: false, value, radius: 4 + Math.min(4, value / 10), life: 1200 });
   }
 
   updateXpOrbs() {
     if (!this.player) return;
-    const magnet = this.player.build.passives.magnet || 0;
+    const magnet = upgradePower(this.player.build.passives.magnet || 0);
     const range = 42 + magnet * 30;
     for (let i = this.xpOrbs.length - 1; i >= 0; i -= 1) {
       const orb = this.xpOrbs[i];
-      const d2 = distanceSq(orb, this.player);
-      if (d2 < range * range || this.mode === 'stageClear') {
-        const angle = Math.atan2(this.player.y - orb.y, this.player.x - orb.x);
-        const acceleration = .28 + magnet * .08;
-        orb.vx += Math.cos(angle) * acceleration; orb.vy += Math.sin(angle) * acceleration;
-        const speed = Math.hypot(orb.vx, orb.vy);
-        if (speed > 9 + magnet) { orb.vx *= (9 + magnet) / speed; orb.vy *= (9 + magnet) / speed; }
-      } else { orb.vx *= .98; orb.vy += .015; }
-      orb.x += orb.vx; orb.y += orb.vy; orb.life -= 1;
+      const dx = this.player.x - orb.x;
+      const dy = this.player.y - orb.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < range * range || orb.attracting || this.mode === 'stageClear') {
+        orb.attracting = true;
+        const distance = Math.max(1, Math.sqrt(d2));
+        const speed = Math.min(8 + magnet, Math.max(2.1 + magnet * .35, distance * .12));
+        orb.x += dx / distance * speed;
+        orb.y += dy / distance * speed;
+      }
+      orb.life -= 1;
       if (d2 < (orb.radius + this.player.hitRadius + 8) ** 2) { this.grantXp(orb.value); this.xpOrbs.splice(i, 1); this.sound('xp'); }
       else if (orb.life <= 0) this.xpOrbs.splice(i, 1);
     }
@@ -659,12 +750,12 @@ export class Game {
     if (this.mode !== 'levelup' || !this.currentChoices?.[index]) return;
     const choice = this.currentChoices[index];
     const p = this.player;
-    if (choice.id === 'primary') p.build.primaryLevel = Math.min(5, p.build.primaryLevel + 1);
+    if (choice.id === 'primary') p.build.primaryLevel = Math.min(WORLD.maxUpgradeRank, p.build.primaryLevel + 1);
     else if (choice.category === 'secondary') p.build.secondaries[choice.id] = Math.min(SECONDARIES[choice.id].max, (p.build.secondaries[choice.id] || 0) + 1);
     else if (choice.category === 'passive') {
       p.build.passives[choice.id] = Math.min(PASSIVES[choice.id].max, (p.build.passives[choice.id] || 0) + 1);
-      if (choice.id === 'armor') { p.maxHp = p.craft.hp + Math.ceil(p.build.passives.armor / 2); p.hp = Math.min(p.maxHp, p.hp + 1); }
-      if (choice.id === 'bombcap' && p.build.passives.bombcap % 2 === 0) { p.maxBombs = Math.min(5, p.maxBombs + 1); p.bombs = Math.min(p.maxBombs, p.bombs + 1); }
+      if (choice.id === 'armor') { p.maxHp = p.craft.hp + Math.ceil(upgradePower(p.build.passives.armor) / 2); p.hp = Math.min(p.maxHp, p.hp + 1); }
+      if (choice.id === 'bombcap') { const previous = p.maxBombs; p.maxBombs = Math.min(5, 3 + Math.max(0, p.build.passives.bombcap - 1)); p.bombs = Math.min(p.maxBombs, p.bombs + Math.max(0, p.maxBombs - previous)); }
     } else if (choice.id === 'repair') p.hp = Math.min(p.maxHp, p.hp + 2);
     else if (choice.id === 'bomb') p.bombs = Math.min(p.maxBombs, p.bombs + 1);
     else this.score += 2500;
@@ -700,7 +791,7 @@ export class Game {
     if (!this.player || this.mode !== 'playing' || this.player.bombs <= 0 || this.player.bombLock > 0 || this.player.inputLock > 0) return false;
     this.player.bombs -= 1; this.player.bombLock = 65; this.player.invincible = Math.max(this.player.invincible, 150);
     this.enemyBullets = [];
-    const level = this.player.build.passives.bombcap || 0;
+    const level = upgradePower(this.player.build.passives.bombcap || 0);
     for (const enemy of [...this.enemies]) {
       const damage = enemy.type === 'boss' ? Math.min(enemy.maxHp * .04, 42 + level * 8) : 9999;
       this.damageEnemy(enemy, damage, false);
@@ -714,7 +805,7 @@ export class Game {
   hitPlayer() {
     if (!this.player || this.player.invincible > 0) return;
     this.player.hp -= 1;
-    const armor = this.player.build.passives.armor || 0;
+    const armor = upgradePower(this.player.build.passives.armor || 0);
     this.player.invincible = 95 + armor * 15;
     this.enemyBullets = this.enemyBullets.filter(b => distanceSq(b, this.player) > 90 ** 2);
     this.spawnBurst(this.player.x, this.player.y, 40, '#ff3158');
@@ -724,7 +815,7 @@ export class Game {
   }
 
   completeStage() {
-    this.mode = 'stageClear'; this.transitionTimer = 220; this.enemyBullets = []; this.playerBullets = [];
+    this.mode = 'stageClear'; this.transitionTimer = 90; this.transitionDeadline = performance.now() + 1500; this.enemyBullets = []; this.playerBullets = [];
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1);
     this.player.bombs = Math.min(this.player.maxBombs, this.player.bombs + 1);
     this.announce('STAGE CLEAR', `SECTOR ${this.stageIndex + 1} SECURED`, 2300);
@@ -732,7 +823,7 @@ export class Game {
 
   endRun(victory) {
     this.mode = victory ? 'victory' : 'gameover';
-    if (this.score > this.best) { this.best = this.score; localStorage.setItem('void-circuit-best', String(this.best)); }
+    if (this.score > this.best) { this.best = this.score; writeStorage('void-circuit-best', String(this.best)); }
     this.dom['end-kicker'].textContent = victory ? 'VOID CIRCUIT COLLAPSED' : 'RUN TERMINATED';
     this.dom['end-title'].textContent = victory ? 'MISSION COMPLETE' : 'MISSION FAILED';
     this.dom['end-title'].style.color = victory ? '#4cff9b' : '#ff3158';
@@ -747,7 +838,7 @@ export class Game {
   }
 
   toggleMute() {
-    this.muted = !this.muted; localStorage.setItem('void-circuit-muted', this.muted ? '1' : '0'); this.dom['mute-button'].textContent = this.muted ? 'MUTED' : 'SOUND';
+    this.muted = !this.muted; writeStorage('void-circuit-muted', this.muted ? '1' : '0'); this.dom['mute-button'].textContent = this.muted ? 'MUTED' : 'SOUND';
   }
 
   initAudio() {
@@ -757,6 +848,9 @@ export class Game {
 
   sound(type) {
     if (this.muted || !this.audio) return;
+    const frameGap = { shoot: 4, enemy: 3, xp: 2 }[type] || 0;
+    if (frameGap && this.frame - (this.lastSoundFrame[type] ?? -frameGap) < frameGap) return;
+    this.lastSoundFrame[type] = this.frame;
     const presets = { shoot:[720,.025,'square',.025], enemy:[220,.04,'triangle',.018], xp:[1040,.025,'sine',.025], boom:[95,.14,'sawtooth',.055], hit:[70,.28,'sawtooth',.09], level:[660,.2,'sine',.07], bomb:[45,.65,'sawtooth',.12], boss:[120,.5,'square',.08], bossDown:[55,.8,'sawtooth',.14], warning:[180,.28,'square',.07], victory:[880,.7,'sine',.08], gameover:[85,.7,'triangle',.08] };
     const [freq, duration, wave, volume] = presets[type] || presets.xp;
     const oscillator = this.audio.createOscillator(); const gain = this.audio.createGain();
@@ -806,31 +900,30 @@ export class Game {
       else if (midboss) routeStatus = 'CHECKPOINT';
       else if (boss || routeMode === 'bossWarning') routeStatus = 'BOSS';
       else if (routeMode === 'stageClear') routeStatus = 'CLEAR';
-      else routeStatus = `WAVE ${Math.max(1, waveNumber)}/${stage.waves}`;
+      else routeStatus = 'HOSTILES';
     }
-    this.dom.score.textContent = String(this.score).padStart(7, '0');
-    this.dom.stage.textContent = p ? `S${String(stage.id).padStart(2, '0')}` : '—';
-    this.dom.level.textContent = p ? String(p.level).padStart(2, '0') : '—';
-    this.dom.hp.textContent = p ? '●'.repeat(p.hp) + '○'.repeat(Math.max(0, p.maxHp - p.hp)) : '—';
-    this.dom.bombs.textContent = p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—';
-    this.dom['bomb-count'].textContent = p?.bombs ?? 0;
-    this.dom['xp-bar'].style.width = p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%';
-    this.dom['route-label'].textContent = p ? `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT';
-    this.dom['route-status'].textContent = routeStatus;
-    this.dom['route-fill'].style.width = `${progress * 100}%`;
-    this.dom['midboss-node'].style.left = `${midbossProgress(stage) * 100}%`;
-    this.dom['midboss-node'].classList.remove('active');
-    this.dom['midboss-node'].classList.remove('cleared');
-    this.dom['boss-node'].classList.remove('active');
-    this.dom['boss-node'].classList.remove('cleared');
-    if (midboss) this.dom['midboss-node'].classList.add('active');
-    else if (checkpointCleared) this.dom['midboss-node'].classList.add('cleared');
-    if (boss || routeMode === 'bossWarning') this.dom['boss-node'].classList.add('active');
-    else if (routeMode === 'stageClear' || routeMode === 'victory') this.dom['boss-node'].classList.add('cleared');
-    this.dom['primary-build'].textContent = p ? `${p.craft.name} ${p.craft.primary.toUpperCase()} Lv.${p.build.primaryLevel}` : '—';
-    this.dom['secondary-build'].textContent = p ? Object.entries(p.build.secondaries).map(([id,l]) => `${SECONDARIES[id].name} ${l}`).join(' · ') || '尚未取得' : '—';
-    this.dom['passive-build'].textContent = p ? Object.entries(p.build.passives).map(([id,l]) => `${PASSIVES[id].name} ${l}`).join(' · ') || '尚未取得' : '—';
-    this.dom['mute-button'].textContent = this.muted ? 'MUTED' : 'SOUND';
+    const setText = (id, value) => { const next = String(value); if (this.dom[id].textContent !== next) this.dom[id].textContent = next; };
+    const setStyle = (id, property, value) => { if (this.dom[id].style[property] !== value) this.dom[id].style[property] = value; };
+    const setClass = (id, name, active) => { if (this.dom[id].classList.contains(name) !== active) this.dom[id].classList[active ? 'add' : 'remove'](name); };
+    setText('score', String(this.score).padStart(7, '0'));
+    setText('stage', p ? `S${String(stage.id).padStart(2, '0')}` : '—');
+    setText('level', p ? String(p.level).padStart(2, '0') : '—');
+    setText('hp', p ? '●'.repeat(p.hp) + '○'.repeat(Math.max(0, p.maxHp - p.hp)) : '—');
+    setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
+    setText('bomb-count', p?.bombs ?? 0);
+    setStyle('xp-bar', 'width', p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%');
+    setText('route-label', p ? `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT');
+    setText('route-status', routeStatus);
+    setStyle('route-fill', 'width', `${progress * 100}%`);
+    setStyle('midboss-node', 'left', `${midbossProgress(stage) * 100}%`);
+    setClass('midboss-node', 'active', Boolean(midboss));
+    setClass('midboss-node', 'cleared', Boolean(!midboss && checkpointCleared));
+    setClass('boss-node', 'active', Boolean(boss || routeMode === 'bossWarning'));
+    setClass('boss-node', 'cleared', Boolean(!boss && routeMode !== 'bossWarning' && (routeMode === 'stageClear' || routeMode === 'victory')));
+    setText('primary-build', p ? `${p.craft.name} ${p.craft.primary.toUpperCase()} Lv.${p.build.primaryLevel}` : '—');
+    setText('secondary-build', p ? Object.entries(p.build.secondaries).map(([id,l]) => `${SECONDARIES[id].name} ${l}`).join(' · ') || '尚未取得' : '—');
+    setText('passive-build', p ? Object.entries(p.build.passives).map(([id,l]) => `${PASSIVES[id].name} ${l}`).join(' · ') || '尚未取得' : '—');
+    setText('mute-button', this.muted ? 'MUTED' : 'SOUND');
   }
 
   render() {
@@ -861,10 +954,11 @@ export class Game {
   }
 
   drawEnemies(ctx) {
-    for (const e of this.enemies) { if(!e.alive)continue; ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.arc(0,0,e.radius*1.45,0,TAU);ctx.fill();ctx.fillStyle=e.hitFlash>0?'#fff':e.color;ctx.strokeStyle='rgba(255,255,255,.5)';ctx.lineWidth=1.5;
+    for (const e of this.enemies) { if(!e.alive)continue; ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.arc(0,0,e.radius*1.45,0,TAU);ctx.fill();ctx.fillStyle=e.color;ctx.strokeStyle=e.hitFlash>0?'#fff':'rgba(255,255,255,.5)';ctx.lineWidth=e.hitFlash>0?3:1.5;
       if(e.type==='boss'){const sides=6+this.stageIndex;ctx.beginPath();for(let n=0;n<sides;n++){const a=n/sides*TAU-Math.PI/2;const r=n%2?e.radius*.72:e.radius;if(n===0)ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='#07111d';ctx.fillRect(-28,-10,56,20);ctx.fillStyle='#fff';ctx.fillRect(-18,-5,36,7);}
       else if(e.type==='midboss'){ctx.rotate(Math.PI/4);ctx.fillRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.strokeRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.rotate(-Math.PI/4);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(0,0,13,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-8,-3,16,6);}
       else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
+      if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0){ctx.globalAlpha=.72;ctx.strokeStyle=e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       ctx.restore();
       if(e.type==='boss'||e.type==='elite'||e.type==='midboss'){
         const width=e.type==='boss'?180:e.type==='midboss'?110:55;

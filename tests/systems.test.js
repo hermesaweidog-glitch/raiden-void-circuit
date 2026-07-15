@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeUpgradeChoices, makeUpgradePool, midbossProgress, shouldCullEnemyBullet, stageProgress, updateGuidance, xpForLevel } from '../src/systems.js';
+import { makeUpgradeChoices, makeUpgradePool, midbossProgress, shouldCullEnemyBullet, stageProgress, updateGuidance, upgradePower, xpForLevel } from '../src/systems.js';
 
 test('upgrade choices are unique and omit maxed items', () => {
   const build = {
@@ -28,7 +28,18 @@ test('full equipment slots only offer upgrades for owned equipment', () => {
   const secondaryIds = pool.filter(item => item.category === 'secondary').map(item => item.id);
   const passiveIds = pool.filter(item => item.category === 'passive').map(item => item.id);
   assert.deepEqual(new Set(secondaryIds), new Set(['homing', 'rail']));
-  assert.deepEqual(new Set(passiveIds), new Set(['magnet', 'armor', 'critical', 'engine']));
+  assert.deepEqual(new Set(passiveIds), new Set(['magnet', 'armor', 'critical']));
+});
+
+test('three visible ranks preserve the former 1, 3, and 5 power milestones', () => {
+  assert.deepEqual([0, 1, 2, 3].map(upgradePower), [0, 1, 3, 5]);
+});
+
+test('opening choices are sampled from the whole pool without a guaranteed primary slot', () => {
+  const build = { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: 2, passiveSlots: 4 };
+  const choices = makeUpgradeChoices(build, () => 0);
+  assert.equal(choices.length, 3);
+  assert.ok(!choices.some(choice => choice.id === 'primary'));
 });
 
 test('homing missile never reacquires after target death', () => {

@@ -134,5 +134,103 @@ test('destroying the first sector boss advances to the second sector without thr
   });
 
   assert.equal(game.stageIndex, 1);
-  assert.equal(game.mode, 'stageIntro');
+  assert.equal(game.mode, 'levelup');
+  assert.equal(game.upgradeReturnMode, 'stageIntro');
+  assert.ok(game.player.pendingLevels > 0);
+});
+
+test('end screen remains actionable when browser storage rejects a new high score', () => {
+  for (const victory of [false, true]) {
+    const { game } = makeGame();
+    game.start('falcon');
+    game.chooseUpgrade(0);
+    game.score = game.best + 1;
+    globalThis.localStorage.setItem = () => { throw new DOMException('quota probe', 'QuotaExceededError'); };
+
+    assert.doesNotThrow(() => game.endRun(victory));
+    assert.equal(game.mode, victory ? 'victory' : 'gameover');
+    assert.equal(game.dom['end-overlay'].classList.contains('hidden'), false);
+  }
+});
+
+test('multiple enemy bullets hitting in one frame only damage the player once', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.invincible = 0;
+  game.enemyBullets = Array.from({ length: 2 }, () => ({
+    x: game.player.x,
+    y: game.player.y,
+    vx: 0,
+    vy: 0,
+    radius: 5,
+    life: 60,
+  }));
+  const hp = game.player.hp;
+
+  assert.doesNotThrow(() => game.updateEnemyBullets());
+  assert.equal(game.player.hp, hp - 1);
+  assert.equal(game.enemyBullets.length, 0);
+});
+
+test('stage clear has a short frame fallback and a real-time deadline', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+
+  game.completeStage();
+
+  assert.ok(game.transitionTimer <= 100);
+  assert.ok(game.transitionDeadline > performance.now());
+});
+
+test('ordinary encounters hide wave numbering and use at least six formations', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const formations = new Set();
+
+  for (let i = 0; i < STAGES[0].waves; i += 1) {
+    game.enemies = [];
+    game.spawnNextWave();
+    for (const enemy of game.enemies) if (enemy.type !== 'midboss') formations.add(enemy.formation);
+    if (game.waveIndex === 0) assert.doesNotMatch(game.dom.announcement.innerHTML, /WAVE/i);
+  }
+
+  assert.ok(formations.size >= 6);
+});
+
+test('XP stays at its drop point until attraction begins', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.x = 240;
+  game.player.y = 720;
+  game.dropXp(40, 60, 5);
+  const orb = game.xpOrbs[0];
+  const origin = { x: orb.x, y: orb.y };
+
+  for (let i = 0; i < 60; i += 1) game.updateXpOrbs();
+
+  assert.deepEqual({ x: orb.x, y: orb.y }, origin);
+  assert.equal(orb.vx || 0, 0);
+  assert.equal(orb.vy || 0, 0);
+});
+
+test('each primary weapon exposes a distinct elemental payload at rank three', () => {
+  const expected = { falcon: 'burn', lancer: 'chill', wasp: 'shock' };
+  for (const [craftId, payload] of Object.entries(expected)) {
+    const { game } = makeGame();
+    game.start(craftId);
+    game.chooseUpgrade(0);
+    game.mode = 'playing';
+    game.player.build.primaryLevel = 3;
+    game.player.fireCooldown = 0;
+    game.firePrimary();
+    assert.ok(game.playerBullets.some(bullet => bullet.status === payload), `${craftId} should apply ${payload}`);
+  }
 });

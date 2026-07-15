@@ -21,7 +21,7 @@ document.querySelector('#bomb-button').addEventListener('pointerdown', event => 
 });
 document.querySelector('#pause-button').addEventListener('click', () => game.togglePause());
 document.querySelector('#mute-button').addEventListener('click', () => game.toggleMute());
-document.querySelector('#retry-button').addEventListener('click', () => game.showTitle());
+document.querySelector('#retry-button').addEventListener('click', () => game.restart());
 
 window.raidenGame = {
   start: id => game.start(id || 'falcon'),
