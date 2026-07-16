@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AIRCRAFT, SECONDARIES, PASSIVES, STAGES, BOSSES, ENEMY_TYPES, WORLD } from '../src/config.js';
+import { AIRCRAFT, SECONDARIES, PASSIVES, PRIMARY_ICON, STAGES, BOSSES, ENEMY_TYPES, WORLD } from '../src/config.js';
 
 test('final content roster is complete', () => {
   assert.equal(Object.keys(AIRCRAFT).length, 3);
@@ -27,6 +27,16 @@ test('all persistent upgrades use exactly three ranks', () => {
   assert.equal(WORLD.maxUpgradeRank, 3);
 });
 
+test('every persistent skill has a unique icon distinct from primary firepower', () => {
+  const skills = [...Object.values(SECONDARIES), ...Object.values(PASSIVES)];
+  const icons = skills.map(skill => skill.icon);
+
+  assert.equal(PRIMARY_ICON, '✹');
+  assert.ok(icons.every(Boolean));
+  assert.equal(new Set(icons).size, skills.length);
+  assert.ok(!icons.includes(PRIMARY_ICON));
+});
+
 test('difficulty rises discretely across all five stages', () => {
   for (let i = 1; i < STAGES.length; i += 1) {
     for (const key of ['enemySpeed', 'bulletSpeed', 'bulletCount', 'fireRate', 'enemyHp', 'bossHp']) {
@@ -37,15 +47,20 @@ test('difficulty rises discretely across all five stages', () => {
 
 test('every boss has at least three phases and a unique title', () => {
   const titles = new Set();
+  const sprites = new Set();
   for (const boss of Object.values(BOSSES)) {
     assert.ok(boss.phases.length >= 3);
+    assert.ok(boss.sprite && boss.accent);
     titles.add(boss.name);
+    sprites.add(boss.sprite);
   }
   assert.equal(titles.size, 5);
+  assert.equal(sprites.size, 5);
 });
 
 test('every sector has enough waves and a mandatory midboss checkpoint', () => {
   assert.ok(ENEMY_TYPES.midboss, 'midboss archetype must exist');
+  assert.ok(ENEMY_TYPES.midboss.hp >= 130, 'midboss needs enough durability to showcase its pattern');
   for (const stage of STAGES) {
     assert.ok(stage.waves >= 8, `${stage.name} needs at least eight waves`);
     assert.ok(stage.midbossWave >= 3, `${stage.name} checkpoint is too early`);

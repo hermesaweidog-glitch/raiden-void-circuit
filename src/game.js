@@ -1,4 +1,4 @@
-import { AIRCRAFT, BUILD_LIMITS, SECONDARIES, PASSIVES, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
+import { AIRCRAFT, BUILD_LIMITS, SECONDARIES, PASSIVES, PRIMARY_ICON, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
 
 const TAU = Math.PI * 2;
@@ -149,20 +149,44 @@ export class Game {
   }
 
   restart() {
-    this.start(this.lastCraftId || 'falcon');
+    this.showTitle();
   }
 
   showTitle() {
     this.mode = 'title';
+    this.frame = 0;
+    this.worldScroll = 0;
+    this.score = 0;
+    this.stageIndex = 0;
+    this.waveIndex = -1;
+    this.waveCooldown = 0;
+    this.routeProgress = 0;
+    this.transitionTimer = 0;
+    this.transitionDeadline = 0;
+    this.entityId = 1;
+    this.hudBuildRevision = -1;
+    this.upgradeReturnMode = null;
+    this.lastSoundFrame = {};
+    this.announcementToken += 1;
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['upgrade-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
     this.dom['title-overlay'].classList.remove('hidden');
+    this.dom.announcement.classList.add('hidden');
+    this.dom['pause-button'].textContent = 'PAUSE';
     document.getElementById('bomb-button').classList.add('hidden');
     this.player = null;
     this.enemies = [];
     this.playerBullets = [];
     this.enemyBullets = [];
+    this.xpOrbs = [];
+    this.effects = [];
+    this.particles = [];
+    this.floaters = [];
+    this.currentChoices = [];
+    this.keys.clear();
+    if (this.pointer.id !== null && this.canvas.hasPointerCapture?.(this.pointer.id)) this.canvas.releasePointerCapture?.(this.pointer.id);
+    this.pointer = { active: false, id: null, x: 0, y: 0, startX: 0, startY: 0, playerX: 0, playerY: 0 };
     this.updateHud();
   }
 
@@ -649,7 +673,6 @@ export class Game {
   }
 
   updateMidboss(enemy) {
-    const stage = STAGES[this.stageIndex];
     const motionScale = enemy.motionScale || 1;
     if (!enemy.orbiting) {
       enemy.y = Math.min(145, enemy.y + 1.15 * motionScale);
@@ -665,10 +688,35 @@ export class Game {
     }
     enemy.cooldown -= motionScale;
     if (enemy.y >= 80 && enemy.cooldown <= 0) {
-      const speed = (1.55 + this.stageIndex * .1) * stage.bulletSpeed;
-      for (let n = -2; n <= 2; n += 1) this.aim(enemy, speed, n * .16);
-      enemy.cooldown = Math.max(38, 78 / stage.fireRate);
+      this.midbossAttack(enemy);
+      enemy.cooldown = Math.max(52, 98 / STAGES[this.stageIndex].fireRate);
     }
+  }
+
+  midbossAttack(enemy) {
+    const speed = (1.55 + this.stageIndex * .1) * STAGES[this.stageIndex].bulletSpeed;
+    if (this.stageIndex === 0) {
+      for (let shot = -3; shot <= 3; shot += 1) this.aim(enemy, speed, shot * .13);
+    } else if (this.stageIndex === 1) {
+      for (let turret = -1; turret <= 1; turret += 1) {
+        const x = enemy.x + turret * 34;
+        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, enemy.y + 7, speed * .94, shot * .13 + turret * .025, enemy.color);
+      }
+    } else if (this.stageIndex === 2) {
+      for (const x of [enemy.x - 36, enemy.x + 36]) {
+        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, enemy.y, speed, shot * .14, enemy.color);
+      }
+    } else if (this.stageIndex === 3) {
+      for (let shot = 0; shot < 14; shot += 1) {
+        const angle = shot / 14 * TAU + enemy.age * .018;
+        this.addEnemyBullet(enemy.x, enemy.y, Math.cos(angle) * speed * .7, Math.sin(angle) * speed * .7, 5, enemy.color);
+      }
+    } else {
+      for (const x of [-36, this.w + 36]) {
+        for (let row = 0; row < 4; row += 1) this.addEnemyBullet(x, 170 + row * 88, x < this.w / 2 ? speed * .82 : -speed * .82, speed * .58, 5, '#c084fc', 360, 30);
+      }
+    }
+    this.sound('enemy');
   }
 
   enemyCooldown(enemy) {
@@ -677,15 +725,19 @@ export class Game {
     return Math.max(28, base / stage.fireRate / enemy.pressure + rand(-12, 16));
   }
 
-  addEnemyBullet(x, y, vx, vy, radius = 5, color = '#ff6b6b', life = 360) {
+  addEnemyBullet(x, y, vx, vy, radius = 5, color = '#ff6b6b', life = 360, entryGrace = 0) {
     if (this.enemyBullets.length >= WORLD.maxEnemyBullets) return false;
-    this.enemyBullets.push({ x, y, vx, vy, radius, color, life });
+    this.enemyBullets.push({ x, y, vx, vy, radius, color, life, entryGrace });
     return true;
   }
 
   aim(enemy, speed, angleOffset = 0) {
-    const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x) + angleOffset;
-    this.addEnemyBullet(enemy.x, enemy.y, Math.cos(angle) * speed, Math.sin(angle) * speed, 4.5, enemy.color);
+    this.aimFrom(enemy.x, enemy.y, speed, angleOffset, enemy.color);
+  }
+
+  aimFrom(x, y, speed, angleOffset = 0, color = '#ff6b6b') {
+    const angle = Math.atan2(this.player.y - y, this.player.x - x) + angleOffset;
+    this.addEnemyBullet(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 4.5, color);
   }
 
   enemyShoot(enemy) {
@@ -743,7 +795,10 @@ export class Game {
       if (boss.phase >= 1) radial(10, speed * .88, boss.age * .025);
       if (boss.phase >= 2) for (let x = 25; x < this.w; x += 42) if (Math.abs(x - this.player.x) > 45) this.addEnemyBullet(x, boss.y + 12, 0, speed * 1.28, 5.5, '#ff3158');
     } else if (boss.bossId === 'carrier') {
-      this.aim({ ...boss, x: boss.x - 38 }, speed); this.aim({ ...boss, x: boss.x + 38 }, speed);
+      for (let turret = -1; turret <= 1; turret += 1) {
+        const x = boss.x + turret * 42;
+        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, boss.y + 9, speed * .96, shot * .13 + turret * .025, boss.color);
+      }
       if (boss.phase >= 1) radial(12, speed * .58, boss.age * .01);
       if (boss.phase >= 2) { for (let i = 0; i < 2; i += 1) this.spawnEnemy('striker', boss.x + (i ? 55 : -55), boss.y + 20, 1.25, 2, i); for (let n = -3; n <= 3; n += 1) this.aim(boss, speed, n * .16); }
     } else if (boss.bossId === 'seraph') {
@@ -755,7 +810,7 @@ export class Game {
       if (boss.phase >= 1) for (let n = 0; n < 5; n += 1) this.aim(boss, speed * rand(.72, 1.12), rand(-.45, .45));
       if (boss.phase >= 2) radial(22, speed, boss.age * .02, n => n % 11 === 5 || n % 11 === 6);
     } else {
-      for (const x of [28, this.w - 28]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, 100 + n * 40, x < this.w / 2 ? speed : -speed, speed * .45, 5, '#c084fc');
+      for (const x of [-36, this.w + 36]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, 150 + n * 94, x < this.w / 2 ? speed * .86 : -speed * .86, speed * .62, 5, '#c084fc', 360, 30);
       if (boss.phase >= 1) radial(20, speed * .82, boss.age * .075);
       if (boss.phase >= 2) { radial(28, speed * 1.05, boss.age * .028, n => n >= 12 && n <= 15); this.aim(boss, speed * 1.7); }
     }
@@ -770,7 +825,8 @@ export class Game {
       bullet.x += bullet.vx; bullet.y += bullet.vy; bullet.life -= 1;
       const rr = bullet.radius + this.player.hitRadius;
       if (canHitPlayer && distanceSq(bullet, this.player) < rr * rr) { this.enemyBullets.splice(i, 1); playerHit = true; continue; }
-      if (shouldCullEnemyBullet(bullet, this.w, this.h)) this.enemyBullets.splice(i, 1);
+      if (bullet.entryGrace > 0) bullet.entryGrace -= 1;
+      else if (shouldCullEnemyBullet(bullet, this.w, this.h)) this.enemyBullets.splice(i, 1);
     }
     if (playerHit) this.hitPlayer();
   }
@@ -832,6 +888,12 @@ export class Game {
       this.effects.splice(visualIndex, 1);
     }
     return this.addEffect({ type: 'supply', x: enemy.x, y: enemy.y, supply, life: 520, radius: 16 });
+  }
+
+  supplyStyle(type) {
+    return type === 'heal'
+      ? { color: '#4cff9b', label: '+' }
+      : { color: '#ffd166', label: 'B' };
   }
 
   xpOrbStyle(value) {
@@ -910,7 +972,7 @@ export class Game {
       const button = document.createElement('button');
       button.className = 'upgrade-card';
       const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
-      button.innerHTML = `<span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · LV ${current} → ${current + 1}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
+      button.innerHTML = `<span class="upgrade-icon" aria-hidden="true">${choice.icon}</span><span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · LV ${current} → ${current + 1}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
       button.addEventListener('click', () => this.chooseUpgrade(index));
       holder.append(button);
     });
@@ -1150,9 +1212,10 @@ export class Game {
     setClass('boss-node', 'cleared', Boolean(!boss && routeMode !== 'bossWarning' && (routeMode === 'stageClear' || routeMode === 'victory')));
     const buildRevision = p?.build.revision ?? -1;
     if (buildRevision !== this.hudBuildRevision) {
-      setText('primary-build', p ? `${p.craft.name} ${p.craft.primary.toUpperCase()} Lv.${p.build.primaryLevel}` : '—');
-      setText('secondary-build', p ? Object.entries(p.build.secondaries).map(([id,l]) => `${SECONDARIES[id].name} ${l}`).join(' · ') || '尚未取得' : '—');
-      setText('passive-build', p ? Object.entries(p.build.passives).map(([id,l]) => `${PASSIVES[id].name} ${l}`).join(' · ') || '尚未取得' : '—');
+      const token = (icon, level, name) => `<span class="skill-token" title="${name} Lv.${level}" aria-label="${name}等級${level}"><i aria-hidden="true">${icon}</i><b>${level}</b></span>`;
+      this.dom['primary-build'].innerHTML = p ? token(PRIMARY_ICON, p.build.primaryLevel, `${p.craft.name}主武器`) : '—';
+      this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(SECONDARIES[id].icon, level, SECONDARIES[id].name)).join('') || '—' : '—';
+      this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, level, PASSIVES[id].name)).join('') || '—' : '—';
       this.hudBuildRevision = buildRevision;
     }
     setText('mute-button', this.muted ? 'MUTED' : 'SOUND');
@@ -1185,9 +1248,78 @@ export class Game {
     if(p.invincible>0){ctx.strokeStyle='rgba(66,232,255,.65)';ctx.beginPath();ctx.arc(p.x,p.y,27+Math.sin(this.frame/8)*3,0,TAU);ctx.stroke();}
   }
 
+  drawBossSprite(ctx, enemy) {
+    const boss = BOSSES[enemy.bossId] || BOSSES.manta;
+    const pulse = Math.sin(this.frame * .08);
+    ctx.fillStyle = enemy.color;
+    ctx.strokeStyle = boss.accent;
+    ctx.lineWidth = 2;
+
+    if (enemy.bossId === 'manta') {
+      ctx.beginPath();
+      ctx.moveTo(0, -46); ctx.lineTo(-18, -24); ctx.lineTo(-62, -34); ctx.lineTo(-48, -3);
+      ctx.lineTo(-68, 24); ctx.lineTo(-28, 15); ctx.lineTo(0, 43);
+      ctx.lineTo(28, 15); ctx.lineTo(68, 24); ctx.lineTo(48, -3); ctx.lineTo(62, -34); ctx.lineTo(18, -24);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.globalAlpha = .55; ctx.fillStyle = boss.accent;
+      ctx.beginPath(); ctx.moveTo(-15, -20); ctx.lineTo(-54, -25); ctx.lineTo(-40, 2); ctx.lineTo(-20, 8); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(15, -20); ctx.lineTo(54, -25); ctx.lineTo(40, 2); ctx.lineTo(20, 8); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#07111d'; ctx.beginPath(); ctx.moveTo(0, -35); ctx.lineTo(-15, 18); ctx.lineTo(0, 34); ctx.lineTo(15, 18); ctx.closePath(); ctx.fill();
+    } else if (enemy.bossId === 'carrier') {
+      ctx.beginPath(); ctx.moveTo(-48, -38); ctx.lineTo(48, -38); ctx.lineTo(62, -17); ctx.lineTo(57, 35); ctx.lineTo(28, 48); ctx.lineTo(-28, 48); ctx.lineTo(-57, 35); ctx.lineTo(-62, -17); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#151321'; ctx.fillRect(-30, -31, 60, 68); ctx.strokeRect(-30, -31, 60, 68);
+      ctx.fillStyle = boss.accent; ctx.fillRect(-4, -27, 8, 54); ctx.fillRect(-25, 30, 50, 4);
+      for (let side = -1; side <= 1; side += 2) {
+        ctx.fillStyle = '#07111d'; ctx.fillRect(side * 48 - 9, -21, 18, 36);
+        ctx.fillStyle = boss.accent; ctx.beginPath(); ctx.arc(side * 43, 20, 8 + pulse, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#07111d'; ctx.fillRect(side * 43 - 2, 18, 4, 18);
+      }
+    } else if (enemy.bossId === 'seraph') {
+      ctx.globalAlpha = .82;
+      for (let side = -1; side <= 1; side += 2) {
+        ctx.fillStyle = enemy.color;
+        ctx.beginPath(); ctx.moveTo(side * 8, -34); ctx.lineTo(side * 62, -45); ctx.lineTo(side * 36, -3); ctx.lineTo(side * 68, 24); ctx.lineTo(side * 17, 18); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = boss.accent;
+        ctx.beginPath(); ctx.moveTo(side * 17, -26); ctx.lineTo(side * 49, -34); ctx.lineTo(side * 29, -6); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(side * 23, 3); ctx.lineTo(side * 54, 20); ctx.lineTo(side * 17, 13); ctx.closePath(); ctx.fill();
+      }
+      ctx.globalAlpha = 1; ctx.fillStyle = '#07111d';
+      ctx.beginPath(); ctx.moveTo(0, -48); ctx.lineTo(-18, 0); ctx.lineTo(0, 43); ctx.lineTo(18, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (enemy.bossId === 'leviathan') {
+      ctx.beginPath(); ctx.ellipse(0, 3, 54, 43, 0, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = boss.accent;
+      ctx.beginPath(); ctx.moveTo(-39, -26); ctx.lineTo(-62, -50); ctx.lineTo(-52, -13); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(39, -26); ctx.lineTo(62, -50); ctx.lineTo(52, -13); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#7c2d12'; ctx.beginPath(); ctx.ellipse(0, 8, 35, 27, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = boss.accent; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(0, 6, 24 + pulse * 2, 0, TAU); ctx.stroke();
+      for (let node = 0; node < 4; node += 1) {
+        const angle = node / 4 * TAU + this.frame * .012;
+        ctx.fillStyle = boss.accent; ctx.beginPath(); ctx.arc(Math.cos(angle) * 43, 6 + Math.sin(angle) * 33, 5, 0, TAU); ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = enemy.color;
+      ctx.beginPath(); ctx.moveTo(0, -52); ctx.lineTo(-15, -38); ctx.lineTo(-42, -46); ctx.lineTo(-34, -20); ctx.lineTo(-54, 3); ctx.lineTo(-39, 42); ctx.lineTo(0, 51); ctx.lineTo(39, 42); ctx.lineTo(54, 3); ctx.lineTo(34, -20); ctx.lineTo(42, -46); ctx.lineTo(15, -38); ctx.closePath(); ctx.fill(); ctx.stroke();
+      for (let side = -1; side <= 1; side += 2) {
+        ctx.fillStyle = '#211033'; ctx.beginPath(); ctx.arc(side * 51, 10, 17, 0, TAU); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = boss.accent; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(side * 51, 10, 10, 0, TAU); ctx.stroke();
+      }
+      ctx.fillStyle = '#07111d'; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(-28, -6); ctx.lineTo(-19, 30); ctx.lineTo(0, 42); ctx.lineTo(19, 30); ctx.lineTo(28, -6); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = boss.accent; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-10, -7); ctx.lineTo(-2, 2); ctx.lineTo(-9, 10); ctx.moveTo(10, -7); ctx.lineTo(2, 2); ctx.lineTo(9, 10); ctx.stroke();
+    }
+
+    ctx.fillStyle = '#07111d'; ctx.beginPath(); ctx.arc(0, 3, 13, 0, TAU); ctx.fill();
+    ctx.fillStyle = boss.accent; ctx.beginPath(); ctx.arc(0, 3, 7 + pulse * 1.3, 0, TAU); ctx.fill();
+    for (let phase = 0; phase < 3; phase += 1) {
+      ctx.fillStyle = enemy.phase >= phase ? boss.accent : 'rgba(255,255,255,.16)';
+      ctx.fillRect(-13 + phase * 10, 20, 6, 3);
+    }
+  }
+
   drawEnemies(ctx) {
     for (const e of this.enemies) { if(!e.alive)continue; ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.arc(0,0,e.radius*1.45,0,TAU);ctx.fill();ctx.fillStyle=e.color;ctx.strokeStyle='rgba(255,255,255,.5)';ctx.lineWidth=1.5;
-      if(e.type==='boss'){const sides=6+this.stageIndex;ctx.beginPath();for(let n=0;n<sides;n++){const a=n/sides*TAU-Math.PI/2;const r=n%2?e.radius*.72:e.radius;if(n===0)ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='#07111d';ctx.fillRect(-28,-10,56,20);ctx.fillStyle='#fff';ctx.fillRect(-18,-5,36,7);}
+      if(e.type==='boss')this.drawBossSprite(ctx,e);
       else if(e.type==='midboss'){ctx.rotate(Math.PI/4);ctx.fillRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.strokeRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.rotate(-Math.PI/4);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(0,0,13,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-8,-3,16,6);}
       else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
       if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0){ctx.globalAlpha=.72;ctx.strokeStyle=e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
@@ -1229,7 +1361,7 @@ export class Game {
       else if(e.type==='gravity'){ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,12+Math.sin(this.frame*.18)*5,0,TAU);ctx.stroke();}
       else if(e.type==='hammer'){const t=1-e.life/e.maxLife;const radius=8+(e.maxRadius-8)*t;ctx.save();ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#facc15';ctx.lineWidth=2;for(let n=0;n<4;n+=1){const a=n/4*TAU+Math.PI/4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
       else if(e.type==='ring'){const t=1-e.life/e.maxLife;e.radius+=(e.maxRadius-e.radius)*.12;ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=4;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
-      else if(e.type==='supply'){const color=e.supply==='heal'?'#ff3158':'#ffd166';const radius=e.radius||16;ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.4;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,radius+5+Math.sin(this.frame*.16)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.shadowColor=color;ctx.shadowBlur=12;ctx.fillStyle=color;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#07111d';ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(e.supply==='heal'?'+':'B',e.x,e.y+1);ctx.restore();}
+      else if(e.type==='supply'){const style=this.supplyStyle(e.supply);const color=style.color;const radius=e.radius||16;ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.4;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,radius+5+Math.sin(this.frame*.16)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.shadowColor=color;ctx.shadowBlur=12;ctx.fillStyle=color;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#07111d';ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(style.label,e.x,e.y+1);ctx.restore();}
     }
   }
 

@@ -1,4 +1,4 @@
-import { BUILD_LIMITS, SECONDARIES, PASSIVES } from './config.js';
+import { BUILD_LIMITS, SECONDARIES, PASSIVES, PRIMARY_ICON } from './config.js';
 
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const distanceSq = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
@@ -23,7 +23,7 @@ export function seededShuffle(items, random = Math.random) {
 export function makeUpgradePool(build) {
   const pool = [];
   if ((build.primaryLevel || 1) < 3) {
-    pool.push({ id: 'primary', category: 'primary', name: '主武器強化', description: '提升主武器火力與彈道。' });
+    pool.push({ id: 'primary', category: 'primary', icon: PRIMARY_ICON, name: '主武器強化', description: '提升主武器火力與彈道。' });
   }
   const secondaries = build.secondaries || {};
   for (const item of Object.values(SECONDARIES)) {
@@ -49,9 +49,9 @@ export function makeUpgradePool(build) {
 export function makeUpgradeChoices(build, random = Math.random) {
   const choices = seededShuffle(makeUpgradePool(build), random).slice(0, 3);
   const fallbacks = [
-    { id: 'repair', category: 'supply', name: '緊急維修', description: '恢復 2 點生命。' },
-    { id: 'bomb', category: 'supply', name: '炸彈補給', description: '補充 1 枚炸彈。' },
-    { id: 'score', category: 'supply', name: '戰術資料', description: '獲得 2500 分。' },
+    { id: 'repair', category: 'supply', icon: '✚', name: '緊急維修', description: '恢復 2 點生命。' },
+    { id: 'bomb', category: 'supply', icon: '◈', name: '炸彈補給', description: '補充 1 枚炸彈。' },
+    { id: 'score', category: 'supply', icon: '▤', name: '戰術資料', description: '獲得 2500 分。' },
   ];
   for (const item of fallbacks) {
     if (choices.length >= 3) break;

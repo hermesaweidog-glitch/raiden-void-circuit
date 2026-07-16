@@ -42,6 +42,8 @@ function makeGame() {
     getContext: () => ({}),
     addEventListener() {},
     setPointerCapture() {},
+    hasPointerCapture: () => false,
+    releasePointerCapture() { throw new Error('stale pointer capture must not be released'); },
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 480, height: 800 }),
   };
   return { game: new Game(canvas), elements };
@@ -64,6 +66,73 @@ test('a new run opens one starter upgrade before stage movement begins', () => {
 
   assert.equal(game.player.pendingLevels, 0);
   assert.equal(game.mode, 'stageIntro');
+});
+
+test('retry returns to aircraft selection instead of reusing the previous craft', () => {
+  const { game } = makeGame();
+  game.start('wasp');
+  game.chooseUpgrade(0);
+  game.xpOrbs.push({ x: 12, y: 34 });
+  game.effects.push({ type: 'supply' });
+  game.particles.push({ life: 10 });
+  game.floaters.push({ text: 'stale' });
+  game.keys.add('ArrowLeft');
+  game.pointer.active = true;
+  game.pointer.id = 7;
+  game.frame = 999;
+  game.worldScroll = 321;
+  game.score = 4567;
+  game.stageIndex = 4;
+  game.waveIndex = 8;
+  game.waveCooldown = 17;
+  game.routeProgress = .82;
+  game.transitionTimer = 44;
+  game.transitionDeadline = 12345;
+  game.entityId = 77;
+  game.upgradeReturnMode = 'boss';
+  game.lastSoundFrame = { enemy: 22 };
+  game.dom.announcement.classList.remove('hidden');
+  game.dom['pause-button'].textContent = 'RESUME';
+  const announcementToken = game.announcementToken;
+  game.endRun(false);
+
+  game.restart();
+
+  assert.equal(game.mode, 'title');
+  assert.equal(game.player, null);
+  assert.equal(game.dom['title-overlay'].classList.contains('hidden'), false);
+  assert.deepEqual(game.xpOrbs, []);
+  assert.deepEqual(game.effects, []);
+  assert.deepEqual(game.particles, []);
+  assert.deepEqual(game.floaters, []);
+  assert.equal(game.keys.size, 0);
+  assert.equal(game.pointer.active, false);
+  assert.equal(game.pointer.id, null);
+  assert.equal(game.frame, 0);
+  assert.equal(game.worldScroll, 0);
+  assert.equal(game.score, 0);
+  assert.equal(game.stageIndex, 0);
+  assert.equal(game.waveIndex, -1);
+  assert.equal(game.waveCooldown, 0);
+  assert.equal(game.routeProgress, 0);
+  assert.equal(game.transitionTimer, 0);
+  assert.equal(game.transitionDeadline, 0);
+  assert.equal(game.entityId, 1);
+  assert.equal(game.upgradeReturnMode, null);
+  assert.deepEqual(game.lastSoundFrame, {});
+  assert.equal(game.announcementToken, announcementToken + 1);
+  assert.equal(game.dom.announcement.classList.contains('hidden'), true);
+  assert.equal(game.dom['pause-button'].textContent, 'PAUSE');
+});
+
+test('healing supplies use a green field-repair identity', () => {
+  const { game } = makeGame();
+  const heal = game.supplyStyle('heal');
+  const bomb = game.supplyStyle('bomb');
+
+  assert.equal(heal.color, '#4cff9b');
+  assert.equal(heal.label, '+');
+  assert.notEqual(heal.color, bomb.color);
 });
 
 test('midboss checkpoint blocks route progress until the target is destroyed', () => {
@@ -89,6 +158,54 @@ test('midboss checkpoint blocks route progress until the target is destroyed', (
   game.waveCooldown = 0;
   game.updateDirector();
   assert.equal(game.waveIndex + 1, stage.midbossWave + 1);
+});
+
+test('midboss borrows a distinct opening weapon from each sector boss', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const midboss = { x: 240, y: 145, age: 120, color: '#fff' };
+
+  const counts = STAGES.map((_, stageIndex) => {
+    game.stageIndex = stageIndex;
+    game.enemyBullets = [];
+    game.midbossAttack(midboss);
+    return game.enemyBullets.length;
+  });
+
+  assert.deepEqual(counts, [7, 9, 6, 14, 8]);
+  assert.equal(new Set(counts).size, STAGES.length);
+
+  game.stageIndex = 4;
+  game.enemyBullets = [];
+  game.midbossAttack(midboss);
+  assert.ok(game.enemyBullets.every(bullet => bullet.x < -bullet.radius || bullet.x > WORLD.width + bullet.radius));
+  game.updateEnemyBullets();
+  assert.equal(game.enemyBullets.length, 8);
+  for (let frame = 1; frame < 20; frame += 1) game.updateEnemyBullets();
+  assert.ok(game.enemyBullets.every(bullet => bullet.x >= 0 && bullet.x <= WORLD.width));
+});
+
+test('midboss update schedules a finite repeating attack cooldown', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.stageIndex = 1;
+  game.spawnEnemy('midboss', WORLD.width / 2, 145, 1, 0, 0);
+  const midboss = game.enemies[0];
+  midboss.orbiting = true;
+  midboss.orbitAge = 0;
+  midboss.orbitCenterX = midboss.x;
+  midboss.motionScale = 1;
+  midboss.cooldown = 0;
+
+  game.updateMidboss(midboss);
+
+  assert.ok(Number.isFinite(midboss.cooldown));
+  assert.ok(midboss.cooldown > 0, `cooldown=${midboss.cooldown}`);
+  assert.equal(game.enemyBullets.length, 9);
 });
 
 test('route timeline advances every frame without jumping when a wave spawns', () => {
@@ -232,6 +349,57 @@ test('later boss phases combine every earlier attack pattern', () => {
   assert.equal(bulletCounts[0], 7);
   assert.ok(bulletCounts[1] >= bulletCounts[0] + 10);
   assert.ok(bulletCounts[2] >= bulletCounts[1] + 7);
+});
+
+test('carrier opens with a three-turret converging barrage', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.stageIndex = 1;
+  game.enemyBullets = [];
+  game.bossAttack({ bossId: 'carrier', phase: 0, x: 240, y: 118, age: 120, color: '#ff8a4c' });
+
+  assert.equal(game.enemyBullets.length, 9);
+  assert.equal(new Set(game.enemyBullets.map(bullet => bullet.x)).size, 3);
+  assert.ok(new Set(game.enemyBullets.map(bullet => bullet.vx.toFixed(3))).size >= 5);
+});
+
+test('raijin side gates cover the arena with wider readable lanes', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.stageIndex = 4;
+  game.enemyBullets = [];
+  game.bossAttack({ bossId: 'raijin', phase: 0, x: 240, y: 118, age: 120, color: '#c084fc' });
+
+  const rows = [...new Set(game.enemyBullets.map(bullet => bullet.y))].sort((a, b) => a - b);
+  assert.equal(game.enemyBullets.length, 8);
+  assert.ok(rows.at(-1) - rows[0] >= 270);
+  assert.ok(rows.slice(1).every((y, index) => y - rows[index] >= 80));
+  assert.ok(game.enemyBullets.every(bullet => bullet.vy > 0));
+  assert.ok(game.enemyBullets.every(bullet => bullet.x < -bullet.radius || bullet.x > WORLD.width + bullet.radius));
+  game.updateEnemyBullets();
+  assert.equal(game.enemyBullets.length, 8);
+  for (let frame = 1; frame < 20; frame += 1) game.updateEnemyBullets();
+  assert.ok(game.enemyBullets.every(bullet => bullet.x >= 0 && bullet.x <= WORLD.width));
+});
+
+test('upgrade cards and combat build strip render skill icons with numeric ranks', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+
+  assert.ok(game.dom['upgrade-options'].children.every(card => card.innerHTML.includes('upgrade-icon')));
+  game.player.build.secondaries = { homing: 2 };
+  game.player.build.passives = { armor: 3 };
+  game.player.build.revision += 1;
+  game.updateHud();
+
+  assert.match(game.dom['primary-build'].innerHTML, /skill-token.+✹.+>1</);
+  assert.match(game.dom['secondary-build'].innerHTML, /skill-token.+➤.+>2</);
+  assert.match(game.dom['passive-build'].innerHTML, /skill-token.+⬡.+>3</);
+  assert.doesNotMatch(game.dom['secondary-build'].innerHTML, />追蹤飛彈</);
 });
 
 test('end screen remains actionable when browser storage rejects a new high score', () => {

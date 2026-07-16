@@ -14,6 +14,7 @@ test('upgrade choices are unique and omit maxed items', () => {
   assert.equal(choices.length, 3);
   assert.equal(new Set(choices.map(choice => choice.id)).size, 3);
   assert.ok(!choices.some(choice => ['primary', 'homing', 'magnet'].includes(choice.id)));
+  assert.ok(choices.every(choice => choice.icon));
 });
 
 test('full equipment slots only offer upgrades for owned equipment', () => {
