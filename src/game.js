@@ -134,7 +134,7 @@ export class Game {
     this.player = {
       x: this.w / 2, y: this.h - 92, targetX: this.w / 2, targetY: this.h - 92,
       radius: 15, hitRadius: 5, craftId, craft, hp: craft.hp, maxHp: craft.hp,
-      bombs: 2, maxBombs: 3, shield: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
+      bombs: 2, maxBombs: 3, shield: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: 1,
       build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive, overdrive: 0, revision: 0 },
       bombLock: 0,
@@ -443,7 +443,7 @@ export class Game {
       const count = 1 + Math.floor(level / 2) * 2;
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
-        add(offset * 1.15, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
+        add(offset * 1.6, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
       }
     } else if (p.craft.primary === 'laser') {
       p.fireCooldown = 0;
@@ -831,7 +831,8 @@ export class Game {
 
   damageEnemy(enemy, damage, particles = true) {
     if (!enemy.alive) return;
-    const overdrive = this.player?.build.overdrive || 0;
+    if (enemy.type === 'midboss' && !enemy.orbiting) return;
+    const overdrive = this.player?.build?.overdrive || 0;
     enemy.hp -= damage * (1 + overdrive * .1);
     if (particles && isLargeEnemyType(enemy.type)) enemy.hitFlash = 4;
     else if (particles) this.spawnBurst(enemy.x, enemy.y, 2, enemy.color);
@@ -878,22 +879,25 @@ export class Game {
   maybeDropSupply(enemy, random = Math.random) {
     const needsHeal = this.player.hp < this.player.maxHp;
     const needsBomb = this.player.bombs < this.player.maxBombs;
-    const needsShield = this.player.shield < 1;
+    const needsShield = this.player.shield < 1 && this.player.shieldsDropped < 2;
     if (!needsHeal && !needsBomb && !needsShield) return false;
     const salvage = upgradePower(this.player.build.passives.salvage || 0);
     const baseChance = { scout: .006, striker: .008, gunship: .012, elite: .035, midboss: .06 }[enemy.type] || .006;
-    if (random() >= Math.min(.11, baseChance + salvage * .004)) return false;
+    const shieldBoost = needsShield ? .02 : 0;
+    if (random() >= Math.min(.14, baseChance + salvage * .004 + shieldBoost)) return false;
     const candidates = [];
     if (needsHeal) candidates.push('heal', 'heal');
     if (needsBomb) candidates.push('bomb');
-    if (needsShield) candidates.push('shield');
+    if (needsShield) candidates.push('shield', 'shield');
     const supply = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
     if (this.effects.length >= WORLD.maxEffects) {
       const visualIndex = this.effects.findIndex(effect => effect.type !== 'supply');
       if (visualIndex < 0) return false;
       this.effects.splice(visualIndex, 1);
     }
-    return this.addEffect({ type: 'supply', x: enemy.x, y: enemy.y, supply, life: 520, radius: 16 });
+    const dropped = this.addEffect({ type: 'supply', x: enemy.x, y: enemy.y, supply, life: 520, radius: 16 });
+    if (dropped && supply === 'shield') this.player.shieldsDropped += 1;
+    return dropped;
   }
 
   supplyStyle(type) {
@@ -971,6 +975,10 @@ export class Game {
     this.pointer.active = false;
     this.keys.clear();
     this.currentChoices = makeUpgradeChoices(this.player.build);
+    const supplies = [];
+    if (this.player.hp < this.player.maxHp) supplies.push({ id: 'repair', category: 'supply', icon: '✚', name: '緊急維修', description: '恢復 2 點生命。' });
+    if (this.player.bombs < this.player.maxBombs) supplies.push({ id: 'bomb', category: 'supply', icon: '◈', name: '炸彈補給', description: '補充 1 枚炸彈。' });
+    for (const supply of supplies) if (this.currentChoices.length < 3) this.currentChoices.push(supply);
     const isStarterUpgrade = this.upgradeReturnMode === 'stageIntro' && this.player.level === 1;
     this.dom['upgrade-kicker'].textContent = isStarterUpgrade ? 'PRE-FLIGHT UPGRADE' : 'LEVEL UP';
     this.dom['upgrade-title'].textContent = isStarterUpgrade ? '選擇開局強化' : '選擇一項強化';
@@ -1377,6 +1385,7 @@ export class Game {
       if(e.type==='boss')this.drawBossSprite(ctx,e);
       else if(e.type==='midboss'){ctx.rotate(Math.PI/4);ctx.fillRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.strokeRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.rotate(-Math.PI/4);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(0,0,13,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-8,-3,16,6);}
       else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
+      if(e.type==='midboss'&&!e.orbiting){ctx.strokeStyle='rgba(66,232,255,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,e.radius+9+Math.sin(this.frame/7)*2,0,TAU);ctx.stroke();}
       if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0){ctx.globalAlpha=.72;ctx.strokeStyle=e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       if(e.statusFlash>0){ctx.globalAlpha=e.statusFlash/14;ctx.strokeStyle=e.statusFlashColor||'#fff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,e.radius+8,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       if(e.hitFlash>0){ctx.globalAlpha=e.hitFlash/8;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+4,0,TAU);ctx.stroke();ctx.globalAlpha=1;}

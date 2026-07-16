@@ -12,12 +12,12 @@ export const WORLD = {
 };
 
 export const BUILD_LIMITS = { secondary: 3, passive: 6 };
-export const PRIMARY_ICON = 'assets/icons/primary.webp';
+export const PRIMARY_ICON = 'assets/icons/primary-cannon.webp';
 
 export const AIRCRAFT = {
-  falcon: { id: 'falcon', name: 'FALCON', subtitle: '散射突擊機', color: '#ff3158', speed: 5.8, hp: 4, primary: 'vulcan', mastery: '熔蝕彈', description: '寬角火力與高機動；滿級追加火焰持續傷害。' },
-  lancer: { id: 'lancer', name: 'LANCER', subtitle: '貫通雷射機', color: '#42e8ff', speed: 5.1, hp: 4, primary: 'laser', mastery: '連鎖電擊', description: '連續貫通射線；滿級後命中會跳躍電擊。' },
-  wasp: { id: 'wasp', name: 'WASP', subtitle: '重型爆破機', color: '#ffd166', speed: 4.5, hp: 5, primary: 'cannon', mastery: '雷神之鎚', description: '慢速爆破彈；滿級後擊殺會引發範圍雷爆。' },
+  falcon: { id: 'falcon', name: 'FALCON', subtitle: '散射突擊機', art: 'assets/aircraft/falcon.webp', color: '#ff3158', speed: 5.8, hp: 4, primary: 'vulcan', mastery: '熔蝕彈', description: '寬角火力與高機動；滿級追加火焰持續傷害。' },
+  lancer: { id: 'lancer', name: 'LANCER', subtitle: '貫通雷射機', art: 'assets/aircraft/lancer.webp', color: '#42e8ff', speed: 5.1, hp: 4, primary: 'laser', mastery: '連鎖電擊', description: '連續貫通射線；滿級後命中會跳躍電擊。' },
+  wasp: { id: 'wasp', name: 'WASP', subtitle: '重型爆破機', art: 'assets/aircraft/wasp.webp', color: '#ffd166', speed: 4.5, hp: 5, primary: 'cannon', mastery: '雷神之鎚', description: '慢速爆破彈；滿級後擊殺會引發範圍雷爆。' },
 };
 
 export const SECONDARIES = {

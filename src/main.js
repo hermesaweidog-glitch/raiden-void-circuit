@@ -9,7 +9,7 @@ for (const craft of Object.values(AIRCRAFT)) {
   const button = document.createElement('button');
   button.className = 'aircraft-card';
   button.style.setProperty('--craft', craft.color);
-  button.innerHTML = `<span class="aircraft-icon"></span><strong>${craft.name}</strong><small>${craft.subtitle}</small><p>${craft.description}</p>`;
+  button.innerHTML = `<img class="aircraft-art" src="${craft.art}" alt="" draggable="false"><strong>${craft.name}</strong><small>${craft.subtitle}</small><p>${craft.description}</p>`;
   button.addEventListener('click', () => game.start(craft.id));
   aircraftSelect.append(button);
 }

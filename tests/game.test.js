@@ -160,6 +160,22 @@ test('midboss checkpoint blocks route progress until the target is destroyed', (
   assert.equal(game.waveIndex + 1, stage.midbossWave + 1);
 });
 
+test('midboss is invulnerable until reaching its combat station', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.spawnEnemy('midboss', WORLD.width / 2, -110, 1, 7, 0);
+  const midboss = game.enemies[0];
+  const hp = midboss.hp;
+
+  game.damageEnemy(midboss, 50, false);
+  assert.equal(midboss.hp, hp);
+  midboss.orbiting = true;
+  game.damageEnemy(midboss, 50, false);
+  assert.ok(midboss.hp < hp);
+});
+
 test('midboss borrows a distinct opening weapon from each sector boss', () => {
   const { game } = makeGame();
   game.start('falcon');
@@ -233,7 +249,7 @@ test('large-enemy hits use a stable flash instead of geometry shifts or impact b
   game.chooseUpgrade(0);
   game.mode = 'playing';
   for (const type of ['boss', 'midboss', 'elite']) {
-    const enemy = { type, hp: 100, maxHp: 100, alive: true, x: 240, y: 120, radius: 50, hitFlash: 0 };
+    const enemy = { type, hp: 100, maxHp: 100, alive: true, orbiting: true, x: 240, y: 120, radius: 50, hitFlash: 0 };
     game.particles = [];
     const origin = { x: enemy.x, y: enemy.y, radius: enemy.radius };
 
@@ -414,7 +430,7 @@ test('upgrade cards and combat build strip render skill icons with numeric ranks
   game.player.build.revision += 1;
   game.updateHud();
 
-  assert.match(game.dom['primary-build'].innerHTML, /skill-token.+primary\.webp.+>1</);
+  assert.match(game.dom['primary-build'].innerHTML, /skill-token.+primary-cannon\.webp.+>1</);
   assert.match(game.dom['secondary-build'].innerHTML, /skill-token.+homing\.webp.+>2</);
   assert.match(game.dom['passive-build'].innerHTML, /skill-token.+armor\.webp.+>3</);
   assert.doesNotMatch(game.dom['secondary-build'].innerHTML, />追蹤飛彈</);
@@ -709,8 +725,8 @@ test('falcon vulcan spreads its outer shots into a visibly wider cone', () => {
   game.player.build.primaryLevel = 3;
   game.firePrimary();
   const velocities = game.playerBullets.map(bullet => bullet.vx);
-  assert.ok(Math.max(...velocities) >= 2.2);
-  assert.ok(Math.min(...velocities) <= -2.2);
+  assert.ok(Math.max(...velocities) >= 3.0);
+  assert.ok(Math.min(...velocities) <= -3.0);
 });
 
 test('field supplies magnetize like XP and a shield blocks one hit', () => {
@@ -750,6 +766,21 @@ test('shield supplies can drop at full resources and health or bomb drops are sl
   assert.equal(game.maybeDropSupply(enemy, () => .005), true, 'scout supply chance should exceed the former 0.35% rate');
 });
 
+test('shield drops are easier to encounter but hard-capped at two per run', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.player.hp = game.player.maxHp;
+  game.player.bombs = game.player.maxBombs;
+  game.player.shield = 0;
+  const enemy = { type: 'scout', x: 100, y: 100 };
+
+  assert.equal(game.maybeDropSupply(enemy, () => .02), true);
+  assert.equal(game.maybeDropSupply(enemy, () => .02), true);
+  assert.equal(game.maybeDropSupply(enemy, () => 0), false);
+  assert.equal(game.player.shieldsDropped, 2);
+});
+
 test('new passive modules alter cooldown, area damage, shield window, and XP gain', () => {
   const { game } = makeGame();
   game.start('falcon');
@@ -781,11 +812,14 @@ test('maxed loadouts stack ten-percent attack upgrades and show them on the prim
   game.player.build.primaryLevel = 3;
   game.player.build.secondaries = { homing: 3, rail: 3, drone: 3 };
   game.player.build.passives = { magnet: 3, armor: 3, critical: 3, engine: 3, overclock: 3, bombcap: 3 };
+  game.player.hp = game.player.maxHp;
+  game.player.bombs = game.player.maxBombs;
   game.player.pendingLevels = 1;
   game.mode = 'playing';
   const enemy = { id: 450, type: 'scout', x: 100, y: 100, radius: 10, hp: 100, maxHp: 100, alive: true, score: 0, xp: 0, color: '#fff' };
 
   game.showUpgrade();
+  assert.ok(game.currentChoices.every(choice => !['repair', 'bomb'].includes(choice.id)));
   assert.doesNotMatch(game.dom['upgrade-options'].children.map(card => card.innerHTML).join(''), /<img src="[+◆✦]"/);
   const index = game.currentChoices.findIndex(choice => choice.id === 'overdrive-boost');
   assert.ok(index >= 0);
@@ -872,7 +906,7 @@ test('bombs destroy ordinary enemies but only damage large targets', () => {
   const enemy = type => ({ id: game.entityId++, type, x: 100, y: 100, radius: 20, hp: 100, maxHp: 100, alive: true, score: 1, xp: 0, color: '#fff' });
   const scout = enemy('scout');
   const elite = enemy('elite');
-  const midboss = enemy('midboss');
+  const midboss = { ...enemy('midboss'), orbiting: true };
   const boss = { ...enemy('boss'), bossId: 'manta' };
   game.enemies = [scout, elite, midboss, boss];
 

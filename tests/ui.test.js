@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const css = await readFile(new URL('../styles.css', import.meta.url), 'utf8');
+const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
 
 test('page exposes complete desktop and mobile controls', () => {
   for (const id of ['game', 'aircraft-select', 'upgrade-overlay', 'bomb-button', 'pause-button', 'mute-button', 'end-overlay']) {
@@ -23,6 +24,7 @@ test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /type="module" src="\.\/src\/main\.js"/);
   assert.match(html, /viewport-fit=cover/);
+  assert.match(main, /class="aircraft-art"/);
 });
 
 test('pause overlay exposes the complete loadout without widening the game shell', () => {
@@ -32,6 +34,12 @@ test('pause overlay exposes the complete loadout without widening the game shell
   assert.match(css, /\.app-shell\{[^}]*width:min\(100%,520px\)[^}]*justify-self:center/);
   assert.match(css, /\.build-strip>div\{[^}]*min-width:0/);
   assert.match(css, /\.pause-loadout/);
+});
+
+test('generated icons are centered and clipped inside their token frames', () => {
+  assert.match(css, /\.build-strip \.skill-token\{[^}]*overflow:hidden/);
+  assert.match(css, /\.skill-token i img\{[^}]*object-position:center[^}]*display:block/);
+  assert.match(css, /\.upgrade-icon img\{[^}]*object-position:center[^}]*display:block/);
 });
 
 test('mobile build strip reserves enough compact space for all six passive icons', () => {

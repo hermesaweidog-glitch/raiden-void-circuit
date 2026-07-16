@@ -60,17 +60,7 @@ export function isBuildMaxed(build) {
 }
 
 export function makeUpgradeChoices(build, random = Math.random) {
-  const choices = seededShuffle(makeUpgradePool(build), random).slice(0, 3);
-  const fallbacks = [
-    { id: 'repair', category: 'supply', icon: '✚', name: '緊急維修', description: '恢復 2 點生命。' },
-    { id: 'bomb', category: 'supply', icon: '◈', name: '炸彈補給', description: '補充 1 枚炸彈。' },
-    { id: 'score', category: 'supply', icon: '▤', name: '戰術資料', description: '獲得 2500 分。' },
-  ];
-  for (const item of fallbacks) {
-    if (choices.length >= 3) break;
-    if (!choices.some(choice => choice.id === item.id)) choices.push(item);
-  }
-  return choices.slice(0, 3);
+  return seededShuffle(makeUpgradePool(build), random).slice(0, 3);
 }
 
 export function updateGuidance(missile, enemies, position) {

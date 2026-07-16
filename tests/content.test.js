@@ -33,12 +33,19 @@ test('every persistent skill uses a unique generated image icon', () => {
   const skills = [...Object.values(SECONDARIES), ...Object.values(PASSIVES)];
   const icons = skills.map(skill => skill.icon);
 
-  assert.match(PRIMARY_ICON, /^assets\/icons\/.+\.webp$/);
+  assert.equal(PRIMARY_ICON, 'assets/icons/primary-cannon.webp');
   assert.ok(icons.every(Boolean));
   assert.ok(icons.every(icon => /^assets\/icons\/.+\.webp$/.test(icon)));
   assert.equal(new Set(icons).size, skills.length);
   assert.ok(!icons.includes(PRIMARY_ICON));
   assert.ok([PRIMARY_ICON, ...icons].every(icon => existsSync(new URL(`../${icon}`, import.meta.url))));
+});
+
+test('aircraft selection uses three distinct generated craft portraits', () => {
+  const art = Object.values(AIRCRAFT).map(craft => craft.art);
+  assert.equal(new Set(art).size, 3);
+  assert.ok(art.every(path => /^assets\/aircraft\/.+\.webp$/.test(path)));
+  assert.ok(art.every(path => existsSync(new URL(`../${path}`, import.meta.url))));
 });
 
 test('difficulty rises discretely across all five stages', () => {
