@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { AIRCRAFT, SECONDARIES, PASSIVES, PRIMARY_ICON, STAGES, BOSSES, ENEMY_TYPES, WORLD } from '../src/config.js';
 
 test('final content roster is complete', () => {
   assert.equal(Object.keys(AIRCRAFT).length, 3);
   assert.ok(Object.keys(SECONDARIES).length >= 9);
   assert.ok(['gravity', 'prism', 'interceptor'].every(id => SECONDARIES[id]));
-  assert.ok(Object.keys(PASSIVES).length >= 8);
+  assert.ok(Object.keys(PASSIVES).length >= 12);
+  assert.ok(['capacitor', 'payload', 'flux', 'harvester'].every(id => PASSIVES[id]));
   assert.ok(['incendiary', 'cryo', 'voltaic'].every(id => !PASSIVES[id]));
   assert.equal(STAGES.length, 5);
   assert.equal(Object.keys(BOSSES).length, 5);
@@ -18,7 +20,7 @@ test('runtime budgets are explicit and mobile-safe', () => {
   assert.equal(WORLD.maxEnemies, 40);
   assert.ok(WORLD.maxParticles <= 260);
   assert.equal(WORLD.maxEffects, 40);
-  assert.equal(WORLD.maxLevel, 22);
+  assert.ok(WORLD.maxLevel >= 36);
 });
 
 test('all persistent upgrades use exactly three ranks', () => {
@@ -27,14 +29,16 @@ test('all persistent upgrades use exactly three ranks', () => {
   assert.equal(WORLD.maxUpgradeRank, 3);
 });
 
-test('every persistent skill has a unique icon distinct from primary firepower', () => {
+test('every persistent skill uses a unique generated image icon', () => {
   const skills = [...Object.values(SECONDARIES), ...Object.values(PASSIVES)];
   const icons = skills.map(skill => skill.icon);
 
-  assert.equal(PRIMARY_ICON, '✹');
+  assert.match(PRIMARY_ICON, /^assets\/icons\/.+\.webp$/);
   assert.ok(icons.every(Boolean));
+  assert.ok(icons.every(icon => /^assets\/icons\/.+\.webp$/.test(icon)));
   assert.equal(new Set(icons).size, skills.length);
   assert.ok(!icons.includes(PRIMARY_ICON));
+  assert.ok([PRIMARY_ICON, ...icons].every(icon => existsSync(new URL(`../${icon}`, import.meta.url))));
 });
 
 test('difficulty rises discretely across all five stages', () => {

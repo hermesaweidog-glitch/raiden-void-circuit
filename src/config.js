@@ -7,12 +7,12 @@ export const WORLD = {
   maxParticles: 260,
   maxXp: 100,
   maxEffects: 40,
-  maxLevel: 22,
+  maxLevel: 999,
   maxUpgradeRank: 3,
 };
 
 export const BUILD_LIMITS = { secondary: 3, passive: 6 };
-export const PRIMARY_ICON = '✹';
+export const PRIMARY_ICON = 'assets/icons/primary.webp';
 
 export const AIRCRAFT = {
   falcon: { id: 'falcon', name: 'FALCON', subtitle: '散射突擊機', color: '#ff3158', speed: 5.8, hp: 4, primary: 'vulcan', mastery: '熔蝕彈', description: '寬角火力與高機動；滿級追加火焰持續傷害。' },
@@ -21,26 +21,30 @@ export const AIRCRAFT = {
 };
 
 export const SECONDARIES = {
-  homing: { id: 'homing', icon: '➤', name: '追蹤飛彈', max: 3, color: '#ffb703', description: '鎖定單一目標；目標死亡後停止導引。' },
-  drone: { id: 'drone', icon: '◉', name: '軌道無人機', max: 3, color: '#8b5cf6', description: '環繞機體並定期射擊。' },
-  chain: { id: 'chain', icon: 'ϟ', name: '連鎖電弧', max: 3, color: '#67e8f9', description: '定時對附近敵人造成跳躍電擊。' },
-  mines: { id: 'mines', icon: '◆', name: '磁暴地雷', max: 3, color: '#fb7185', description: '在後方留下延遲爆炸地雷。' },
-  rail: { id: 'rail', icon: '║', name: '磁軌爆發', max: 3, color: '#f8fafc', description: '定時發射高傷害貫通彈。' },
-  bombard: { id: 'bombard', icon: '⌄', name: '轟炸莢艙', max: 3, color: '#fb923c', description: '標記敵群位置後進行範圍轟炸。' },
-  gravity: { id: 'gravity', icon: '●', name: '微型重力井', max: 3, color: '#c084fc', description: '週期性生成奇點，牽引並持續傷害敵群。' },
-  prism: { id: 'prism', icon: '◇', name: '稜鏡衛星', max: 3, color: '#f0abfc', description: '折射光束同時貫穿多個目標。' },
-  interceptor: { id: 'interceptor', icon: '✣', name: '攔截蜂群', max: 3, color: '#34d399', description: '自動攔截鄰近敵彈並轉化為反擊脈衝。' },
+  homing: { id: 'homing', icon: 'assets/icons/homing.webp', name: '追蹤飛彈', max: 3, color: '#ffb703', description: '鎖定單一目標；目標死亡後停止導引。' },
+  drone: { id: 'drone', icon: 'assets/icons/drone.webp', name: '軌道無人機', max: 3, color: '#8b5cf6', description: '環繞機體並定期射擊。' },
+  chain: { id: 'chain', icon: 'assets/icons/chain.webp', name: '連鎖電弧', max: 3, color: '#67e8f9', description: '定時由機體跳電，瞬間連鎖附近敵人。' },
+  mines: { id: 'mines', icon: 'assets/icons/mines.webp', name: '磁暴地雷', max: 3, color: '#fb7185', description: '在後方留下延遲爆炸地雷。' },
+  rail: { id: 'rail', icon: 'assets/icons/rail.webp', name: '磁軌爆發', max: 3, color: '#f8fafc', description: '定時發射高傷害貫通彈。' },
+  bombard: { id: 'bombard', icon: 'assets/icons/bombard.webp', name: '轟炸莢艙', max: 3, color: '#fb923c', description: '標記敵群位置後進行範圍轟炸。' },
+  gravity: { id: 'gravity', icon: 'assets/icons/gravity.webp', name: '微型重力井', max: 3, color: '#c084fc', description: '週期性生成奇點，牽引並持續傷害敵群。' },
+  prism: { id: 'prism', icon: 'assets/icons/prism.webp', name: '稜鏡衛星', max: 3, color: '#f0abfc', description: '召喚繞行衛星，持續發射垂直貫通光束。' },
+  interceptor: { id: 'interceptor', icon: 'assets/icons/interceptor.webp', name: '攔截蜂群', max: 3, color: '#34d399', description: '蓄能後派出蜂群，定期清除鄰近敵彈。' },
 };
 
 export const PASSIVES = {
-  magnet: { id: 'magnet', icon: '∩', name: '磁力核心', max: 3, description: '增加經驗吸附範圍與速度。' },
-  overclock: { id: 'overclock', icon: '»', name: '超頻模組', max: 3, description: '提高射速。' },
-  armor: { id: 'armor', icon: '⬡', name: '反應裝甲', max: 3, description: '提升最大生命與受傷無敵時間。' },
-  critical: { id: 'critical', icon: '◎', name: '暴擊矩陣', max: 3, description: '增加暴擊機率與傷害。' },
-  salvage: { id: 'salvage', icon: '✚', name: '戰場回收', max: 3, description: '提升補給與治療機率。' },
-  guidance: { id: 'guidance', icon: '⌖', name: '導引電腦', max: 3, requiresSecondary: 'homing', description: '提升追蹤轉向；滿級允許一次重新鎖定。' },
-  bombcap: { id: 'bombcap', icon: '◈', name: '炸彈電容', max: 3, description: '增加炸彈上限與爆炸傷害。' },
-  engine: { id: 'engine', icon: '▲', name: '引擎調校', max: 3, description: '提升移動速度。' },
+  magnet: { id: 'magnet', icon: 'assets/icons/magnet.webp', name: '磁力核心', max: 3, description: '增加經驗與場地道具的吸附範圍及速度。' },
+  overclock: { id: 'overclock', icon: 'assets/icons/overclock.webp', name: '超頻模組', max: 3, description: '提高射速。' },
+  armor: { id: 'armor', icon: 'assets/icons/armor.webp', name: '反應裝甲', max: 3, description: '提升最大生命與受傷無敵時間。' },
+  critical: { id: 'critical', icon: 'assets/icons/critical.webp', name: '暴擊矩陣', max: 3, description: '增加暴擊機率與傷害。' },
+  salvage: { id: 'salvage', icon: 'assets/icons/salvage.webp', name: '戰場回收', max: 3, description: '提升護盾、炸彈與治療補給機率。' },
+  guidance: { id: 'guidance', icon: 'assets/icons/guidance.webp', name: '導引電腦', max: 3, requiresSecondary: 'homing', description: '提升追蹤轉向；滿級允許一次重新鎖定。' },
+  bombcap: { id: 'bombcap', icon: 'assets/icons/bombcap.webp', name: '炸彈電容', max: 3, description: '增加炸彈上限與爆炸傷害。' },
+  engine: { id: 'engine', icon: 'assets/icons/engine.webp', name: '引擎調校', max: 3, description: '提升移動速度。' },
+  capacitor: { id: 'capacitor', icon: 'assets/icons/capacitor.webp', name: '戰術電容', max: 3, description: '縮短所有副武器的冷卻時間。' },
+  payload: { id: 'payload', icon: 'assets/icons/payload.webp', name: '聚能彈頭', max: 3, description: '提高爆炸與範圍攻擊傷害。' },
+  flux: { id: 'flux', icon: 'assets/icons/flux.webp', name: '相位穩流', max: 3, description: '延長一次性護盾觸發後的無敵時間。' },
+  harvester: { id: 'harvester', icon: 'assets/icons/harvester.webp', name: '經驗收割器', max: 3, description: '提高所有經驗值取得量。' },
 };
 
 export const STAGES = [
@@ -60,9 +64,9 @@ export const BOSSES = {
 };
 
 export const ENEMY_TYPES = {
-  scout: { hp: 8, speed: 1.7, radius: 14, score: 100, xp: 4, color: '#ff4d6d' },
-  striker: { hp: 14, speed: 1.35, radius: 17, score: 180, xp: 7, color: '#fb923c' },
-  gunship: { hp: 24, speed: 0.9, radius: 21, score: 300, xp: 11, color: '#a78bfa' },
-  elite: { hp: 62, speed: 0.72, radius: 27, score: 800, xp: 28, color: '#facc15' },
-  midboss: { hp: 138, speed: 0.62, radius: 34, score: 1800, xp: 40, color: '#22d3ee' },
+  scout: { hp: 8, speed: 1.7, radius: 14, score: 100, xp: 5, color: '#ff4d6d' },
+  striker: { hp: 14, speed: 1.35, radius: 17, score: 180, xp: 9, color: '#fb923c' },
+  gunship: { hp: 24, speed: 0.9, radius: 21, score: 300, xp: 14, color: '#a78bfa' },
+  elite: { hp: 62, speed: 0.72, radius: 27, score: 800, xp: 36, color: '#facc15' },
+  midboss: { hp: 138, speed: 0.62, radius: 34, score: 1800, xp: 55, color: '#22d3ee' },
 };

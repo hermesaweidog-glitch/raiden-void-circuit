@@ -43,7 +43,20 @@ export function makeUpgradePool(build) {
       pool.push({ ...item, category: 'passive', level });
     }
   }
+  if (isBuildMaxed(build)) {
+    pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '無限超載', description: `所有攻擊永久增加 10%；目前已累加 ${build.overdrive || 0} 次。` });
+  }
   return pool;
+}
+
+export function isBuildMaxed(build) {
+  const secondaries = build.secondaries || {};
+  const passives = build.passives || {};
+  return (build.primaryLevel || 1) >= 3
+    && Object.keys(secondaries).length >= (build.secondarySlots || BUILD_LIMITS.secondary)
+    && Object.entries(secondaries).every(([id, rank]) => SECONDARIES[id] && rank >= SECONDARIES[id].max)
+    && Object.keys(passives).length >= (build.passiveSlots || BUILD_LIMITS.passive)
+    && Object.entries(passives).every(([id, rank]) => PASSIVES[id] && rank >= PASSIVES[id].max);
 }
 
 export function makeUpgradeChoices(build, random = Math.random) {
@@ -79,11 +92,11 @@ export function upgradePower(rank) {
 }
 
 export function xpForLevel(level) {
-  return Math.round(20 + level * 9 + level ** 1.28 * 3);
+  return Math.round(16 + level * 5 + level ** 1.18 * 1.6);
 }
 
 export function xpValueForStage(baseValue, stageIndex) {
-  return Math.max(1, Math.round(baseValue * (1 + Math.max(0, stageIndex) * .22)));
+  return Math.max(1, Math.round(baseValue * (1 + Math.max(0, stageIndex) * .35)));
 }
 
 export function splitXpValue(total) {

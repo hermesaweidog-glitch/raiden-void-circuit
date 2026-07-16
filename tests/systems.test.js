@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeUpgradeChoices, makeUpgradePool, midbossProgress, shouldCullEnemyBullet, splitXpValue, stageProgress, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from '../src/systems.js';
+import { isBuildMaxed, makeUpgradeChoices, makeUpgradePool, midbossProgress, shouldCullEnemyBullet, splitXpValue, stageProgress, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from '../src/systems.js';
+import { ENEMY_TYPES, STAGES } from '../src/config.js';
 
 test('upgrade choices are unique and omit maxed items', () => {
   const build = {
@@ -30,6 +31,22 @@ test('full equipment slots only offer upgrades for owned equipment', () => {
   const passiveIds = pool.filter(item => item.category === 'passive').map(item => item.id);
   assert.deepEqual(new Set(secondaryIds), new Set(['homing', 'rail', 'drone']));
   assert.deepEqual(new Set(passiveIds), new Set(['magnet', 'armor', 'critical', 'overclock', 'bombcap']));
+});
+
+test('a completely maxed loadout offers an unlimited ten-percent attack upgrade', () => {
+  const build = {
+    primaryLevel: 3,
+    secondaries: { homing: 3, rail: 3, drone: 3 },
+    passives: { magnet: 3, armor: 3, critical: 3, engine: 3, overclock: 3, bombcap: 3 },
+    secondarySlots: 3,
+    passiveSlots: 6,
+    overdrive: 7,
+  };
+
+  assert.equal(isBuildMaxed(build), true);
+  assert.ok(makeUpgradePool(build).some(item => item.id === 'overdrive-boost'));
+  assert.ok(makeUpgradeChoices(build, () => 0).some(item => item.id === 'overdrive-boost'));
+  assert.equal(isBuildMaxed({ ...build, passives: { ...build.passives, armor: 2 } }), false);
 });
 
 test('three visible ranks preserve the former 1, 3, and 5 power milestones', () => {
@@ -87,8 +104,9 @@ test('enemy bullets remain alive until their full body crosses the playfield edg
 });
 
 test('early XP pacing awards the first earned level by the second opening wave', () => {
-  assert.equal(xpForLevel(1), 32);
+  assert.ok(xpForLevel(1) <= 24);
   assert.ok(xpForLevel(2) > xpForLevel(1));
+  assert.ok(Array.from({ length: 35 }, (_, index) => xpForLevel(index + 1)).reduce((sum, value) => sum + value, 0) <= 5600);
 });
 
 test('later sectors award richer XP drops without changing opening balance', () => {
@@ -97,6 +115,29 @@ test('later sectors award richer XP drops without changing opening balance', () 
   const values = splitXpValue(37);
   assert.equal(values.reduce((total, value) => total + value, 0), 37);
   assert.ok(new Set(values).size >= 3, 'large drops should expose multiple visible denominations');
+});
+
+test('a full five-sector clear contains enough XP to max equipped skills and continue into overdrive', () => {
+  let campaignXp = 0;
+  STAGES.forEach((stage, stageIndex) => {
+    for (let waveIndex = 0; waveIndex < stage.waves; waveIndex += 1) {
+      if (waveIndex + 1 === stage.midbossWave) {
+        campaignXp += xpValueForStage(ENEMY_TYPES.midboss.xp, stageIndex);
+        continue;
+      }
+      const count = 6 + stageIndex + Math.floor(waveIndex * .85);
+      for (let index = 0; index < count; index += 1) {
+        let type = 'scout';
+        if (stageIndex >= 1 && (index + waveIndex) % 4 === 0) type = 'striker';
+        if (stageIndex >= 2 && (index + waveIndex) % 5 === 0) type = 'gunship';
+        campaignXp += xpValueForStage(ENEMY_TYPES[type].xp, stageIndex);
+      }
+      if (waveIndex === stage.waves - 1) campaignXp += xpValueForStage(ENEMY_TYPES.elite.xp, stageIndex);
+    }
+  });
+  const level36Cost = Array.from({ length: 35 }, (_, index) => xpForLevel(index + 1)).reduce((sum, value) => sum + value, 0);
+  assert.ok(campaignXp >= level36Cost, `campaign XP ${campaignXp} must cover level-36 cost ${level36Cost}`);
+  assert.ok(campaignXp >= 2463, 'campaign must cover the 23 earned levels needed to max a full equipped loadout');
 });
 
 test('route progress reaches and holds explicit midboss and boss nodes', () => {

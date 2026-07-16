@@ -386,6 +386,24 @@ test('raijin side gates cover the arena with wider readable lanes', () => {
   assert.ok(game.enemyBullets.every(bullet => bullet.x >= 0 && bullet.x <= WORLD.width));
 });
 
+test('raijin phase-one gate launch rows sweep vertically between volleys', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.stageIndex = 4;
+  const boss = { bossId: 'raijin', phase: 0, x: 240, y: 118, age: 0, color: '#c084fc' };
+
+  game.bossAttack(boss);
+  const firstRows = [...new Set(game.enemyBullets.map(bullet => bullet.y))];
+  game.enemyBullets = [];
+  boss.age = 30;
+  game.bossAttack(boss);
+  const secondRows = [...new Set(game.enemyBullets.map(bullet => bullet.y))];
+
+  assert.ok(firstRows.some((row, index) => Math.abs(row - secondRows[index]) >= 45));
+});
+
 test('upgrade cards and combat build strip render skill icons with numeric ranks', () => {
   const { game } = makeGame();
   game.start('falcon');
@@ -396,9 +414,9 @@ test('upgrade cards and combat build strip render skill icons with numeric ranks
   game.player.build.revision += 1;
   game.updateHud();
 
-  assert.match(game.dom['primary-build'].innerHTML, /skill-token.+✹.+>1</);
-  assert.match(game.dom['secondary-build'].innerHTML, /skill-token.+➤.+>2</);
-  assert.match(game.dom['passive-build'].innerHTML, /skill-token.+⬡.+>3</);
+  assert.match(game.dom['primary-build'].innerHTML, /skill-token.+primary\.webp.+>1</);
+  assert.match(game.dom['secondary-build'].innerHTML, /skill-token.+homing\.webp.+>2</);
+  assert.match(game.dom['passive-build'].innerHTML, /skill-token.+armor\.webp.+>3</);
   assert.doesNotMatch(game.dom['secondary-build'].innerHTML, />追蹤飛彈</);
 });
 
@@ -474,6 +492,29 @@ test('the aircraft visibly flies in from below and exits upward after stage clea
   const exitY = game.player.y;
   game.update();
   assert.ok(game.player.y < exitY);
+});
+
+test('late-stage lateral enemies keep their drift centerline in reach and stay visible for most of each cycle', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.stageIndex = 4;
+  game.spawnEnemy('scout', -72, 120, 1, 1, 0);
+  const enemy = game.enemies[0];
+  enemy.speed = 0;
+  enemy.cooldown = 999;
+
+  assert.ok(enemy.originX >= enemy.radius);
+  let centerOutsideFrames = 0;
+  let fullyOffscreenFrames = 0;
+  for (let frame = 0; frame < 126; frame += 1) {
+    game.updateEnemies();
+    if (enemy.x < 0 || enemy.x > WORLD.width) centerOutsideFrames += 1;
+    if (enemy.x + enemy.radius < 0 || enemy.x - enemy.radius > WORLD.width) fullyOffscreenFrames += 1;
+  }
+  assert.ok(centerOutsideFrames > 0, 'drift may still briefly cross outside the arena');
+  assert.ok(fullyOffscreenFrames < 63, 'enemy must remain targetable for more than half of its drift cycle');
 });
 
 test('ordinary encounters hide wave numbering and use at least six formations', () => {
@@ -573,6 +614,7 @@ test('deficit-only field supplies drop rarely and replace hidden stage refills',
   game.chooseUpgrade(0);
   const enemy = { type: 'scout', x: 100, y: 100 };
   game.player.bombs = game.player.maxBombs;
+  game.player.shield = 1;
 
   assert.equal(game.maybeDropSupply(enemy, () => 0), false, 'full resources must not produce supplies');
   game.player.hp -= 1;
@@ -614,14 +656,145 @@ test('new secondary archetypes create distinct gravity, prism, and interception 
   game.player.secondaryCooldowns.prism = 0;
   game.player.build.secondaries = { prism: 1 };
   game.updateSecondaries();
-  assert.ok(game.effects.some(effect => effect.type === 'prism'));
-  assert.ok(game.enemies[0].hp < 100);
+  assert.ok(game.effects.some(effect => effect.type === 'prismSatellite'));
+  assert.equal(game.enemies[0].hp, 100, 'prism satellites must not duplicate chain lightning with instant multi-target damage');
+  game.updateEffects();
+  assert.ok(game.playerBullets.some(bullet => bullet.kind === 'prism'));
 
   game.player.secondaryCooldowns.interceptor = 0;
   game.player.build.secondaries = { interceptor: 1 };
   game.enemyBullets = [{ x: 240, y: 650, vx: 0, vy: 1, radius: 5 }];
   game.updateSecondaries();
+  assert.equal(game.enemyBullets.length, 1, 'interception must telegraph before deleting bullets');
+  assert.ok(game.effects.some(effect => effect.type === 'interceptorPulse'));
+  assert.ok(game.player.secondaryCooldowns.interceptor >= 100);
+  for (let frame = 0; frame < 20; frame += 1) game.updateEffects();
   assert.equal(game.enemyBullets.length, 0);
+});
+
+test('lancer beam grows visibly thicker with each primary upgrade', () => {
+  const { game } = makeGame();
+  game.start('lancer');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 1;
+  game.firePrimary();
+  const firstRankRadius = game.playerBullets.find(bullet => bullet.kind === 'beam').radius;
+  game.player.build.primaryLevel = 3;
+  game.firePrimary();
+  const maxRankRadius = game.playerBullets.find(bullet => bullet.kind === 'beam').radius;
+
+  assert.ok(maxRankRadius - firstRankRadius >= 3.5);
+});
+
+test('lancer beam pierces every aligned enemy even at its first rank', () => {
+  const { game } = makeGame();
+  game.start('lancer');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 1;
+  game.firePrimary();
+  game.enemies = [180, 300, 420].map((y, index) => ({ id: 300 + index, type: 'scout', x: game.player.x, y, radius: 12, hp: 100, maxHp: 100, alive: true, score: 1, xp: 0, color: '#fff' }));
+
+  game.updatePlayerBullets();
+
+  assert.ok(game.enemies.every(enemy => enemy.hp < 100));
+});
+
+test('falcon vulcan spreads its outer shots into a visibly wider cone', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 3;
+  game.firePrimary();
+  const velocities = game.playerBullets.map(bullet => bullet.vx);
+  assert.ok(Math.max(...velocities) >= 2.2);
+  assert.ok(Math.min(...velocities) <= -2.2);
+});
+
+test('field supplies magnetize like XP and a shield blocks one hit', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const supply = { type: 'supply', x: game.player.x + 35, y: game.player.y, supply: 'shield', life: 520, radius: 16, attracting: false };
+  game.effects = [supply];
+
+  game.updateEffects();
+  assert.equal(supply.attracting, true);
+  assert.ok(supply.x < game.player.x + 35);
+  for (let frame = 0; frame < 20 && game.effects.length; frame += 1) game.updateEffects();
+  assert.equal(game.player.shield, 1);
+
+  const hp = game.player.hp;
+  game.player.invincible = 0;
+  game.hitPlayer();
+  assert.equal(game.player.hp, hp);
+  assert.equal(game.player.shield, 0);
+  assert.ok(game.player.invincible >= 100);
+});
+
+test('shield supplies can drop at full resources and health or bomb drops are slightly more common', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  const enemy = { type: 'scout', x: 100, y: 100 };
+  game.player.bombs = game.player.maxBombs;
+
+  assert.equal(game.maybeDropSupply(enemy, () => 0), true);
+  assert.equal(game.effects.at(-1).supply, 'shield');
+  game.effects = [];
+  game.player.shield = 1;
+  game.player.hp -= 1;
+  assert.equal(game.maybeDropSupply(enemy, () => .005), true, 'scout supply chance should exceed the former 0.35% rate');
+});
+
+test('new passive modules alter cooldown, area damage, shield window, and XP gain', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.passives = { capacitor: 3, payload: 3, flux: 3, harvester: 3 };
+  game.player.build.secondaries = { rail: 1 };
+
+  game.player.xp = 0;
+  game.grantXp(10, true);
+  assert.equal(game.player.xp, 14);
+  game.updateSecondaries();
+  assert.ok(game.player.secondaryCooldowns.rail < 142);
+
+  game.enemies = [{ id: 911, type: 'scout', x: 100, y: 100, radius: 12, hp: 100, maxHp: 100, alive: true }];
+  game.areaDamage(100, 100, 50, 10);
+  assert.equal(game.enemies[0].hp, 87);
+
+  game.player.shield = 1;
+  game.player.invincible = 0;
+  game.hitPlayer();
+  assert.equal(game.player.invincible, 200);
+});
+
+test('maxed loadouts stack ten-percent attack upgrades and show them on the primary token', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.player.build.primaryLevel = 3;
+  game.player.build.secondaries = { homing: 3, rail: 3, drone: 3 };
+  game.player.build.passives = { magnet: 3, armor: 3, critical: 3, engine: 3, overclock: 3, bombcap: 3 };
+  game.player.pendingLevels = 1;
+  game.mode = 'playing';
+  const enemy = { id: 450, type: 'scout', x: 100, y: 100, radius: 10, hp: 100, maxHp: 100, alive: true, score: 0, xp: 0, color: '#fff' };
+
+  game.showUpgrade();
+  assert.doesNotMatch(game.dom['upgrade-options'].children.map(card => card.innerHTML).join(''), /<img src="[+◆✦]"/);
+  const index = game.currentChoices.findIndex(choice => choice.id === 'overdrive-boost');
+  assert.ok(index >= 0);
+  game.chooseUpgrade(index);
+  game.damageEnemy(enemy, 10, false);
+  assert.equal(game.player.build.overdrive, 1);
+  assert.equal(enemy.hp, 89);
+  game.updateHud();
+  assert.match(game.dom['primary-build'].innerHTML, /\+10%/);
 });
 
 test('maxed primaries use one fixed craft-specific payload', () => {

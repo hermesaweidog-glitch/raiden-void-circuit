@@ -37,7 +37,7 @@ test('pause overlay exposes the complete loadout without widening the game shell
 test('mobile build strip reserves enough compact space for all six passive icons', () => {
   assert.match(css, /\.build-strip\{[^}]*grid-template-columns:\.7fr 1\.05fr 1\.85fr/);
   assert.match(css, /\.build-strip>div>span\{[^}]*flex-wrap:wrap[^}]*overflow:visible/);
-  assert.match(css, /@media \(max-width:420px\)\{\.build-strip\{grid-template-columns:34px 84px minmax\(0,1fr\)/);
+  assert.match(css, /@media \(max-width:420px\)\{\.build-strip\{grid-template-columns:54px 76px minmax\(0,1fr\)/);
   assert.match(css, /@media \(max-width:420px\)[\s\S]*\.build-strip>div>span\{[^}]*flex-wrap:wrap[^}]*overflow:visible/);
   assert.doesNotMatch(css, /@media \(max-width:390px\)[^}]*\.build-strip>div:last-child\{display:none/);
 });

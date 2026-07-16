@@ -4,6 +4,7 @@ import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarg
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
 const choose = items => items[(Math.random() * items.length) | 0];
+const skillIconMarkup = icon => icon.startsWith('assets/') ? `<img src="${icon}" alt="" draggable="false">` : icon;
 const isLargeEnemyType = type => type === 'elite' || type === 'midboss' || type === 'boss';
 const readStorage = (key, fallback = null) => {
   try { return localStorage.getItem(key) ?? fallback; }
@@ -133,9 +134,9 @@ export class Game {
     this.player = {
       x: this.w / 2, y: this.h - 92, targetX: this.w / 2, targetY: this.h - 92,
       radius: 15, hitRadius: 5, craftId, craft, hp: craft.hp, maxHp: craft.hp,
-      bombs: 2, maxBombs: 3, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
+      bombs: 2, maxBombs: 3, shield: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: 1,
-      build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive, revision: 0 },
+      build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive, overdrive: 0, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -354,8 +355,9 @@ export class Game {
     if (activeEnemies >= WORLD.maxEnemies) return false;
     const base = ENEMY_TYPES[type];
     const stage = STAGES[this.stageIndex];
+    const spawnX = isLargeEnemyType(type) ? x : clamp(x, base.radius, this.w - base.radius);
     this.enemies.push({
-      id: this.entityId++, type, x, y, originX: x, radius: base.radius, alive: true,
+      id: this.entityId++, type, x: spawnX, y, originX: spawnX, radius: base.radius, alive: true,
       hp: base.hp * stage.enemyHp * pressure, maxHp: base.hp * stage.enemyHp * pressure,
       speed: base.speed * stage.enemySpeed * (type === 'elite' ? .8 : 1), score: base.score,
       xp: base.xp, color: base.color, cooldown: rand(45, 120), age: 0, formation, index,
@@ -441,14 +443,14 @@ export class Game {
       const count = 1 + Math.floor(level / 2) * 2;
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
-        add(offset * .72, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
+        add(offset * 1.15, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
       }
     } else if (p.craft.primary === 'laser') {
       p.fireCooldown = 0;
       const beamData = {
-        x: p.x, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: 3 + level * .55,
+        x: p.x, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: 3.2 + level * .9,
         damage: .22 + level * .055, life: 2, color: '#7df5ff', kind: 'beam',
-        maxTargets: 1 + Math.floor(level / 2), statuses, statusPowers,
+        maxTargets: Infinity, statuses, statusPowers,
       };
       const beam = this.playerBullets.find(bullet => bullet.kind === 'beam');
       if (beam) Object.assign(beam, beamData);
@@ -478,6 +480,11 @@ export class Game {
     return selected;
   }
 
+  setSecondaryCooldown(id, frames) {
+    const capacitor = upgradePower(this.player.build.passives.capacitor || 0);
+    this.player.secondaryCooldowns[id] = Math.max(12, Math.round(frames * (1 - capacitor * .045)));
+  }
+
   updateSecondaries() {
     const p = this.player;
     for (const [id, rank] of Object.entries(p.build.secondaries)) {
@@ -496,14 +503,14 @@ export class Game {
             reacquired: false,
           });
         }
-        p.secondaryCooldowns[id] = Math.max(30, 88 - level * 9);
+        this.setSecondaryCooldown(id, Math.max(30, 88 - level * 9));
       } else if (id === 'drone') {
         const count = Math.min(3, 1 + Math.floor(level / 2));
         for (let i = 0; i < count; i += 1) {
           const angle = this.frame * .035 + i / count * TAU;
           this.addPlayerBullet({ id: this.entityId++, x: p.x + Math.cos(angle) * 34, y: p.y + Math.sin(angle) * 20, vx: Math.sin(angle) * .5, vy: -9, radius: 3.2, damage: 1.5 + level * .55, life: 120, color: '#a78bfa', kind: 'drone', pierce: 0, splash: 0 });
         }
-        p.secondaryCooldowns[id] = Math.max(18, 48 - level * 5);
+        this.setSecondaryCooldown(id, Math.max(18, 48 - level * 5));
       } else if (id === 'chain') {
         const targets = this.nearestEnemies(p, Math.min(4, 1 + level));
         if (targets.length) {
@@ -512,42 +519,32 @@ export class Game {
           for (const target of targets) { this.damageEnemy(target, 2.4 + level * 1.15, false); points.push({ x: target.x, y: target.y }); previous = target; }
           this.addEffect({ type: 'arc', points, life: 12, maxLife: 12 });
         }
-        p.secondaryCooldowns[id] = Math.max(45, 115 - level * 10);
+        this.setSecondaryCooldown(id, Math.max(45, 115 - level * 10));
       } else if (id === 'mines') {
         this.addEffect({ type: 'mine', x: p.x, y: p.y + 22, radius: 10, trigger: 42 + level * 5, timer: 180, damage: 6 + level * 3.2 });
-        p.secondaryCooldowns[id] = Math.max(70, 150 - level * 10);
+        this.setSecondaryCooldown(id, Math.max(70, 150 - level * 10));
       } else if (id === 'rail') {
         this.addPlayerBullet({ id: this.entityId++, x: p.x, y: p.y - 20, vx: 0, vy: -15, radius: 5, damage: 7 + level * 2.4, life: 75, color: '#fff', kind: 'rail', pierce: 6 + level, splash: 0 });
-        p.secondaryCooldowns[id] = Math.max(70, 155 - level * 13);
+        this.setSecondaryCooldown(id, Math.max(70, 155 - level * 13));
       } else if (id === 'bombard') {
         const target = pickNearestTarget(p, this.enemies);
         if (target) this.addEffect({ type: 'bombard', x: target.x, y: target.y, timer: 45, maxTimer: 45, radius: 35 + level * 5, damage: 7 + level * 3.2 });
-        p.secondaryCooldowns[id] = Math.max(65, 145 - level * 11);
+        this.setSecondaryCooldown(id, Math.max(65, 145 - level * 11));
       } else if (id === 'gravity') {
         const target = pickNearestTarget(p, this.enemies);
         if (target) this.addEffect({ type: 'gravity', x: target.x, y: target.y, radius: 52 + level * 6, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0 });
-        p.secondaryCooldowns[id] = Math.max(95, 190 - level * 15);
+        this.setSecondaryCooldown(id, Math.max(95, 190 - level * 15));
       } else if (id === 'prism') {
-        const targets = this.nearestEnemies(p, Math.min(5, 1 + level));
-        if (targets.length) {
-          const points = [{ x: p.x, y: p.y }, ...targets.map(target => ({ x: target.x, y: target.y }))];
-          for (const target of targets) this.damageEnemy(target, 2.2 + level * 1.05, false);
-          this.addEffect({ type: 'prism', points, life: 16, maxLife: 16 });
-        }
-        p.secondaryCooldowns[id] = Math.max(48, 120 - level * 10);
+        this.effects = this.effects.filter(effect => effect.type !== 'prismSatellite');
+        const count = Math.min(3, 1 + Math.floor(level / 2));
+        for (let index = 0; index < count; index += 1) this.addEffect({
+          type: 'prismSatellite', angle: index / count * TAU, x: p.x, y: p.y,
+          life: 190 + level * 8, maxLife: 190 + level * 8, pulse: index * 6, rank: level,
+        });
+        this.setSecondaryCooldown(id, Math.max(95, 175 - level * 10));
       } else if (id === 'interceptor') {
-        const count = Math.min(6, 1 + level);
-        for (let n = 0; n < count; n += 1) {
-          let bestIndex = -1; let bestDistance = 245 ** 2;
-          for (let i = 0; i < this.enemyBullets.length; i += 1) {
-            const d2 = distanceSq(p, this.enemyBullets[i]);
-            if (d2 < bestDistance) { bestDistance = d2; bestIndex = i; }
-          }
-          if (bestIndex < 0) break;
-          const [bullet] = this.enemyBullets.splice(bestIndex, 1);
-          this.addEffect({ type: 'ring', x: bullet.x, y: bullet.y, radius: 2, maxRadius: 18, life: 12, maxLife: 12, color: '#34d399' });
-        }
-        p.secondaryCooldowns[id] = Math.max(28, 82 - level * 8);
+        this.addEffect({ type: 'interceptorPulse', x: p.x, y: p.y, timer: 18, maxTimer: 18, count: Math.min(6, 1 + level), range: 245 });
+        this.setSecondaryCooldown(id, Math.max(100, 160 - level * 12));
       }
     }
   }
@@ -810,7 +807,8 @@ export class Game {
       if (boss.phase >= 1) for (let n = 0; n < 5; n += 1) this.aim(boss, speed * rand(.72, 1.12), rand(-.45, .45));
       if (boss.phase >= 2) radial(22, speed, boss.age * .02, n => n % 11 === 5 || n % 11 === 6);
     } else {
-      for (const x of [-36, this.w + 36]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, 150 + n * 94, x < this.w / 2 ? speed * .86 : -speed * .86, speed * .62, 5, '#c084fc', 360, 30);
+      const gateTop = 145 + Math.sin(boss.age * .055) * 75;
+      for (const x of [-36, this.w + 36]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, gateTop + n * 110, x < this.w / 2 ? speed * .9 : -speed * .9, speed * .62, 5, '#c084fc', 360, 30);
       if (boss.phase >= 1) radial(20, speed * .82, boss.age * .075);
       if (boss.phase >= 2) { radial(28, speed * 1.05, boss.age * .028, n => n >= 12 && n <= 15); this.aim(boss, speed * 1.7); }
     }
@@ -833,7 +831,8 @@ export class Game {
 
   damageEnemy(enemy, damage, particles = true) {
     if (!enemy.alive) return;
-    enemy.hp -= damage;
+    const overdrive = this.player?.build.overdrive || 0;
+    enemy.hp -= damage * (1 + overdrive * .1);
     if (particles && isLargeEnemyType(enemy.type)) enemy.hitFlash = 4;
     else if (particles) this.spawnBurst(enemy.x, enemy.y, 2, enemy.color);
     if (enemy.hp <= 0) this.killEnemy(enemy);
@@ -841,9 +840,11 @@ export class Game {
 
   areaDamage(x, y, radius, damage, ignoredId = null) {
     const r2 = radius * radius;
+    const payload = upgradePower(this.player?.build.passives.payload || 0);
+    const boostedDamage = damage * (1 + payload * .06);
     for (const enemy of this.enemies) {
       const dx = enemy.x - x; const dy = enemy.y - y;
-      if (enemy.alive && enemy.id !== ignoredId && dx * dx + dy * dy <= r2) this.damageEnemy(enemy, damage, false);
+      if (enemy.alive && enemy.id !== ignoredId && dx * dx + dy * dy <= r2) this.damageEnemy(enemy, boostedDamage, false);
     }
     this.addEffect({ type: 'ring', x, y, radius: 3, maxRadius: radius, life: 14, maxLife: 14, color: '#ffd166' });
   }
@@ -877,11 +878,16 @@ export class Game {
   maybeDropSupply(enemy, random = Math.random) {
     const needsHeal = this.player.hp < this.player.maxHp;
     const needsBomb = this.player.bombs < this.player.maxBombs;
-    if (!needsHeal && !needsBomb) return false;
+    const needsShield = this.player.shield < 1;
+    if (!needsHeal && !needsBomb && !needsShield) return false;
     const salvage = upgradePower(this.player.build.passives.salvage || 0);
-    const baseChance = { scout: .0035, striker: .0045, gunship: .007, elite: .025, midboss: .04 }[enemy.type] || .0035;
-    if (random() >= Math.min(.07, baseChance + salvage * .003)) return false;
-    const supply = needsHeal && needsBomb ? (random() < .6 ? 'heal' : 'bomb') : needsHeal ? 'heal' : 'bomb';
+    const baseChance = { scout: .006, striker: .008, gunship: .012, elite: .035, midboss: .06 }[enemy.type] || .006;
+    if (random() >= Math.min(.11, baseChance + salvage * .004)) return false;
+    const candidates = [];
+    if (needsHeal) candidates.push('heal', 'heal');
+    if (needsBomb) candidates.push('bomb');
+    if (needsShield) candidates.push('shield');
+    const supply = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
     if (this.effects.length >= WORLD.maxEffects) {
       const visualIndex = this.effects.findIndex(effect => effect.type !== 'supply');
       if (visualIndex < 0) return false;
@@ -891,9 +897,9 @@ export class Game {
   }
 
   supplyStyle(type) {
-    return type === 'heal'
-      ? { color: '#4cff9b', label: '+' }
-      : { color: '#ffd166', label: 'B' };
+    if (type === 'heal') return { color: '#4cff9b', label: '+' };
+    if (type === 'shield') return { color: '#c084fc', label: '◇' };
+    return { color: '#ffd166', label: 'B' };
   }
 
   xpOrbStyle(value) {
@@ -945,7 +951,8 @@ export class Game {
 
   grantXp(amount, defer = false) {
     if (!this.player) return;
-    this.player.xp += amount;
+    const harvester = upgradePower(this.player.build.passives.harvester || 0);
+    this.player.xp += Math.max(1, Math.round(amount * (1 + harvester * .08)));
     while (this.player.level < WORLD.maxLevel && this.player.xp >= this.player.xpNeed) {
       this.player.xp -= this.player.xpNeed;
       this.player.level += 1;
@@ -971,8 +978,9 @@ export class Game {
     this.currentChoices.forEach((choice, index) => {
       const button = document.createElement('button');
       button.className = 'upgrade-card';
-      const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
-      button.innerHTML = `<span class="upgrade-icon" aria-hidden="true">${choice.icon}</span><span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · LV ${current} → ${current + 1}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
+      const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.category === 'overdrive' ? this.player.build.overdrive || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
+      const progress = choice.category === 'overdrive' ? `STACK ${current} → ${current + 1}` : `LV ${current} → ${current + 1}`;
+      button.innerHTML = `<span class="upgrade-icon" aria-hidden="true">${skillIconMarkup(choice.icon)}</span><span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · ${progress}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
       button.addEventListener('click', () => this.chooseUpgrade(index));
       holder.append(button);
     });
@@ -984,7 +992,8 @@ export class Game {
     if (this.mode !== 'levelup' || !this.currentChoices?.[index]) return;
     const choice = this.currentChoices[index];
     const p = this.player;
-    if (choice.id === 'primary') p.build.primaryLevel = Math.min(WORLD.maxUpgradeRank, p.build.primaryLevel + 1);
+    if (choice.id === 'overdrive-boost') p.build.overdrive = (p.build.overdrive || 0) + 1;
+    else if (choice.id === 'primary') p.build.primaryLevel = Math.min(WORLD.maxUpgradeRank, p.build.primaryLevel + 1);
     else if (choice.category === 'secondary') p.build.secondaries[choice.id] = Math.min(SECONDARIES[choice.id].max, (p.build.secondaries[choice.id] || 0) + 1);
     else if (choice.category === 'passive') {
       p.build.passives[choice.id] = Math.min(PASSIVES[choice.id].max, (p.build.passives[choice.id] || 0) + 1);
@@ -1029,20 +1038,53 @@ export class Game {
         }
         if (effect.pulse % 12 === 0) this.areaDamage(effect.x, effect.y, effect.radius, effect.damage);
         if (effect.timer <= 0) this.effects.splice(i, 1);
+      } else if (effect.type === 'prismSatellite') {
+        effect.life -= 1; effect.angle += .045; effect.pulse -= 1;
+        effect.x = this.player.x + Math.cos(effect.angle) * 44;
+        effect.y = this.player.y + Math.sin(effect.angle) * 22;
+        if (effect.pulse <= 0) {
+          this.addPlayerBullet({ id: this.entityId++, x: effect.x, y: effect.y - 8, vx: 0, vy: -12.5, radius: 3.5, damage: 1.2 + effect.rank * .48, life: 90, color: '#f0abfc', kind: 'prism', pierce: 99, splash: 0 });
+          effect.pulse = Math.max(12, 25 - effect.rank * 2);
+        }
+        if (effect.life <= 0) this.effects.splice(i, 1);
+      } else if (effect.type === 'interceptorPulse') {
+        effect.timer -= 1; effect.x = this.player.x; effect.y = this.player.y;
+        if (effect.timer <= 0) {
+          for (let count = 0; count < effect.count; count += 1) {
+            let bestIndex = -1; let bestDistance = effect.range ** 2;
+            for (let bulletIndex = 0; bulletIndex < this.enemyBullets.length; bulletIndex += 1) {
+              const d2 = distanceSq(effect, this.enemyBullets[bulletIndex]);
+              if (d2 < bestDistance) { bestDistance = d2; bestIndex = bulletIndex; }
+            }
+            if (bestIndex < 0) break;
+            const [bullet] = this.enemyBullets.splice(bestIndex, 1);
+            this.addEffect({ type: 'ring', x: bullet.x, y: bullet.y, radius: 2, maxRadius: 22, life: 15, maxLife: 15, color: '#34d399' });
+          }
+          this.spawnBurst(effect.x, effect.y, 18, '#34d399');
+          this.effects.splice(i, 1);
+        }
       } else if (effect.type === 'supply') {
         effect.life -= 1;
-        if (this.mode === 'stageClear' || effect.y >= this.h - 150) {
+        const magnet = upgradePower(this.player.build.passives.magnet || 0);
+        const dx = this.player.x - effect.x; const dy = this.player.y - effect.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < (42 + magnet * 30) ** 2 || this.mode === 'stageClear' || effect.y >= this.h - 150) {
           effect.attracting = true;
-          effect.x += (this.player.x - effect.x) * .12;
-          effect.y += (this.player.y - effect.y) * .12;
+          const distance = Math.max(1, Math.sqrt(d2));
+          const speed = Math.min(9 + magnet, Math.max(2.4 + magnet * .4, distance * .14));
+          effect.x += dx / distance * speed;
+          effect.y += dy / distance * speed;
         } else effect.y += .65;
         if (distanceSq(effect, this.player) < 30 ** 2) {
           if (effect.supply === 'heal') {
             this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1);
             this.announce('FIELD REPAIR', '+1 HP', 900);
-          } else {
+          } else if (effect.supply === 'bomb') {
             this.player.bombs = Math.min(this.player.maxBombs, this.player.bombs + 1);
             this.announce('BOMB RESTORED', '+1 BOMB', 900);
+          } else {
+            this.player.shield = 1;
+            this.announce('PHASE SHIELD', 'BLOCKS ONE HIT', 900);
           }
           this.effects.splice(i, 1); this.sound('level'); this.updateHud();
         }
@@ -1069,6 +1111,16 @@ export class Game {
 
   hitPlayer() {
     if (!this.player || this.player.invincible > 0) return;
+    if (this.player.shield > 0) {
+      const flux = upgradePower(this.player.build.passives.flux || 0);
+      this.player.shield = 0;
+      this.player.invincible = 110 + flux * 18;
+      this.enemyBullets = this.enemyBullets.filter(b => distanceSq(b, this.player) > 110 ** 2);
+      this.addEffect({ type: 'ring', x: this.player.x, y: this.player.y, radius: 10, maxRadius: 90, life: 24, maxLife: 24, color: '#c084fc' });
+      this.spawnBurst(this.player.x, this.player.y, 28, '#c084fc');
+      this.announce('SHIELD BREAK', 'PHASE WINDOW ACTIVE', 800);
+      this.sound('hit'); this.updateHud(); return;
+    }
     this.player.hp -= 1;
     const armor = upgradePower(this.player.build.passives.armor || 0);
     this.player.invincible = 95 + armor * 15;
@@ -1101,7 +1153,8 @@ export class Game {
     const p = this.player;
     const list = (items, catalog) => Object.entries(items).map(([id, rank]) => `${catalog[id].name} Lv.${rank}`).join('　/　') || '尚未取得';
     const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${p.craft.mastery}` : '';
-    this.dom['pause-primary'].textContent = `${p.craft.name} · ${p.craft.primary.toUpperCase()} · Lv.${p.build.primaryLevel}${mastery}`;
+    const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * 10}%` : '';
+    this.dom['pause-primary'].textContent = `${p.craft.name} · ${p.craft.primary.toUpperCase()} · Lv.${p.build.primaryLevel}${mastery}${overdrive}`;
     this.dom['pause-secondary'].textContent = list(p.build.secondaries, SECONDARIES);
     this.dom['pause-passive'].textContent = list(p.build.passives, PASSIVES);
   }
@@ -1212,8 +1265,9 @@ export class Game {
     setClass('boss-node', 'cleared', Boolean(!boss && routeMode !== 'bossWarning' && (routeMode === 'stageClear' || routeMode === 'victory')));
     const buildRevision = p?.build.revision ?? -1;
     if (buildRevision !== this.hudBuildRevision) {
-      const token = (icon, level, name) => `<span class="skill-token" title="${name} Lv.${level}" aria-label="${name}等級${level}"><i aria-hidden="true">${icon}</i><b>${level}</b></span>`;
-      this.dom['primary-build'].innerHTML = p ? token(PRIMARY_ICON, p.build.primaryLevel, `${p.craft.name}主武器`) : '—';
+      const token = (icon, badge, name, level = badge) => `<span class="skill-token" title="${name} Lv.${level}" aria-label="${name}等級${level}"><i aria-hidden="true">${skillIconMarkup(icon)}</i><b>${badge}</b></span>`;
+      const primaryBadge = p?.build.overdrive ? `+${p.build.overdrive * 10}%` : p?.build.primaryLevel;
+      this.dom['primary-build'].innerHTML = p ? token(PRIMARY_ICON, primaryBadge, `${p.craft.name}主武器`, p.build.primaryLevel) : '—';
       this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(SECONDARIES[id].icon, level, SECONDARIES[id].name)).join('') || '—' : '—';
       this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, level, PASSIVES[id].name)).join('') || '—' : '—';
       this.hudBuildRevision = buildRevision;
@@ -1245,6 +1299,7 @@ export class Game {
     ctx.fillStyle=p.craft.color; ctx.beginPath(); ctx.moveTo(0,-27); ctx.lineTo(-13,7); ctx.lineTo(-29,15); ctx.lineTo(-12,20); ctx.lineTo(0,12); ctx.lineTo(12,20); ctx.lineTo(29,15); ctx.lineTo(13,7); ctx.closePath(); ctx.fill();
     ctx.strokeStyle='#dffcff';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#c9fbff';ctx.fillRect(-4,-17,8,15);ctx.fillStyle=this.frame%6<3?'#ffd166':'#ff5e32';ctx.fillRect(-9,20,5,13);ctx.fillRect(4,20,5,13);ctx.restore();
     ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,p.hitRadius,0,TAU);ctx.fill();
+    if(p.shield>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.fillStyle='rgba(192,132,252,.08)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,31+Math.sin(this.frame/10)*2,0,TAU);ctx.fill();ctx.stroke();}
     if(p.invincible>0){ctx.strokeStyle='rgba(66,232,255,.65)';ctx.beginPath();ctx.arc(p.x,p.y,27+Math.sin(this.frame/8)*3,0,TAU);ctx.stroke();}
   }
 
@@ -1356,6 +1411,8 @@ export class Game {
 
   drawEffects(ctx) {
     for(const e of this.effects){if(e.type==='arc'||e.type==='prism'){ctx.strokeStyle=e.type==='prism'?'#f0abfc':'#67e8f9';ctx.lineWidth=e.type==='prism'?5:3;ctx.globalAlpha=e.life/e.maxLife;ctx.beginPath();e.points.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x+rand(-3,3),p.y+rand(-3,3));});ctx.stroke();ctx.globalAlpha=1;}
+      else if(e.type==='prismSatellite'){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle);ctx.fillStyle='#f0abfc';ctx.shadowColor='#f0abfc';ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(7,0);ctx.lineTo(0,9);ctx.lineTo(-7,0);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(240,171,252,.5)';ctx.beginPath();ctx.arc(0,0,15,0,TAU);ctx.stroke();ctx.restore();}
+      else if(e.type==='interceptorPulse'){const progress=1-e.timer/e.maxTimer;ctx.strokeStyle=`rgba(52,211,153,${.3+progress*.65})`;ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.arc(e.x,e.y,24+progress*e.range,0,TAU);ctx.stroke();ctx.setLineDash([]);for(let n=0;n<6;n+=1){const a=this.frame*.13+n/6*TAU;ctx.fillStyle='#34d399';ctx.fillRect(e.x+Math.cos(a)*(28+progress*18)-2,e.y+Math.sin(a)*(18+progress*12)-2,4,4);}}
       else if(e.type==='mine'){ctx.fillStyle='#fb7185';ctx.beginPath();ctx.arc(e.x,e.y,8+Math.sin(this.frame/5)*2,0,TAU);ctx.fill();ctx.strokeStyle='rgba(251,113,133,.35)';ctx.beginPath();ctx.arc(e.x,e.y,e.trigger,0,TAU);ctx.stroke();}
       else if(e.type==='bombard'){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
       else if(e.type==='gravity'){ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,12+Math.sin(this.frame*.18)*5,0,TAU);ctx.stroke();}
@@ -1368,7 +1425,7 @@ export class Game {
   drawParticles(ctx) { for(const p of this.particles){ctx.globalAlpha=clamp(p.life/p.maxLife,0,1);ctx.fillStyle=p.color;ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);}ctx.globalAlpha=1; }
 
   debugState() {
-    return { mode:this.mode, frame:this.frame, score:this.score, stage:this.stageIndex+1, wave:this.waveIndex+1, enemies:this.enemies.filter(e=>e.alive).length, boss:this.enemies.find(e=>e.type==='boss'&&e.alive)?.bossId||null, enemyBullets:this.enemyBullets.length, playerBullets:this.playerBullets.length, xpOrbs:this.xpOrbs.length, level:this.player?.level||0, hp:this.player?.hp||0, bombs:this.player?.bombs||0, primaryLevel:this.player?.build.primaryLevel||0, secondaries:this.player?{...this.player.build.secondaries}:{}, passives:this.player?{...this.player.build.passives}:{} };
+    return { mode:this.mode, frame:this.frame, score:this.score, stage:this.stageIndex+1, wave:this.waveIndex+1, enemies:this.enemies.filter(e=>e.alive).length, boss:this.enemies.find(e=>e.type==='boss'&&e.alive)?.bossId||null, enemyBullets:this.enemyBullets.length, playerBullets:this.playerBullets.length, xpOrbs:this.xpOrbs.length, level:this.player?.level||0, hp:this.player?.hp||0, bombs:this.player?.bombs||0, shield:this.player?.shield||0, primaryLevel:this.player?.build.primaryLevel||0, overdrive:this.player?.build.overdrive||0, secondaries:this.player?{...this.player.build.secondaries}:{}, passives:this.player?{...this.player.build.passives}:{} };
   }
   debugForceBoss(){if(!this.player)return false;this.enemies=[];this.enemyBullets=[];this.waveIndex=STAGES[this.stageIndex].waves-1;this.mode='playing';this.spawnBoss();return true;}
   debugForceStage(stage){if(!this.player)return false;this.startStage(clamp(Number(stage)-1,0,STAGES.length-1));return true;}
