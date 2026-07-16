@@ -20,6 +20,13 @@ export const AIRCRAFT = {
   wasp: { id: 'wasp', name: 'WASP', subtitle: '重型爆破機', art: 'assets/aircraft/wasp.webp', color: '#ffd166', speed: 4.5, hp: 5, primary: 'cannon', mastery: '雷神之鎚', description: '慢速爆破彈；滿級後擊殺會引發範圍雷爆。' },
 };
 
+export const PILOTS = {
+  imperial: { id: 'imperial', name: '帝國兵', icon: '◇', subtitle: '標準駕駛', ability: '無特殊效果。' },
+  rambo: { id: 'rambo', name: '藍波', icon: '✚', subtitle: '生存專家', ability: '初始生命與炸彈、生命與炸彈上限各 +1。' },
+  gemini: { id: 'gemini', name: '雙子星', icon: 'Ⅱ', subtitle: '雙重火控', ability: '機體放大 20%；主武器與副武器每次發射數量 +1。' },
+  shadow: { id: 'shadow', name: '陰影', icon: '◐', subtitle: '相位潛行', ability: '每 12 秒潛入陰影 2 秒，期間完全無敵。' },
+};
+
 export const SECONDARIES = {
   homing: { id: 'homing', icon: 'assets/icons/homing.webp', name: '追蹤飛彈', max: 3, color: '#ffb703', description: '鎖定單一目標；目標死亡後停止導引。' },
   drone: { id: 'drone', icon: 'assets/icons/drone.webp', name: '軌道無人機', max: 3, color: '#8b5cf6', description: '環繞機體並定期射擊。' },

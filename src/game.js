@@ -1,4 +1,4 @@
-import { AIRCRAFT, BUILD_LIMITS, SECONDARIES, PASSIVES, PRIMARY_ICON, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
+import { AIRCRAFT, BUILD_LIMITS, SECONDARIES, PASSIVES, PILOTS, PRIMARY_ICON, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
 
 const TAU = Math.PI * 2;
@@ -27,6 +27,7 @@ export class Game {
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
       'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node',
       'pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive',
+      'pause-pilot', 'pause-fab', 'dps-1s', 'dps-10s', 'dps-total',
     ].map(id => [id, document.getElementById(id)]));
     this.mode = 'title';
     this.hudBuildRevision = -1;
@@ -115,8 +116,25 @@ export class Game {
     window.addEventListener('blur', () => { this.keys.clear(); this.pointer.active = false; if (this.mode === 'playing') this.togglePause(); });
   }
 
-  start(craftId = 'falcon') {
-    const craft = AIRCRAFT[craftId] || AIRCRAFT.falcon;
+  start(craftOrOptions = 'falcon') {
+    const options = typeof craftOrOptions === 'string' ? { craftId: craftOrOptions } : (craftOrOptions || {});
+    const craft = AIRCRAFT[options.craftId] || AIRCRAFT.falcon;
+    const craftId = craft.id;
+    const pilot = PILOTS[options.pilotId] || PILOTS.imperial;
+    this.runMode = ['normal', 'endless', 'test'].includes(options.runMode) ? options.runMode : 'normal';
+    this.endlessCycle = 0;
+    this.testFlags = {
+      playerInvincible: this.runMode === 'test' && Boolean(options.playerInvincible),
+      enemiesImmortal: this.runMode === 'test' && Boolean(options.enemiesImmortal),
+    };
+    const isTest = this.runMode === 'test';
+    const selectedSecondaries = isTest ? Object.fromEntries((options.secondaries || []).filter(id => SECONDARIES[id]).map(id => [id, SECONDARIES[id].max])) : {};
+    const selectedPassives = isTest ? Object.fromEntries((options.passives || []).filter(id => PASSIVES[id]).map(id => [id, PASSIVES[id].max])) : {};
+    const armorHp = Math.ceil(upgradePower(selectedPassives.armor || 0) / 2);
+    const ramboBonus = pilot.id === 'rambo' ? 1 : 0;
+    const baseBombCap = Math.min(5, 3 + Math.max(0, (selectedPassives.bombcap || 0) - 1));
+    const maxHp = craft.hp + armorHp + ramboBonus;
+    const maxBombs = baseBombCap + ramboBonus;
     this.lastCraftId = craft.id;
     this.frame = 0;
     this.worldScroll = 0;
@@ -131,12 +149,19 @@ export class Game {
     this.particles = [];
     this.effects = [];
     this.floaters = [];
+    this.runFrames = 0;
+    this.damageTotal = 0;
+    this.damageLog = [];
+    this.dps = { one: 0, ten: 0, total: 0 };
+    this.dpsBest = { one: 0, ten: 0, total: 0 };
     this.player = {
       x: this.w / 2, y: this.h - 92, targetX: this.w / 2, targetY: this.h - 92,
-      radius: 15, hitRadius: 5, craftId, craft, hp: craft.hp, maxHp: craft.hp,
-      bombs: 2, maxBombs: 3, shield: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
-      level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: 1,
-      build: { primaryLevel: 1, secondaries: {}, passives: {}, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive, overdrive: 0, revision: 0 },
+      radius: 15 * (pilot.id === 'gemini' ? 1.2 : 1), hitRadius: 5 * (pilot.id === 'gemini' ? 1.2 : 1), scale: pilot.id === 'gemini' ? 1.2 : 1,
+      craftId, craft, pilotId: pilot.id, pilot, hp: maxHp, maxHp,
+      bombs: isTest ? maxBombs : 2 + ramboBonus, maxBombs, shield: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
+      shadowCooldown: 720, shadowTimer: 0,
+      level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
+      build: { primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondaries: selectedSecondaries, passives: selectedPassives, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive, overdrive: 0, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -144,9 +169,10 @@ export class Game {
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
     document.getElementById('bomb-button').classList.remove('hidden');
+    this.dom['pause-fab'].classList.remove('hidden');
     this.initAudio();
-    this.startStage(0);
-    this.showUpgrade();
+    this.startStage(isTest ? clamp(Number(options.startStage || 1) - 1, 0, STAGES.length - 1) : 0);
+    if (!isTest) this.showUpgrade();
   }
 
   restart() {
@@ -176,6 +202,7 @@ export class Game {
     this.dom.announcement.classList.add('hidden');
     this.dom['pause-button'].textContent = 'PAUSE';
     document.getElementById('bomb-button').classList.add('hidden');
+    this.dom['pause-fab'].classList.add('hidden');
     this.player = null;
     this.enemies = [];
     this.playerBullets = [];
@@ -188,6 +215,7 @@ export class Game {
     this.keys.clear();
     if (this.pointer.id !== null && this.canvas.hasPointerCapture?.(this.pointer.id)) this.canvas.releasePointerCapture?.(this.pointer.id);
     this.pointer = { active: false, id: null, x: 0, y: 0, startX: 0, startY: 0, playerX: 0, playerY: 0 };
+    this.onShowTitle?.();
     this.updateHud();
   }
 
@@ -236,7 +264,12 @@ export class Game {
 
   update() {
     this.frame += 1;
-    if (this.player && (this.mode === 'stageIntro' || this.mode === 'bossWarning' || this.mode === 'playing' || this.mode === 'stageClear')) this.worldScroll += this.worldScrollSpeed();
+    const runActive = this.player && (this.mode === 'stageIntro' || this.mode === 'bossWarning' || this.mode === 'playing' || this.mode === 'stageClear');
+    if (runActive) {
+      this.worldScroll += this.worldScrollSpeed();
+      this.runFrames += 1;
+      this.updateDps();
+    }
     this.updateParticles();
     if (!this.player || this.mode === 'title' || this.mode === 'paused' || this.mode === 'levelup' || this.mode === 'gameover' || this.mode === 'victory') return;
     this.updateRouteProgress();
@@ -258,7 +291,10 @@ export class Game {
       this.updateXpOrbs();
       this.updateEffects();
       if (this.transitionElapsed()) {
-        if (this.stageIndex >= STAGES.length - 1) this.endRun(true);
+        if (this.stageIndex >= STAGES.length - 1 && this.runMode === 'endless') {
+          this.endlessCycle += 1;
+          this.startStage(0);
+        } else if (this.stageIndex >= STAGES.length - 1) this.endRun(true);
         else this.startStage(this.stageIndex + 1);
       }
       return;
@@ -355,11 +391,14 @@ export class Game {
     if (activeEnemies >= WORLD.maxEnemies) return false;
     const base = ENEMY_TYPES[type];
     const stage = STAGES[this.stageIndex];
+    const endlessHp = 1 + this.endlessCycle * .35;
+    const endlessSpeed = 1 + this.endlessCycle * .05;
+    const hp = base.hp * stage.enemyHp * pressure * endlessHp;
     const spawnX = isLargeEnemyType(type) ? x : clamp(x, base.radius, this.w - base.radius);
     this.enemies.push({
       id: this.entityId++, type, x: spawnX, y, originX: spawnX, radius: base.radius, alive: true,
-      hp: base.hp * stage.enemyHp * pressure, maxHp: base.hp * stage.enemyHp * pressure,
-      speed: base.speed * stage.enemySpeed * (type === 'elite' ? .8 : 1), score: base.score,
+      hp, maxHp: hp,
+      speed: base.speed * stage.enemySpeed * endlessSpeed * (type === 'elite' ? .8 : 1), score: base.score,
       xp: base.xp, color: base.color, cooldown: rand(45, 120), age: 0, formation, index,
       pressure, stageId: stage.id,
     });
@@ -369,7 +408,7 @@ export class Game {
   spawnBoss() {
     const stage = STAGES[this.stageIndex];
     const data = BOSSES[stage.boss];
-    const hp = data.baseHp * stage.bossHp;
+    const hp = data.baseHp * stage.bossHp * (1 + this.endlessCycle * .35);
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
@@ -399,6 +438,20 @@ export class Game {
     player.x += (player.targetX - player.x) * easing;
     player.y += (player.targetY - player.y) * easing;
     player.invincible = Math.max(0, player.invincible - 1);
+    if (player.pilotId === 'shadow') {
+      if (player.shadowTimer > 0) {
+        player.shadowTimer -= 1;
+        player.invincible = Math.max(player.invincible, 2);
+      } else {
+        player.shadowCooldown -= 1;
+        if (player.shadowCooldown <= 0) {
+          player.shadowTimer = 120;
+          player.shadowCooldown = 720;
+          player.invincible = Math.max(player.invincible, 120);
+          this.announce('SHADOW PHASE', '2.0 SECONDS INVULNERABLE', 900);
+        }
+      }
+    }
     player.fireCooldown = Math.max(0, player.fireCooldown - 1);
     player.bombLock = Math.max(0, player.bombLock - 1);
     player.inputLock = Math.max(0, player.inputLock - 1);
@@ -418,6 +471,10 @@ export class Game {
     if (this.effects.length >= WORLD.maxEffects) return false;
     this.effects.push(effect);
     return true;
+  }
+
+  projectileBonus() {
+    return this.player?.pilotId === 'gemini' ? 1 : 0;
   }
 
   firePrimary() {
@@ -440,26 +497,31 @@ export class Game {
     });
     if (p.craft.primary === 'vulcan') {
       p.fireCooldown = Math.max(4, Math.round((11 - level) / rate));
-      const count = 1 + Math.floor(level / 2) * 2;
+      const count = 1 + Math.floor(level / 2) * 2 + this.projectileBonus();
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
         add(offset * 1.6, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
       }
     } else if (p.craft.primary === 'laser') {
       p.fireCooldown = 0;
-      const beamData = {
-        x: p.x, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: 3.2 + level * .9,
-        damage: .22 + level * .055, life: 2, color: '#7df5ff', kind: 'beam',
-        maxTargets: Infinity, statuses, statusPowers,
-      };
-      const beam = this.playerBullets.find(bullet => bullet.kind === 'beam');
-      if (beam) Object.assign(beam, beamData);
-      else this.addPlayerBullet({ id: this.entityId++, ...beamData });
+      const beamCount = 1 + this.projectileBonus();
+      for (let slot = 0; slot < beamCount; slot += 1) {
+        const offsetX = (slot - (beamCount - 1) / 2) * 38;
+        const beamData = {
+          x: p.x + offsetX, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: 4 + level * level * .48,
+          damage: .22 + level * .055, life: 2, color: '#7df5ff', kind: 'beam', beamSlot: slot, offsetX,
+          maxTargets: Infinity, statuses, statusPowers,
+        };
+        const beam = this.playerBullets.find(bullet => bullet.kind === 'beam' && bullet.beamSlot === slot);
+        if (beam) Object.assign(beam, beamData);
+        else this.addPlayerBullet({ id: this.entityId++, ...beamData });
+      }
     } else {
       p.fireCooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
       const hammer = primaryMaxed ? { thunderHammer: true, hammerRadius: 78 + level * 4, hammerDamage: 6 + level * 1.6 } : {};
       add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166', ...hammer });
-      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, color: '#fb923c', ...hammer }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, color: '#fb923c', ...hammer }); }
+      if (level >= 3 || this.projectileBonus()) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, kind: 'cannon', color: '#fb923c', ...hammer }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, kind: 'cannon', color: '#fb923c', ...hammer }); }
+      if (level >= 3 && this.projectileBonus()) add(.65, -8.6, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 7, kind: 'cannon', color: '#fb923c', ...hammer });
     }
     this.sound('shoot');
   }
@@ -494,7 +556,7 @@ export class Game {
       if (id === 'homing') {
         const target = pickNearestTarget(p, this.enemies);
         if (target) {
-          const count = 1 + Math.floor((level - 1) / 2);
+          const count = 1 + Math.floor((level - 1) / 2) + this.projectileBonus();
           for (let i = 0; i < count; i += 1) this.addPlayerBullet({
             id: this.entityId++, x: p.x + (i - (count - 1) / 2) * 18, y: p.y,
             vx: (i - (count - 1) / 2) * .7, vy: -6.2, radius: 5, damage: 3 + level * 1.15,
@@ -505,14 +567,14 @@ export class Game {
         }
         this.setSecondaryCooldown(id, Math.max(30, 88 - level * 9));
       } else if (id === 'drone') {
-        const count = Math.min(3, 1 + Math.floor(level / 2));
+        const count = Math.min(3, 1 + Math.floor(level / 2)) + this.projectileBonus();
         for (let i = 0; i < count; i += 1) {
           const angle = this.frame * .035 + i / count * TAU;
           this.addPlayerBullet({ id: this.entityId++, x: p.x + Math.cos(angle) * 34, y: p.y + Math.sin(angle) * 20, vx: Math.sin(angle) * .5, vy: -9, radius: 3.2, damage: 1.5 + level * .55, life: 120, color: '#a78bfa', kind: 'drone', pierce: 0, splash: 0 });
         }
         this.setSecondaryCooldown(id, Math.max(18, 48 - level * 5));
       } else if (id === 'chain') {
-        const targets = this.nearestEnemies(p, Math.min(4, 1 + level));
+        const targets = this.nearestEnemies(p, Math.min(4, 1 + level) + this.projectileBonus());
         if (targets.length) {
           let previous = { x: p.x, y: p.y };
           const points = [{ ...previous }];
@@ -521,29 +583,39 @@ export class Game {
         }
         this.setSecondaryCooldown(id, Math.max(45, 115 - level * 10));
       } else if (id === 'mines') {
-        this.addEffect({ type: 'mine', x: p.x, y: p.y + 22, radius: 10, trigger: 42 + level * 5, timer: 180, damage: 6 + level * 3.2 });
+        const count = 1 + this.projectileBonus();
+        for (let index = 0; index < count; index += 1) this.addEffect({ type: 'mine', x: p.x + (index - (count - 1) / 2) * 24, y: p.y + 22, radius: 10, trigger: 42 + level * 5, timer: 180, damage: 6 + level * 3.2 });
         this.setSecondaryCooldown(id, Math.max(70, 150 - level * 10));
       } else if (id === 'rail') {
-        this.addPlayerBullet({ id: this.entityId++, x: p.x, y: p.y - 20, vx: 0, vy: -15, radius: 5, damage: 7 + level * 2.4, life: 75, color: '#fff', kind: 'rail', pierce: 6 + level, splash: 0 });
+        const count = 1 + this.projectileBonus();
+        for (let index = 0; index < count; index += 1) this.addPlayerBullet({ id: this.entityId++, x: p.x + (index - (count - 1) / 2) * 14, y: p.y - 20, vx: 0, vy: -15, radius: 5, damage: 7 + level * 2.4, life: 75, color: '#fff', kind: 'rail', pierce: 6 + level, splash: 0 });
         this.setSecondaryCooldown(id, Math.max(70, 155 - level * 13));
       } else if (id === 'bombard') {
-        const target = pickNearestTarget(p, this.enemies);
-        if (target) this.addEffect({ type: 'bombard', x: target.x, y: target.y, timer: 45, maxTimer: 45, radius: 35 + level * 5, damage: 7 + level * 3.2 });
+        const count = 1 + this.projectileBonus();
+        const targets = this.nearestEnemies(p, count);
+        for (let index = 0; index < count && targets.length; index += 1) {
+          const target = targets[index] || targets[0];
+          this.addEffect({ type: 'bombard', x: target.x + (index - (count - 1) / 2) * 18, y: target.y, timer: 45, maxTimer: 45, radius: 35 + level * 5, damage: 7 + level * 3.2 });
+        }
         this.setSecondaryCooldown(id, Math.max(65, 145 - level * 11));
       } else if (id === 'gravity') {
-        const target = pickNearestTarget(p, this.enemies);
-        if (target) this.addEffect({ type: 'gravity', x: target.x, y: target.y, radius: 52 + level * 6, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0 });
+        const count = 1 + this.projectileBonus();
+        const targets = this.nearestEnemies(p, count);
+        for (let index = 0; index < count && targets.length; index += 1) {
+          const target = targets[index] || targets[0];
+          this.addEffect({ type: 'gravity', x: target.x + (index - (count - 1) / 2) * 22, y: target.y, radius: 52 + level * 6, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0 });
+        }
         this.setSecondaryCooldown(id, Math.max(95, 190 - level * 15));
       } else if (id === 'prism') {
         this.effects = this.effects.filter(effect => effect.type !== 'prismSatellite');
-        const count = Math.min(3, 1 + Math.floor(level / 2));
+        const count = Math.min(3, 1 + Math.floor(level / 2)) + this.projectileBonus();
         for (let index = 0; index < count; index += 1) this.addEffect({
           type: 'prismSatellite', angle: index / count * TAU, x: p.x, y: p.y,
           life: 190 + level * 8, maxLife: 190 + level * 8, pulse: index * 6, rank: level,
         });
         this.setSecondaryCooldown(id, Math.max(95, 175 - level * 10));
       } else if (id === 'interceptor') {
-        this.addEffect({ type: 'interceptorPulse', x: p.x, y: p.y, timer: 18, maxTimer: 18, count: Math.min(6, 1 + level), range: 245 });
+        this.addEffect({ type: 'interceptorPulse', x: p.x, y: p.y, timer: 18, maxTimer: 18, count: Math.min(6, 1 + level) + this.projectileBonus(), range: 245 });
         this.setSecondaryCooldown(id, Math.max(100, 160 - level * 12));
       }
     }
@@ -553,7 +625,7 @@ export class Game {
     for (let i = this.playerBullets.length - 1; i >= 0; i -= 1) {
       const bullet = this.playerBullets[i];
       if (bullet.kind === 'beam') {
-        bullet.x = this.player.x;
+        bullet.x = this.player.x + (bullet.offsetX || 0);
         bullet.y = this.player.y - 22;
         bullet.life -= 1;
         let targets = 0;
@@ -829,14 +901,37 @@ export class Game {
     if (playerHit) this.hitPlayer();
   }
 
+  recordDamage(amount) {
+    if (!(amount > 0)) return;
+    this.damageTotal += amount;
+    this.damageLog.push({ frame: this.runFrames, amount });
+    this.updateDps();
+  }
+
+  updateDps() {
+    if (!this.dps) return;
+    const elapsed = Math.max(1 / 60, this.runFrames / 60);
+    const sumWindow = seconds => this.damageLog.reduce((sum, hit) => hit.frame > this.runFrames - seconds * 60 ? sum + hit.amount : sum, 0);
+    this.dps.one = sumWindow(1) / Math.min(1, elapsed);
+    this.dps.ten = sumWindow(10) / Math.min(10, elapsed);
+    this.dps.total = this.damageTotal / elapsed;
+    this.dpsBest.one = Math.max(this.dpsBest.one, this.dps.one);
+    this.dpsBest.ten = Math.max(this.dpsBest.ten, this.dps.ten);
+    this.dpsBest.total = Math.max(this.dpsBest.total, this.dps.total);
+    this.damageLog = this.damageLog.filter(hit => hit.frame > this.runFrames - 600);
+  }
+
   damageEnemy(enemy, damage, particles = true) {
     if (!enemy.alive) return;
     if (enemy.type === 'midboss' && !enemy.orbiting) return;
     const overdrive = this.player?.build?.overdrive || 0;
-    enemy.hp -= damage * (1 + overdrive * .1);
+    const adjustedDamage = damage * (1 + overdrive * .1);
+    const immortal = Boolean(this.testFlags?.enemiesImmortal);
+    this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
+    enemy.hp = immortal ? Math.max(1, enemy.hp - adjustedDamage) : enemy.hp - adjustedDamage;
     if (particles && isLargeEnemyType(enemy.type)) enemy.hitFlash = 4;
     else if (particles) this.spawnBurst(enemy.x, enemy.y, 2, enemy.color);
-    if (enemy.hp <= 0) this.killEnemy(enemy);
+    if (!immortal && enemy.hp <= 0) this.killEnemy(enemy);
   }
 
   areaDamage(x, y, radius, damage, ignoredId = null) {
@@ -1038,7 +1133,7 @@ export class Game {
       } else if (effect.type === 'gravity') {
         effect.timer -= 1; effect.pulse += 1;
         for (const enemy of this.enemies) {
-          if (!enemy.alive || enemy.type === 'boss') continue;
+          if (!enemy.alive || enemy.type === 'boss' || (enemy.type === 'midboss' && !enemy.orbiting)) continue;
           const d2 = distanceSq(effect, enemy);
           if (d2 > effect.radius ** 2) continue;
           enemy.x += (effect.x - enemy.x) * .035;
@@ -1118,7 +1213,7 @@ export class Game {
   }
 
   hitPlayer() {
-    if (!this.player || this.player.invincible > 0) return;
+    if (!this.player || this.player.invincible > 0 || this.testFlags?.playerInvincible) return;
     if (this.player.shield > 0) {
       const flux = upgradePower(this.player.build.passives.flux || 0);
       this.player.shield = 0;
@@ -1147,12 +1242,18 @@ export class Game {
 
   endRun(victory) {
     this.mode = victory ? 'victory' : 'gameover';
+    this.updateDps();
     if (this.score > this.best) { this.best = this.score; writeStorage('void-circuit-best', String(this.best)); }
     this.dom['end-kicker'].textContent = victory ? 'VOID CIRCUIT COLLAPSED' : 'RUN TERMINATED';
     this.dom['end-title'].textContent = victory ? 'MISSION COMPLETE' : 'MISSION FAILED';
     this.dom['end-title'].style.color = victory ? '#4cff9b' : '#ff3158';
-    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>STAGE　${this.stageIndex + 1}/5<br>LEVEL　${this.player.level}<br>PRIMARY　LV ${this.player.build.primaryLevel}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length}/${BUILD_LIMITS.secondary}　PASSIVE　${Object.keys(this.player.build.passives).length}/${BUILD_LIMITS.passive}`;
+    const elapsedSeconds = this.runFrames / 60;
+    const minutes = Math.floor(elapsedSeconds / 60);
+    const seconds = (elapsedSeconds % 60).toFixed(1).padStart(4, '0');
+    const dps = value => value.toFixed(1);
+    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>STAGE　${this.stageIndex + 1}/5<br>LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST TOTAL DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　LV ${this.player.build.primaryLevel}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length}/${BUILD_LIMITS.secondary}　PASSIVE　${Object.keys(this.player.build.passives).length}/${BUILD_LIMITS.passive}`;
     this.dom['end-overlay'].classList.remove('hidden');
+    this.dom['pause-fab'].classList.add('hidden');
     this.sound(victory ? 'victory' : 'gameover');
   }
 
@@ -1162,13 +1263,17 @@ export class Game {
     const list = (items, catalog) => Object.entries(items).map(([id, rank]) => `${catalog[id].name} Lv.${rank}`).join('　/　') || '尚未取得';
     const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${p.craft.mastery}` : '';
     const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * 10}%` : '';
+    const modeLabel = { normal: '一般模式', endless: `無限模式 · 循環 ${this.endlessCycle + 1}`, test: '測試模式' }[this.runMode] || '一般模式';
+    const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
+    this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
     this.dom['pause-primary'].textContent = `${p.craft.name} · ${p.craft.primary.toUpperCase()} · Lv.${p.build.primaryLevel}${mastery}${overdrive}`;
     this.dom['pause-secondary'].textContent = list(p.build.secondaries, SECONDARIES);
     this.dom['pause-passive'].textContent = list(p.build.passives, PASSIVES);
   }
 
   setPaused(paused) {
-    if (paused && this.mode === 'playing') {
+    if (paused && ['stageIntro', 'bossWarning', 'playing', 'stageClear'].includes(this.mode)) {
+      this.pauseReturnMode = this.mode;
       this.mode = 'paused';
       this.pointer.active = false;
       this.keys.clear();
@@ -1176,14 +1281,14 @@ export class Game {
       this.dom['pause-overlay'].classList.remove('hidden');
       this.dom['pause-button'].textContent = 'RESUME';
     } else if (!paused && this.mode === 'paused') {
-      this.mode = 'playing';
+      this.mode = this.pauseReturnMode || 'playing';
       this.dom['pause-overlay'].classList.add('hidden');
       this.dom['pause-button'].textContent = 'PAUSE';
     }
   }
 
   togglePause() {
-    if (this.mode === 'playing') this.setPaused(true);
+    if (['stageIntro', 'bossWarning', 'playing', 'stageClear'].includes(this.mode)) this.setPaused(true);
     else if (this.mode === 'paused') this.setPaused(false);
   }
 
@@ -1256,8 +1361,12 @@ export class Game {
     const setStyle = (id, property, value) => { if (this.dom[id].style[property] !== value) this.dom[id].style[property] = value; };
     const setClass = (id, name, active) => { if (this.dom[id].classList.contains(name) !== active) this.dom[id].classList[active ? 'add' : 'remove'](name); };
     setText('score', String(this.score).padStart(7, '0'));
-    setText('stage', p ? `S${String(stage.id).padStart(2, '0')}` : '—');
+    setText('stage', p ? `${this.runMode === 'endless' ? `∞${this.endlessCycle + 1}·` : ''}S${String(stage.id).padStart(2, '0')}` : '—');
     setText('level', p ? String(p.level).padStart(2, '0') : '—');
+    setText('dps-1s', this.dps ? this.dps.one.toFixed(1) : '0.0');
+    setText('dps-10s', this.dps ? this.dps.ten.toFixed(1) : '0.0');
+    setText('dps-total', this.dps ? this.dps.total.toFixed(1) : '0.0');
+    setClass('pause-fab', 'hidden', !p || ['title', 'levelup', 'gameover', 'victory'].includes(this.mode));
     const displayedHp = p ? clamp(Math.ceil(p.hp), 0, p.maxHp) : 0;
     setText('hp', p ? '●'.repeat(displayedHp) + '○'.repeat(p.maxHp - displayedHp) : '—');
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
@@ -1302,12 +1411,14 @@ export class Game {
 
   drawPlayer(ctx) {
     if (!this.player) return; const p = this.player;
-    if (p.invincible > 0 && Math.floor(this.frame / 4) % 2 === 0) ctx.globalAlpha = .45;
-    ctx.save(); ctx.translate(p.x,p.y); ctx.fillStyle='rgba(66,232,255,.16)'; ctx.beginPath(); ctx.ellipse(0,4,30,36,0,0,TAU); ctx.fill();
+    if (p.shadowTimer > 0) ctx.globalAlpha = .28;
+    else if (p.invincible > 0 && Math.floor(this.frame / 4) % 2 === 0) ctx.globalAlpha = .45;
+    ctx.save(); ctx.translate(p.x,p.y); ctx.scale?.(p.scale || 1,p.scale || 1); ctx.fillStyle='rgba(66,232,255,.16)'; ctx.beginPath(); ctx.ellipse(0,4,30,36,0,0,TAU); ctx.fill();
     ctx.fillStyle=p.craft.color; ctx.beginPath(); ctx.moveTo(0,-27); ctx.lineTo(-13,7); ctx.lineTo(-29,15); ctx.lineTo(-12,20); ctx.lineTo(0,12); ctx.lineTo(12,20); ctx.lineTo(29,15); ctx.lineTo(13,7); ctx.closePath(); ctx.fill();
     ctx.strokeStyle='#dffcff';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#c9fbff';ctx.fillRect(-4,-17,8,15);ctx.fillStyle=this.frame%6<3?'#ffd166':'#ff5e32';ctx.fillRect(-9,20,5,13);ctx.fillRect(4,20,5,13);ctx.restore();
     ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,p.hitRadius,0,TAU);ctx.fill();
     if(p.shield>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.fillStyle='rgba(192,132,252,.08)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,31+Math.sin(this.frame/10)*2,0,TAU);ctx.fill();ctx.stroke();}
+    if(p.shadowTimer>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(p.x,p.y,34+Math.sin(this.frame/5)*4,0,TAU);ctx.stroke();}
     if(p.invincible>0){ctx.strokeStyle='rgba(66,232,255,.65)';ctx.beginPath();ctx.arc(p.x,p.y,27+Math.sin(this.frame/8)*3,0,TAU);ctx.stroke();}
   }
 

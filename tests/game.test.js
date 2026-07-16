@@ -934,3 +934,142 @@ test('elemental control effects keep large-enemy motion smooth under repeated hi
   assert.ok(enemy.chillTimer > 0);
   assert.ok(game.updateEnemyStatus(enemy) >= .8);
 });
+
+test('test mode starts with selected craft, pilot, build, stage, and immortality flags', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'lancer', pilotId: 'rambo', startStage: 3, secondaries: ['rail', 'gravity'], passives: ['magnet'], playerInvincible: true, enemiesImmortal: true });
+  assert.equal(game.runMode, 'test');
+  assert.equal(game.stageIndex, 2);
+  assert.equal(game.mode, 'stageIntro');
+  assert.equal(game.player.pendingLevels, 0);
+  assert.equal(game.player.build.primaryLevel, 3);
+  assert.deepEqual(game.player.build.secondaries, { rail: 3, gravity: 3 });
+  assert.deepEqual(game.player.build.passives, { magnet: 3 });
+  assert.equal(game.player.pilot.id, 'rambo');
+  assert.equal(game.player.maxHp, game.player.craft.hp + 1);
+  assert.equal(game.player.maxBombs, 4);
+  assert.deepEqual(game.testFlags, { playerInvincible: true, enemiesImmortal: true });
+});
+
+test('endless mode loops from sector five to sector one and raises its cycle', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.startStage(4);
+  game.mode = 'stageClear';
+  game.transitionTimer = 0;
+  game.transitionDeadline = 0;
+  game.update();
+  assert.equal(game.mode, 'stageIntro');
+  assert.equal(game.stageIndex, 0);
+  assert.equal(game.endlessCycle, 1);
+});
+
+test('gemini adds primary and secondary projectiles and makes the craft twenty percent larger', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'gemini' });
+  game.chooseUpgrade(0);
+  game.player.build.primaryLevel = 1;
+  game.mode = 'playing';
+  game.player.fireCooldown = 0;
+  game.playerBullets = [];
+  game.firePrimary();
+  assert.equal(game.player.scale, 1.2);
+  assert.equal(game.playerBullets.length, 2);
+  game.player.build.secondaries = { rail: 1 };
+  game.player.secondaryCooldowns.rail = 0;
+  game.playerBullets = [];
+  game.updateSecondaries();
+  assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'rail').length, 2);
+});
+
+test('gemini lancer fires two thick beams and gemini wasp opens with three missiles', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'lancer', pilotId: 'gemini' });
+  game.chooseUpgrade(0);
+  game.player.build.primaryLevel = 3;
+  game.mode = 'playing';
+  game.firePrimary();
+  assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'beam').length, 2);
+  assert.ok(game.playerBullets.every(bullet => bullet.radius >= 15.4));
+  game.start({ runMode: 'normal', craftId: 'wasp', pilotId: 'gemini' });
+  game.chooseUpgrade(0);
+  game.player.build.primaryLevel = 1;
+  game.mode = 'playing';
+  game.player.fireCooldown = 0;
+  game.playerBullets = [];
+  game.firePrimary();
+  assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'cannon').length, 3);
+});
+
+test('shadow periodically enters a two-second invulnerable phase', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'shadow' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.invincible = 0;
+  game.player.shadowCooldown = 1;
+  game.updatePlayer(false);
+  assert.equal(game.player.shadowTimer, 120);
+  assert.ok(game.player.invincible > 0);
+});
+
+test('DPS tracks rolling one-second, ten-second, and whole-run values plus peaks', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.runFrames = 60;
+  const enemy = { id: 99, type: 'scout', x: 100, y: 100, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.damageEnemy(enemy, 120, false);
+  assert.equal(game.dps.one, 120);
+  assert.equal(game.dps.ten, 120);
+  assert.equal(game.dps.total, 120);
+  assert.equal(game.dpsBest.one, 120);
+  game.endRun(false);
+  assert.match(game.dom['run-summary'].innerHTML, /BEST 1S DPS/);
+  assert.match(game.dom['run-summary'].innerHTML, /TIME/);
+});
+
+test('test enemy immortality records damage but clamps targets to one HP', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial', playerInvincible: true, enemiesImmortal: true });
+  game.runFrames = 60;
+  const enemy = { id: 100, type: 'scout', x: 100, y: 100, radius: 10, hp: 5, maxHp: 5, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.damageEnemy(enemy, 20, false);
+  assert.equal(enemy.hp, 1);
+  assert.equal(enemy.alive, true);
+  assert.ok(game.dps.total > 0);
+  const hp = game.player.hp;
+  game.hitPlayer();
+  assert.equal(game.player.hp, hp);
+  const bombTarget = { ...enemy, id: 101, hp: 5 };
+  game.enemies = [bombTarget];
+  game.mode = 'playing';
+  game.player.bombLock = 0;
+  game.useBomb();
+  assert.equal(bombTarget.hp, 1);
+  assert.equal(bombTarget.alive, true);
+});
+
+test('gravity wells ignore an invulnerable midboss until it reaches station', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  const midboss = { id: 101, type: 'midboss', x: 100, y: 100, radius: 34, hp: 100, maxHp: 100, alive: true, orbiting: false };
+  game.enemies = [midboss];
+  game.effects = [{ type: 'gravity', x: 180, y: 180, radius: 200, timer: 50, damage: 1, pulse: 1 }];
+  game.updateEffects();
+  assert.deepEqual({ x: midboss.x, y: midboss.y }, { x: 100, y: 100 });
+});
+
+test('pause panel identifies the active pilot and returns to the prior combat state', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'shadow' });
+  game.chooseUpgrade(0);
+  game.mode = 'bossWarning';
+  game.togglePause();
+  assert.equal(game.mode, 'paused');
+  assert.match(game.dom['pause-pilot'].textContent, /陰影/);
+  game.togglePause();
+  assert.equal(game.mode, 'bossWarning');
+});

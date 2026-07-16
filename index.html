@@ -35,6 +35,11 @@
       </div>
     </section>
     <div class="xp-track" aria-label="升級經驗"><div id="xp-bar"></div></div>
+    <section class="dps-strip" aria-label="即時傷害統計">
+      <div><small>DPS · 1S</small><b id="dps-1s">0.0</b></div>
+      <div><small>DPS · 10S</small><b id="dps-10s">0.0</b></div>
+      <div><small>DPS · TOTAL</small><b id="dps-total">0.0</b></div>
+    </section>
 
     <section class="game-frame">
       <canvas id="game" width="480" height="800" aria-label="Raiden roguelite shooting game"></canvas>
@@ -43,10 +48,35 @@
         <div class="title-lockup">
           <p class="eyebrow">TACTICAL ROGUELITE STRIKE</p>
           <h1>VOID<br><span>CIRCUIT</span></h1>
-          <p>五個戰區、三架戰機、動態 Build 與多階段頭目</p>
+          <p>選擇作戰模式，配置本次出擊</p>
         </div>
-        <div id="aircraft-select" class="aircraft-grid" aria-label="選擇戰機"></div>
-        <p class="start-help">桌面：WASD / 方向鍵移動，Space 射擊，X/B/Shift 炸彈<br>手機：拖曳移動、自動射擊，右下 BOMB</p>
+        <div id="mode-select" class="setup-step" aria-label="選擇遊戲模式"></div>
+        <div id="loadout-select" class="setup-step hidden" aria-label="配置本次出擊">
+          <div class="setup-heading"><button id="setup-back" class="text-button">← 模式</button><b id="setup-mode-title">一般模式</b></div>
+          <small class="setup-label">SELECT AIRCRAFT · 選擇機體</small>
+          <div id="aircraft-select" class="aircraft-grid" aria-label="選擇戰機"></div>
+          <small class="setup-label">SELECT PILOT · 選擇駕駛</small>
+          <div id="pilot-select" class="pilot-grid" aria-label="選擇駕駛"></div>
+          <div id="test-options" class="test-options hidden">
+            <label class="stage-select">起始關卡
+              <select id="test-stage">
+                <option value="1">S01 · 霓虹外環</option>
+                <option value="2">S02 · 軌道鑄造廠</option>
+                <option value="3">S03 · 水晶風暴</option>
+                <option value="4">S04 · 日冕要塞</option>
+                <option value="5">S05 · 虛空王座</option>
+              </select>
+            </label>
+            <fieldset><legend>滿級副武器（可複選）</legend><div id="test-secondaries" class="test-chip-grid"></div></fieldset>
+            <fieldset><legend>滿級被動（可複選）</legend><div id="test-passives" class="test-chip-grid"></div></fieldset>
+            <div class="test-flags">
+              <label><input id="test-player-invincible" type="checkbox"> 自身無敵</label>
+              <label><input id="test-enemies-immortal" type="checkbox"> 敵人不死</label>
+            </div>
+          </div>
+          <button id="deploy-button" class="primary-button deploy-button">開始出擊</button>
+        </div>
+        <p class="start-help">桌面：WASD / 方向鍵移動，Space 射擊，X/B/Shift 炸彈，P 暫停<br>手機：拖曳移動、自動射擊，右下 BOMB</p>
       </section>
 
       <section id="upgrade-overlay" class="overlay upgrade-overlay hidden" aria-live="polite">
@@ -57,6 +87,7 @@
       <section id="pause-overlay" class="overlay pause-overlay hidden" aria-label="暫停與裝備狀態">
         <div class="pause-heading"><small>TACTICAL STATUS</small><h2>PAUSED</h2></div>
         <div class="pause-loadout">
+          <article><small>PILOT / MODE</small><p id="pause-pilot">—</p></article>
           <article><small>PRIMARY</small><p id="pause-primary">—</p></article>
           <article><small>SECONDARY</small><p id="pause-secondary">—</p></article>
           <article><small>PASSIVE</small><p id="pause-passive">—</p></article>
@@ -72,6 +103,7 @@
       </section>
 
       <div id="announcement" class="announcement hidden"></div>
+      <button id="pause-fab" class="pause-fab hidden" aria-label="暫停並查看駕駛與裝備">Ⅱ</button>
       <button id="bomb-button" class="bomb-button hidden" aria-label="使用炸彈">BOMB<span id="bomb-count">2</span></button>
     </section>
 

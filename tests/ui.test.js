@@ -28,12 +28,24 @@ test('page is installable and loads modular entry point', () => {
 });
 
 test('pause overlay exposes the complete loadout without widening the game shell', () => {
-  for (const id of ['pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive', 'resume-button']) {
+  for (const id of ['pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive', 'pause-pilot', 'pause-fab', 'resume-button']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
   assert.match(css, /\.app-shell\{[^}]*width:min\(100%,520px\)[^}]*justify-self:center/);
   assert.match(css, /\.build-strip>div\{[^}]*min-width:0/);
   assert.match(css, /\.pause-loadout/);
+});
+
+test('title flow exposes normal, endless, and configurable test deployments', () => {
+  for (const id of ['mode-select', 'loadout-select', 'aircraft-select', 'pilot-select', 'test-options', 'test-stage', 'test-secondaries', 'test-passives', 'test-player-invincible', 'test-enemies-immortal', 'deploy-button']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  for (const label of ['一般模式', '無限模式', '測試模式']) assert.match(main, new RegExp(label));
+});
+
+test('HUD exposes three live DPS windows', () => {
+  for (const id of ['dps-1s', 'dps-10s', 'dps-total']) assert.match(html, new RegExp(`id=["']${id}["']`));
+  assert.match(css, /\.dps-strip/);
 });
 
 test('generated icons are centered and clipped inside their token frames', () => {

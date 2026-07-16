@@ -1,4 +1,4 @@
-const CACHE = 'raiden-void-circuit-v9';
+const CACHE = 'raiden-void-circuit-v10';
 const ICON_NAMES = ['primary-cannon','homing','drone','chain','mines','rail','bombard','gravity','prism','interceptor','magnet','overclock','armor','critical','salvage','guidance','bombcap','engine','capacitor','payload','flux','harvester','overdrive'];
 const AIRCRAFT_NAMES = ['falcon', 'lancer', 'wasp'];
 const ASSETS = ['./', './index.html', './styles.css', './src/main.js', './src/game.js', './src/config.js', './src/systems.js', './manifest.webmanifest', ...ICON_NAMES.map(name => `./assets/icons/${name}.webp`), ...AIRCRAFT_NAMES.map(name => `./assets/aircraft/${name}.webp`)];

@@ -1,18 +1,87 @@
-import { AIRCRAFT } from './config.js';
+import { AIRCRAFT, PASSIVES, PILOTS, SECONDARIES } from './config.js';
 import { Game } from './game.js';
 
 const canvas = document.querySelector('#game');
 const game = new Game(canvas);
 const aircraftSelect = document.querySelector('#aircraft-select');
+const pilotSelect = document.querySelector('#pilot-select');
+const modeSelect = document.querySelector('#mode-select');
+const loadoutSelect = document.querySelector('#loadout-select');
+const testOptions = document.querySelector('#test-options');
+let selectedMode = 'normal';
+let selectedCraft = 'falcon';
+let selectedPilot = 'imperial';
 
-for (const craft of Object.values(AIRCRAFT)) {
-  const button = document.createElement('button');
-  button.className = 'aircraft-card';
-  button.style.setProperty('--craft', craft.color);
-  button.innerHTML = `<img class="aircraft-art" src="${craft.art}" alt="" draggable="false"><strong>${craft.name}</strong><small>${craft.subtitle}</small><p>${craft.description}</p>`;
-  button.addEventListener('click', () => game.start(craft.id));
-  aircraftSelect.append(button);
-}
+const MODES = [
+  { id: 'normal', name: '一般模式', tag: 'CAMPAIGN', description: '五個戰區，逐步建立裝備並完成任務。' },
+  { id: 'endless', name: '無限模式', tag: 'ENDLESS', description: '通過第五戰區後循環，敵人逐輪強化。' },
+  { id: 'test', name: '測試模式', tag: 'LAB', description: '自訂機體、駕駛、滿級武器、關卡與不死條件。' },
+];
+
+modeSelect.innerHTML = `<small class="setup-label">SELECT MODE · 選擇遊戲模式</small><div class="mode-grid">${MODES.map(mode => `
+  <button class="mode-card" data-run-mode="${mode.id}"><small>${mode.tag}</small><b>${mode.name}</b><span>${mode.description}</span></button>
+`).join('')}</div>`;
+
+aircraftSelect.innerHTML = Object.values(AIRCRAFT).map(craft => `
+  <button class="aircraft-card${craft.id === selectedCraft ? ' selected' : ''}" data-craft="${craft.id}" style="--craft:${craft.color}">
+    <img class="aircraft-art" src="${craft.art}" alt="${craft.name} ${craft.subtitle}" draggable="false"><strong>${craft.name}</strong><small>${craft.subtitle}</small><p>${craft.description}</p>
+  </button>
+`).join('');
+
+pilotSelect.innerHTML = Object.values(PILOTS).map(pilot => `
+  <button class="pilot-card${pilot.id === selectedPilot ? ' selected' : ''}" data-pilot="${pilot.id}"><i>${pilot.icon}</i><span><strong>${pilot.name}</strong><small>${pilot.subtitle} · ${pilot.ability}</small></span></button>
+`).join('');
+
+const testChips = (catalog, name) => Object.values(catalog).map(item => `
+  <label><input type="checkbox" name="${name}" value="${item.id}"><span>${item.name}</span></label>
+`).join('');
+document.querySelector('#test-secondaries').innerHTML = testChips(SECONDARIES, 'test-secondary');
+document.querySelector('#test-passives').innerHTML = testChips(PASSIVES, 'test-passive');
+
+const selectCard = (container, attribute, value) => {
+  for (const button of container.querySelectorAll(`[${attribute}]`)) button.classList.toggle('selected', button.getAttribute(attribute) === value);
+};
+
+const showModeSelect = () => {
+  modeSelect.classList.remove('hidden');
+  loadoutSelect.classList.add('hidden');
+  document.querySelector('#title-overlay').classList.remove('setup-open');
+};
+
+const showLoadout = mode => {
+  selectedMode = mode;
+  document.querySelector('#setup-mode-title').textContent = MODES.find(item => item.id === mode)?.name || '一般模式';
+  modeSelect.classList.add('hidden');
+  loadoutSelect.classList.remove('hidden');
+  testOptions.classList.toggle('hidden', mode !== 'test');
+  document.querySelector('#title-overlay').classList.add('setup-open');
+};
+
+for (const button of modeSelect.querySelectorAll('[data-run-mode]')) button.addEventListener('click', () => showLoadout(button.dataset.runMode));
+for (const button of aircraftSelect.querySelectorAll('[data-craft]')) button.addEventListener('click', () => {
+  selectedCraft = button.dataset.craft;
+  selectCard(aircraftSelect, 'data-craft', selectedCraft);
+});
+for (const button of pilotSelect.querySelectorAll('[data-pilot]')) button.addEventListener('click', () => {
+  selectedPilot = button.dataset.pilot;
+  selectCard(pilotSelect, 'data-pilot', selectedPilot);
+});
+
+document.querySelector('#setup-back').addEventListener('click', showModeSelect);
+document.querySelector('#deploy-button').addEventListener('click', () => {
+  const values = name => [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value);
+  game.start({
+    runMode: selectedMode,
+    craftId: selectedCraft,
+    pilotId: selectedPilot,
+    startStage: Number(document.querySelector('#test-stage').value),
+    secondaries: selectedMode === 'test' ? values('test-secondary') : [],
+    passives: selectedMode === 'test' ? values('test-passive') : [],
+    playerInvincible: selectedMode === 'test' && document.querySelector('#test-player-invincible').checked,
+    enemiesImmortal: selectedMode === 'test' && document.querySelector('#test-enemies-immortal').checked,
+  });
+});
+game.onShowTitle = showModeSelect;
 
 document.querySelector('#bomb-button').addEventListener('pointerdown', event => {
   event.preventDefault();
@@ -20,6 +89,7 @@ document.querySelector('#bomb-button').addEventListener('pointerdown', event => 
   game.useBomb();
 });
 document.querySelector('#pause-button').addEventListener('click', () => game.togglePause());
+document.querySelector('#pause-fab').addEventListener('click', () => game.togglePause());
 document.querySelector('#resume-button').addEventListener('click', () => game.togglePause());
 document.querySelector('#mute-button').addEventListener('click', () => game.toggleMute());
 document.querySelector('#retry-button').addEventListener('click', () => game.restart());
