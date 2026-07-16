@@ -1,4 +1,4 @@
-import { BUILD_LIMITS, SECONDARIES, PASSIVES, PRIMARY_ICON } from './config.js';
+import { BUILD_LIMITS, FUSIONS, SECONDARIES, PASSIVES, PRIMARY_ICON, STAT_SCALE } from './config.js';
 
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const distanceSq = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
@@ -43,6 +43,10 @@ export function makeUpgradePool(build) {
       pool.push({ ...item, category: 'passive', level });
     }
   }
+  const fusions = build.fusions || {};
+  for (const fusion of Object.values(FUSIONS)) {
+    if (!fusions[fusion.id] && fusion.requires.every(id => secondaries[id] >= SECONDARIES[id].max)) pool.push(fusion);
+  }
   if (isBuildMaxed(build)) {
     pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '無限超載', description: `所有攻擊永久增加 10%；目前已累加 ${build.overdrive || 0} 次。` });
   }
@@ -56,7 +60,8 @@ export function isBuildMaxed(build) {
     && Object.keys(secondaries).length >= (build.secondarySlots || BUILD_LIMITS.secondary)
     && Object.entries(secondaries).every(([id, rank]) => SECONDARIES[id] && rank >= SECONDARIES[id].max)
     && Object.keys(passives).length >= (build.passiveSlots || BUILD_LIMITS.passive)
-    && Object.entries(passives).every(([id, rank]) => PASSIVES[id] && rank >= PASSIVES[id].max);
+    && Object.entries(passives).every(([id, rank]) => PASSIVES[id] && rank >= PASSIVES[id].max)
+    && Object.values(FUSIONS).every(fusion => fusion.requires.some(id => (secondaries[id] || 0) < SECONDARIES[id].max) || build.fusions?.[fusion.id]);
 }
 
 export function makeUpgradeChoices(build, random = Math.random) {
@@ -82,17 +87,17 @@ export function upgradePower(rank) {
 }
 
 export function xpForLevel(level) {
-  return Math.round(16 + level * 5 + level ** 1.18 * 1.6);
+  return Math.round((16 + level * 5 + level ** 1.18 * 1.6) * STAT_SCALE);
 }
 
 export function xpValueForStage(baseValue, stageIndex) {
-  return Math.max(1, Math.round(baseValue * (1 + Math.max(0, stageIndex) * .35)));
+  return Math.max(STAT_SCALE, Math.round(baseValue * (1 + Math.max(0, stageIndex) * .35) * STAT_SCALE));
 }
 
 export function splitXpValue(total) {
   const values = [];
   let remaining = Math.max(0, Math.round(total));
-  for (const denomination of [20, 8, 3, 1]) {
+  for (const denomination of [200, 80, 30, 10]) {
     while (remaining >= denomination) {
       values.push(denomination);
       remaining -= denomination;

@@ -1,7 +1,9 @@
-const CACHE = 'raiden-void-circuit-v10';
-const ICON_NAMES = ['primary-cannon','homing','drone','chain','mines','rail','bombard','gravity','prism','interceptor','magnet','overclock','armor','critical','salvage','guidance','bombcap','engine','capacitor','payload','flux','harvester','overdrive'];
+const CACHE = 'raiden-void-circuit-v12';
+const ICON_NAMES = ['primary-cannon','homing','drone','chain','rail','bombard','gravity','prism','interceptor','magnet','overclock','armor','critical','salvage','guidance','bombcap','capacitor','payload','flux','harvester','overdrive'];
+const SVG_ICONS = ['acid', 'support', 'seeker-orbit', 'lance-orbit'];
 const AIRCRAFT_NAMES = ['falcon', 'lancer', 'wasp'];
-const ASSETS = ['./', './index.html', './styles.css', './src/main.js', './src/game.js', './src/config.js', './src/systems.js', './manifest.webmanifest', ...ICON_NAMES.map(name => `./assets/icons/${name}.webp`), ...AIRCRAFT_NAMES.map(name => `./assets/aircraft/${name}.webp`)];
+const PILOT_NAMES = ['imperial', 'rambo', 'gemini', 'shadow', 'joker', 'reaper', 'kungfu', 'gambler'];
+const ASSETS = ['./', './index.html', './styles.css', './src/main.js?v=12', './src/game.js', './src/config.js', './src/systems.js', './manifest.webmanifest', ...ICON_NAMES.map(name => `./assets/icons/${name}.webp`), ...SVG_ICONS.map(name => `./assets/icons/${name}.svg`), ...AIRCRAFT_NAMES.map(name => `./assets/aircraft/${name}.webp`), ...PILOT_NAMES.map(name => `./assets/pilots/${name}.webp`)];
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

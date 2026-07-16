@@ -420,7 +420,7 @@ test('raijin phase-one gate launch rows sweep vertically between volleys', () =>
   assert.ok(firstRows.some((row, index) => Math.abs(row - secondRows[index]) >= 45));
 });
 
-test('upgrade cards and combat build strip render skill icons with numeric ranks', () => {
+test('upgrade cards and combat build strip render skill icons with ranks and MAX labels', () => {
   const { game } = makeGame();
   game.start('falcon');
 
@@ -432,7 +432,7 @@ test('upgrade cards and combat build strip render skill icons with numeric ranks
 
   assert.match(game.dom['primary-build'].innerHTML, /skill-token.+primary-cannon\.webp.+>1</);
   assert.match(game.dom['secondary-build'].innerHTML, /skill-token.+homing\.webp.+>2</);
-  assert.match(game.dom['passive-build'].innerHTML, /skill-token.+armor\.webp.+>3</);
+  assert.match(game.dom['passive-build'].innerHTML, /skill-token.+armor\.webp.+>MAX</);
   assert.doesNotMatch(game.dom['secondary-build'].innerHTML, />追蹤飛彈</);
 });
 
@@ -467,7 +467,7 @@ test('multiple enemy bullets hitting in one frame only damage the player once', 
   const hp = game.player.hp;
 
   assert.doesNotThrow(() => game.updateEnemyBullets());
-  assert.equal(game.player.hp, hp - 1);
+  assert.equal(game.player.hp, hp - 10);
   assert.equal(game.enemyBullets.length, 0);
 });
 
@@ -476,7 +476,7 @@ test('HUD clamps invalid negative HP instead of crashing the frame loop', () => 
   game.start('falcon');
   game.player.hp = -1;
   assert.doesNotThrow(() => game.updateHud());
-  assert.equal(game.dom.hp.textContent, '○'.repeat(game.player.maxHp));
+  assert.equal(game.dom.hp.textContent, `0 / ${game.player.maxHp}`);
 });
 
 test('stage clear has a short frame fallback and a real-time deadline', () => {
@@ -592,13 +592,13 @@ test('pause mode shows the complete primary, secondary, and passive loadout', ()
   game.mode = 'playing';
   game.player.build.primaryLevel = 3;
   game.player.build.secondaries = { homing: 1, gravity: 2, interceptor: 3 };
-  game.player.build.passives = { magnet: 1, armor: 2, critical: 3, salvage: 1, engine: 2, bombcap: 3 };
+  game.player.build.passives = { magnet: 1, armor: 2, critical: 3, salvage: 1, support: 2, bombcap: 3 };
 
   game.togglePause();
 
   assert.equal(game.mode, 'paused');
   assert.equal(game.dom['pause-overlay'].classList.contains('hidden'), false);
-  assert.match(game.dom['pause-primary'].textContent, /FALCON.*Lv\.3/);
+  assert.match(game.dom['pause-primary'].textContent, /FALCON.*MAX/);
   assert.match(game.dom['pause-secondary'].textContent, /追蹤飛彈.*微型重力井.*攔截蜂群/);
   assert.match(game.dom['pause-passive'].textContent, /磁力核心.*炸彈電容/);
 
@@ -620,8 +620,8 @@ test('later-sector XP drops split into visibly distinct denominations', () => {
   game.stageIndex = 0;
   game.xpOrbs = Array.from({ length: WORLD.maxXp }, () => ({ value: 1, radius: 4, color: '#4cff9b' }));
   game.dropXp(120, 120, 20);
-  assert.equal(game.xpOrbs.reduce((total, orb) => total + orb.value, 0), WORLD.maxXp + 20);
-  assert.ok(game.xpOrbs.some(orb => orb.value >= 20 && orb.color === '#ff72f1'));
+  assert.equal(game.xpOrbs.reduce((total, orb) => total + orb.value, 0), WORLD.maxXp + 200);
+  assert.ok(game.xpOrbs.some(orb => orb.value >= 200 && orb.color === '#ff72f1'));
 });
 
 test('deficit-only field supplies drop rarely and replace hidden stage refills', () => {
@@ -655,7 +655,7 @@ test('deficit-only field supplies drop rarely and replace hidden stage refills',
   game.mode = 'stageClear';
   const damagedHp = game.player.hp;
   for (let i = 0; i < 90; i += 1) game.updateEffects();
-  assert.equal(game.player.hp, damagedHp + 1, 'stage-clear supplies should fly to the player instead of disappearing');
+  assert.equal(game.player.hp, game.player.maxHp, 'stage-clear supplies should fly to the player and stop at max HP');
 });
 
 test('new secondary archetypes create distinct gravity, prism, and interception effects', () => {
@@ -795,9 +795,9 @@ test('new passive modules alter cooldown, area damage, shield window, and XP gai
   game.updateSecondaries();
   assert.ok(game.player.secondaryCooldowns.rail < 142);
 
-  game.enemies = [{ id: 911, type: 'scout', x: 100, y: 100, radius: 12, hp: 100, maxHp: 100, alive: true }];
+  game.enemies = [{ id: 911, type: 'scout', x: 100, y: 100, radius: 12, hp: 1000, maxHp: 1000, alive: true }];
   game.areaDamage(100, 100, 50, 10);
-  assert.equal(game.enemies[0].hp, 87);
+  assert.equal(game.enemies[0].hp, 870);
 
   game.player.shield = 1;
   game.player.invincible = 0;
@@ -805,30 +805,28 @@ test('new passive modules alter cooldown, area damage, shield window, and XP gai
   assert.equal(game.player.invincible, 200);
 });
 
-test('maxed loadouts stack ten-percent attack upgrades and show them on the primary token', () => {
+test('maxed loadouts automatically stack ten-percent attack upgrades and keep a MAX primary token', () => {
   const { game } = makeGame();
   game.start('falcon');
   game.chooseUpgrade(0);
   game.player.build.primaryLevel = 3;
   game.player.build.secondaries = { homing: 3, rail: 3, drone: 3 };
-  game.player.build.passives = { magnet: 3, armor: 3, critical: 3, engine: 3, overclock: 3, bombcap: 3 };
+  game.player.build.passives = { magnet: 3, armor: 3, critical: 3, support: 3, overclock: 3, bombcap: 3 };
+  game.player.build.fusions = { seekerOrbit: true };
   game.player.hp = game.player.maxHp;
   game.player.bombs = game.player.maxBombs;
   game.player.pendingLevels = 1;
   game.mode = 'playing';
-  const enemy = { id: 450, type: 'scout', x: 100, y: 100, radius: 10, hp: 100, maxHp: 100, alive: true, score: 0, xp: 0, color: '#fff' };
+  const enemy = { id: 450, type: 'scout', x: 100, y: 100, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
 
   game.showUpgrade();
-  assert.ok(game.currentChoices.every(choice => !['repair', 'bomb'].includes(choice.id)));
-  assert.doesNotMatch(game.dom['upgrade-options'].children.map(card => card.innerHTML).join(''), /<img src="[+◆✦]"/);
-  const index = game.currentChoices.findIndex(choice => choice.id === 'overdrive-boost');
-  assert.ok(index >= 0);
-  game.chooseUpgrade(index);
+  assert.equal(game.mode, 'playing');
+  assert.equal(game.dom['upgrade-overlay'].classList.contains('hidden'), true);
   game.damageEnemy(enemy, 10, false);
   assert.equal(game.player.build.overdrive, 1);
-  assert.equal(enemy.hp, 89);
+  assert.equal(enemy.hp, 890);
   game.updateHud();
-  assert.match(game.dom['primary-build'].innerHTML, /\+10%/);
+  assert.match(game.dom['primary-build'].innerHTML, />MAX</);
 });
 
 test('maxed primaries use one fixed craft-specific payload', () => {
@@ -946,9 +944,9 @@ test('test mode starts with selected craft, pilot, build, stage, and immortality
   assert.deepEqual(game.player.build.secondaries, { rail: 3, gravity: 3 });
   assert.deepEqual(game.player.build.passives, { magnet: 3 });
   assert.equal(game.player.pilot.id, 'rambo');
-  assert.equal(game.player.maxHp, game.player.craft.hp + 1);
+  assert.equal(game.player.maxHp, (game.player.craft.hp + 1) * 10);
   assert.equal(game.player.maxBombs, 4);
-  assert.deepEqual(game.testFlags, { playerInvincible: true, enemiesImmortal: true });
+  assert.deepEqual(game.testFlags, { playerInvincible: true, enemiesImmortal: true, startAtBoss: false });
 });
 
 test('endless mode loops from sector five to sector one and raises its cycle', () => {
@@ -1014,20 +1012,22 @@ test('shadow periodically enters a two-second invulnerable phase', () => {
   assert.ok(game.player.invincible > 0);
 });
 
-test('DPS tracks rolling one-second, ten-second, and whole-run values plus peaks', () => {
+test('DPS tracks rolling one-second, ten-second, and current-stage values plus peaks', () => {
   const { game } = makeGame();
   game.start('falcon');
   game.chooseUpgrade(0);
   game.mode = 'playing';
   game.runFrames = 60;
+  game.stageFrames = 60;
   const enemy = { id: 99, type: 'scout', x: 100, y: 100, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
-  game.damageEnemy(enemy, 120, false);
+  game.damageEnemy(enemy, 12, false);
   assert.equal(game.dps.one, 120);
   assert.equal(game.dps.ten, 120);
   assert.equal(game.dps.total, 120);
   assert.equal(game.dpsBest.one, 120);
   game.endRun(false);
   assert.match(game.dom['run-summary'].innerHTML, /BEST 1S DPS/);
+  assert.match(game.dom['run-summary'].innerHTML, /BEST STAGE DPS/);
   assert.match(game.dom['run-summary'].innerHTML, /TIME/);
 });
 
@@ -1072,4 +1072,164 @@ test('pause panel identifies the active pilot and returns to the prior combat st
   assert.match(game.dom['pause-pilot'].textContent, /陰影/);
   game.togglePause();
   assert.equal(game.mode, 'bossWarning');
+});
+
+test('test deployment enforces pilot slot caps and can start directly at the selected boss', () => {
+  const { game } = makeGame();
+  game.start({
+    runMode: 'test', craftId: 'falcon', pilotId: 'joker', startStage: 2, startAtBoss: true,
+    secondaries: ['homing', 'drone', 'chain', 'acid', 'rail'],
+    passives: ['magnet', 'overclock', 'armor', 'critical', 'salvage', 'support', 'bombcap', 'payload'],
+  });
+  assert.equal(Object.keys(game.player.build.secondaries).length, 4);
+  assert.equal(Object.keys(game.player.build.passives).length, 7);
+  assert.equal(game.player.build.secondarySlots, 4);
+  assert.equal(game.player.build.passiveSlots, 7);
+  assert.equal(game.waveIndex, STAGES[1].waves);
+  game.transitionTimer = 0;
+  game.transitionDeadline = 0;
+  game.update();
+  assert.equal(game.mode, 'playing');
+  assert.equal(game.enemies.filter(enemy => enemy.type === 'boss').length, 1);
+  assert.equal(game.enemies.length, 1, 'boss deployment must not also spawn wave one');
+});
+
+test('test immortality flags can be cancelled from pause and stage DPS freezes outside combat', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial', playerInvincible: true, enemiesImmortal: true });
+  game.mode = 'playing';
+  game.stageFrames = 60;
+  const enemy = { id: 500, type: 'scout', x: 0, y: 0, radius: 8, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.damageEnemy(enemy, 10, false);
+  const before = { frames: game.stageFrames, total: game.dps.total };
+  game.togglePause();
+  game.setTestFlag('playerInvincible', false);
+  game.setTestFlag('enemiesImmortal', false);
+  for (let i = 0; i < 5; i += 1) game.update();
+  assert.deepEqual({ frames: game.stageFrames, total: game.dps.total }, before);
+  game.togglePause();
+  const hp = game.player.hp;
+  game.player.invincible = 0;
+  game.hitPlayer();
+  assert.equal(game.player.hp, hp - 10);
+  game.startStage(1);
+  assert.equal(game.stageFrames, 0);
+  assert.deepEqual(game.dps, { one: 0, ten: 0, total: 0 });
+});
+
+test('acid vulnerability, support protocol, and both fusion payloads alter combat output', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const target = { id: 501, type: 'scout', x: 240, y: 200, radius: 10, hp: 2000, maxHp: 2000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.player.build.secondaries = { acid: 3 };
+  game.player.secondaryCooldowns.acid = 0;
+  game.updateSecondaries();
+  const acid = game.playerBullets.find(bullet => bullet.kind === 'acid');
+  assert.ok(acid && acid.life <= 24);
+  game.applyBulletStatus(acid, target);
+  game.damageEnemy(target, 10, false);
+  assert.equal(target.hp, 1860);
+  assert.equal(target.acidTimer, 300);
+
+  const originalRandom = Math.random;
+  Math.random = () => 0;
+  game.player.build.passives = { support: 3 };
+  assert.equal(game.rollDamage(10), 30);
+  Math.random = originalRandom;
+
+  game.player.build.secondaries = { homing: 3, drone: 3 };
+  game.player.build.fusions = { seekerOrbit: true };
+  game.player.secondaryCooldowns = { homing: 0, drone: 0 };
+  game.playerBullets = [];
+  game.enemies = [target];
+  game.updateSecondaries();
+  assert.ok(game.playerBullets.some(bullet => bullet.kind === 'missile' && bullet.guidanceActive));
+
+  game.player.build.secondaries = { rail: 3, prism: 3 };
+  game.player.build.fusions = { lanceOrbit: true };
+  game.playerBullets = [];
+  game.effects = [];
+  game.updateSecondaries();
+  assert.equal(game.effects.filter(effect => effect.type === 'lanceOrbit').length, 3);
+  assert.equal(game.playerBullets.length, 0);
+});
+
+test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', () => {
+  let setup = makeGame();
+  setup.game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'joker' });
+  assert.equal(setup.game.mode, 'stageIntro', 'joker must auto-pick the opening upgrade');
+  assert.equal(setup.game.player.pendingLevels, 0);
+  assert.equal(setup.game.player.build.secondarySlots, 4);
+
+  setup = makeGame();
+  setup.game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'reaper' });
+  setup.game.chooseUpgrade(0);
+  const reaperTarget = { id: 502, type: 'scout', x: 0, y: 0, radius: 8, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  setup.game.damageEnemy(reaperTarget, 10, false);
+  assert.equal(setup.game.player.maxHp, setup.game.player.craft.hp * 10 - 20);
+  assert.equal(reaperTarget.hp, 850);
+
+  setup = makeGame();
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', passives: ['armor'] });
+  setup.game.mode = 'playing';
+  assert.equal(setup.game.player.maxHp, (setup.game.player.craft.hp + 3) * 20);
+  setup.game.firePrimary();
+  setup.game.updateSecondaries();
+  assert.equal(setup.game.playerBullets.length, 0);
+  setup.game.player.y = 650;
+  const kungfuHp = setup.game.player.hp;
+  const bodyTarget = { id: 503, type: 'scout', x: setup.game.player.x, y: setup.game.player.y, originX: setup.game.player.x, formation: 0, index: 0, speed: 0, cooldown: 999, age: 0, radius: 12, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  setup.game.enemies = [bodyTarget];
+  setup.game.updateEnemies();
+  assert.equal(setup.game.player.hp, kungfuHp);
+  assert.ok(bodyTarget.hp < 1000);
+
+  setup = makeGame();
+  setup.game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'gambler' });
+  setup.game.chooseUpgrade(0);
+  setup.game.mode = 'playing';
+  setup.game.player.y = 650;
+  setup.game.player.invincible = 0;
+  assert.equal(setup.game.player.hitRadius, 2);
+  assert.equal(setup.game.player.maxHp, Math.floor(setup.game.player.craft.hp * 10 / 2));
+  setup.game.enemyBullets = [{ x: setup.game.player.x + 12, y: setup.game.player.y, vx: 0, vy: 0, radius: 5, life: 30 }];
+  setup.game.updateEnemyBullets();
+  assert.equal(setup.game.player.grazeBonus, .01);
+  setup.game.enemyBullets = [{ x: setup.game.player.x, y: setup.game.player.y, vx: 0, vy: 0, radius: 5, life: 30 }];
+  setup.game.player.invincible = 0;
+  setup.game.updateEnemyBullets();
+  assert.equal(setup.game.player.grazeBonus, 0);
+});
+
+test('the normal sector-five boss enters a rewardless multi-burst finale before victory', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.startStage(4);
+  game.mode = 'playing';
+  const boss = { id: 504, type: 'boss', x: 240, y: 150, radius: 60, hp: 0, maxHp: 10000, alive: true, score: 5000, xp: 999, color: '#fff' };
+  const bursts = [];
+  game.spawnBurst = (...args) => bursts.push(args);
+  game.killEnemy(boss);
+  assert.equal(game.mode, 'finale');
+  assert.equal(game.player.pendingLevels, 0);
+  assert.equal(game.xpOrbs.length, 0);
+  for (let i = 0; i < 205 && game.mode === 'finale'; i += 1) game.updateFinale();
+  assert.equal(game.mode, 'victory');
+  assert.ok(bursts.length >= 10);
+  assert.ok(bursts.some(args => args[2] === 120), 'finale must end in one large explosion');
+});
+
+test('returning from pause to the title resets the active run', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.togglePause();
+  game.showTitle();
+  assert.equal(game.mode, 'title');
+  assert.equal(game.player, null);
+  assert.equal(game.dom['title-overlay'].classList.contains('hidden'), false);
 });

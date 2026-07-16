@@ -38,7 +38,7 @@
     <section class="dps-strip" aria-label="即時傷害統計">
       <div><small>DPS · 1S</small><b id="dps-1s">0.0</b></div>
       <div><small>DPS · 10S</small><b id="dps-10s">0.0</b></div>
-      <div><small>DPS · TOTAL</small><b id="dps-total">0.0</b></div>
+      <div><small>DPS · STAGE</small><b id="dps-total">0.0</b></div>
     </section>
 
     <section class="game-frame">
@@ -67,8 +67,9 @@
                 <option value="5">S05 · 虛空王座</option>
               </select>
             </label>
-            <fieldset><legend>滿級副武器（可複選）</legend><div id="test-secondaries" class="test-chip-grid"></div></fieldset>
-            <fieldset><legend>滿級被動（可複選）</legend><div id="test-passives" class="test-chip-grid"></div></fieldset>
+            <label class="boss-start-flag"><input id="test-start-boss" type="checkbox"> 直接從 Boss 開始</label>
+            <fieldset><legend>滿級副武器 <span id="test-secondary-count">0 / 3</span></legend><div id="test-secondaries" class="test-chip-grid"></div></fieldset>
+            <fieldset><legend>滿級被動 <span id="test-passive-count">0 / 6</span></legend><div id="test-passives" class="test-chip-grid"></div></fieldset>
             <div class="test-flags">
               <label><input id="test-player-invincible" type="checkbox"> 自身無敵</label>
               <label><input id="test-enemies-immortal" type="checkbox"> 敵人不死</label>
@@ -92,7 +93,14 @@
           <article><small>SECONDARY</small><p id="pause-secondary">—</p></article>
           <article><small>PASSIVE</small><p id="pause-passive">—</p></article>
         </div>
-        <button id="resume-button" class="primary-button">繼續作戰</button>
+        <div id="pause-test-controls" class="pause-test-controls hidden">
+          <label><input id="pause-player-invincible" type="checkbox"> 自身無敵</label>
+          <label><input id="pause-enemies-immortal" type="checkbox"> 敵人不死</label>
+        </div>
+        <div class="pause-actions">
+          <button id="resume-button" class="primary-button">繼續作戰</button>
+          <button id="title-button" class="text-button">回到主畫面</button>
+        </div>
       </section>
 
       <section id="end-overlay" class="overlay end-overlay hidden">
@@ -113,6 +121,6 @@
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/main.js?v=12"></script>
 </body>
 </html>

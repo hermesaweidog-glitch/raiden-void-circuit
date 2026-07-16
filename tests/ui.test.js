@@ -22,9 +22,11 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=12"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
+  assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
+  assert.match(css, /\.pilot-card i img\{[^}]*width:100%[^}]*height:100%/);
 });
 
 test('pause overlay exposes the complete loadout without widening the game shell', () => {

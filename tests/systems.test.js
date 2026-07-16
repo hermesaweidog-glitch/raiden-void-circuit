@@ -22,7 +22,7 @@ test('full equipment slots only offer upgrades for owned equipment', () => {
   const build = {
     primaryLevel: 5,
     secondaries: { homing: 2, rail: 1, drone: 1 },
-    passives: { magnet: 1, armor: 2, critical: 1, engine: 3, overclock: 1, bombcap: 1 },
+    passives: { magnet: 1, armor: 2, critical: 1, support: 3, overclock: 1, bombcap: 1 },
     secondarySlots: 3,
     passiveSlots: 6,
   };
@@ -37,7 +37,8 @@ test('a completely maxed loadout offers an unlimited ten-percent attack upgrade'
   const build = {
     primaryLevel: 3,
     secondaries: { homing: 3, rail: 3, drone: 3 },
-    passives: { magnet: 3, armor: 3, critical: 3, engine: 3, overclock: 3, bombcap: 3 },
+    passives: { magnet: 3, armor: 3, critical: 3, support: 3, overclock: 3, bombcap: 3 },
+    fusions: { seekerOrbit: true },
     secondarySlots: 3,
     passiveSlots: 6,
     overdrive: 7,
@@ -73,6 +74,23 @@ test('dependent passives appear only after their matching secondary is owned', (
   assert.ok(!pool.some(item => ['incendiary', 'cryo', 'voltaic'].includes(item.id)));
 });
 
+test('maxed skill pairs expose each fusion exactly once before overdrive', () => {
+  const build = {
+    primaryLevel: 3,
+    secondaries: { drone: 3, homing: 3, rail: 3, prism: 3 },
+    passives: {},
+    secondarySlots: 4,
+    passiveSlots: 6,
+    fusions: {},
+  };
+  let pool = makeUpgradePool(build);
+  assert.deepEqual(new Set(pool.filter(item => item.category === 'fusion').map(item => item.id)), new Set(['seekerOrbit', 'lanceOrbit']));
+  build.fusions.seekerOrbit = true;
+  pool = makeUpgradePool(build);
+  assert.ok(!pool.some(item => item.id === 'seekerOrbit'));
+  assert.ok(pool.some(item => item.id === 'lanceOrbit'));
+});
+
 test('homing missile never reacquires after target death', () => {
   const missile = { targetId: 7, guidanceActive: true, vx: 0, vy: -5, turn: 0.1 };
   const enemies = [{ id: 8, x: 120, y: 80, alive: true }];
@@ -103,17 +121,17 @@ test('enemy bullets remain alive until their full body crosses the playfield edg
   assert.equal(shouldCullEnemyBullet({ x: 240, y: 806, radius: 5, life: 300 }, 480, 800), true);
 });
 
-test('early XP pacing awards the first earned level by the second opening wave', () => {
-  assert.ok(xpForLevel(1) <= 24);
+test('early XP pacing awards the first earned level by the second opening wave at x10 scale', () => {
+  assert.ok(xpForLevel(1) <= 240);
   assert.ok(xpForLevel(2) > xpForLevel(1));
-  assert.ok(Array.from({ length: 35 }, (_, index) => xpForLevel(index + 1)).reduce((sum, value) => sum + value, 0) <= 5600);
+  assert.ok(Array.from({ length: 35 }, (_, index) => xpForLevel(index + 1)).reduce((sum, value) => sum + value, 0) <= 56000);
 });
 
 test('later sectors award richer XP drops without changing opening balance', () => {
-  assert.equal(xpValueForStage(4, 0), 4);
+  assert.equal(xpValueForStage(4, 0), 40);
   assert.ok(xpValueForStage(4, 4) > xpValueForStage(4, 0));
-  const values = splitXpValue(37);
-  assert.equal(values.reduce((total, value) => total + value, 0), 37);
+  const values = splitXpValue(370);
+  assert.equal(values.reduce((total, value) => total + value, 0), 370);
   assert.ok(new Set(values).size >= 3, 'large drops should expose multiple visible denominations');
 });
 

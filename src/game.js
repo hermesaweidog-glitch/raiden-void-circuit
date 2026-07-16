@@ -1,4 +1,4 @@
-import { AIRCRAFT, BUILD_LIMITS, SECONDARIES, PASSIVES, PILOTS, PRIMARY_ICON, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
+import { AIRCRAFT, BUILD_LIMITS, FUSIONS, SECONDARIES, PASSIVES, PILOTS, PRIMARY_ICON, STAT_SCALE, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
 
 const TAU = Math.PI * 2;
@@ -27,7 +27,7 @@ export class Game {
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
       'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node',
       'pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive',
-      'pause-pilot', 'pause-fab', 'dps-1s', 'dps-10s', 'dps-total',
+      'pause-pilot', 'pause-fab', 'pause-test-controls', 'pause-player-invincible', 'pause-enemies-immortal', 'dps-1s', 'dps-10s', 'dps-total',
     ].map(id => [id, document.getElementById(id)]));
     this.mode = 'title';
     this.hudBuildRevision = -1;
@@ -126,15 +126,16 @@ export class Game {
     this.testFlags = {
       playerInvincible: this.runMode === 'test' && Boolean(options.playerInvincible),
       enemiesImmortal: this.runMode === 'test' && Boolean(options.enemiesImmortal),
+      startAtBoss: this.runMode === 'test' && Boolean(options.startAtBoss),
     };
     const isTest = this.runMode === 'test';
-    const selectedSecondaries = isTest ? Object.fromEntries((options.secondaries || []).filter(id => SECONDARIES[id]).map(id => [id, SECONDARIES[id].max])) : {};
-    const selectedPassives = isTest ? Object.fromEntries((options.passives || []).filter(id => PASSIVES[id]).map(id => [id, PASSIVES[id].max])) : {};
-    const armorHp = Math.ceil(upgradePower(selectedPassives.armor || 0) / 2);
-    const ramboBonus = pilot.id === 'rambo' ? 1 : 0;
+    const slotBonus = pilot.id === 'joker' ? 1 : 0;
+    const selectedSecondaries = isTest ? Object.fromEntries([...new Set(options.secondaries || [])].filter(id => SECONDARIES[id]).slice(0, BUILD_LIMITS.secondary + slotBonus).map(id => [id, SECONDARIES[id].max])) : {};
+    const selectedPassives = isTest ? Object.fromEntries([...new Set(options.passives || [])].filter(id => PASSIVES[id]).slice(0, BUILD_LIMITS.passive + slotBonus).map(id => [id, PASSIVES[id].max])) : {};
     const baseBombCap = Math.min(5, 3 + Math.max(0, (selectedPassives.bombcap || 0) - 1));
-    const maxHp = craft.hp + armorHp + ramboBonus;
-    const maxBombs = baseBombCap + ramboBonus;
+    const maxHp = this.calculateMaxHp(craft, pilot.id, selectedPassives.armor || 0);
+    const bombBonus = pilot.id === 'rambo' ? 1 : 0;
+    const maxBombs = baseBombCap + bombBonus;
     this.lastCraftId = craft.id;
     this.frame = 0;
     this.worldScroll = 0;
@@ -150,18 +151,20 @@ export class Game {
     this.effects = [];
     this.floaters = [];
     this.runFrames = 0;
+    this.stageFrames = 0;
     this.damageTotal = 0;
+    this.stageDamageTotal = 0;
     this.damageLog = [];
     this.dps = { one: 0, ten: 0, total: 0 };
     this.dpsBest = { one: 0, ten: 0, total: 0 };
     this.player = {
       x: this.w / 2, y: this.h - 92, targetX: this.w / 2, targetY: this.h - 92,
-      radius: 15 * (pilot.id === 'gemini' ? 1.2 : 1), hitRadius: 5 * (pilot.id === 'gemini' ? 1.2 : 1), scale: pilot.id === 'gemini' ? 1.2 : 1,
+      radius: 15 * (pilot.id === 'gemini' ? 1.2 : 1), hitRadius: pilot.id === 'gambler' ? 2 : 5 * (pilot.id === 'gemini' ? 1.2 : 1), scale: pilot.id === 'gemini' ? 1.2 : 1,
       craftId, craft, pilotId: pilot.id, pilot, hp: maxHp, maxHp,
-      bombs: isTest ? maxBombs : 2 + ramboBonus, maxBombs, shield: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
-      shadowCooldown: 720, shadowTimer: 0,
+      bombs: isTest ? maxBombs : 2 + bombBonus, maxBombs, shield: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
+      shadowCooldown: 360, shadowTimer: 0, grazeBonus: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
-      build: { primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondaries: selectedSecondaries, passives: selectedPassives, secondarySlots: BUILD_LIMITS.secondary, passiveSlots: BUILD_LIMITS.passive, overdrive: 0, revision: 0 },
+      build: { primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots: BUILD_LIMITS.secondary + slotBonus, passiveSlots: BUILD_LIMITS.passive + slotBonus, overdrive: 0, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -172,7 +175,22 @@ export class Game {
     this.dom['pause-fab'].classList.remove('hidden');
     this.initAudio();
     this.startStage(isTest ? clamp(Number(options.startStage || 1) - 1, 0, STAGES.length - 1) : 0);
+    if (isTest && options.startAtBoss) {
+      this.waveIndex = STAGES[this.stageIndex].waves;
+      this.mode = 'bossWarning';
+      this.transitionTimer = 50;
+      this.transitionDeadline = performance.now() + 830;
+    }
     if (!isTest) this.showUpgrade();
+  }
+
+  calculateMaxHp(craft, pilotId, armorRank = 0) {
+    const healthFactor = pilotId === 'kungfu' ? 2 : 1;
+    let maxHp = (craft.hp + Math.ceil(upgradePower(armorRank) / 2)) * STAT_SCALE * healthFactor;
+    if (pilotId === 'rambo') maxHp += STAT_SCALE;
+    if (pilotId === 'reaper') maxHp = Math.max(STAT_SCALE, maxHp - 2 * STAT_SCALE);
+    if (pilotId === 'gambler') maxHp = Math.max(STAT_SCALE, Math.floor(maxHp / 2));
+    return maxHp;
   }
 
   restart() {
@@ -221,6 +239,10 @@ export class Game {
 
   startStage(index) {
     this.stageIndex = clamp(index, 0, STAGES.length - 1);
+    this.stageFrames = 0;
+    this.stageDamageTotal = 0;
+    this.damageLog = [];
+    this.dps = { one: 0, ten: 0, total: 0 };
     this.waveIndex = -1;
     this.waveCooldown = 0;
     this.routeProgress = 0;
@@ -268,14 +290,19 @@ export class Game {
     if (runActive) {
       this.worldScroll += this.worldScrollSpeed();
       this.runFrames += 1;
+      this.stageFrames += 1;
       this.updateDps();
     }
     this.updateParticles();
     if (!this.player || this.mode === 'title' || this.mode === 'paused' || this.mode === 'levelup' || this.mode === 'gameover' || this.mode === 'victory') return;
     this.updateRouteProgress();
+    if (this.mode === 'finale') {
+      this.updateFinale();
+      return;
+    }
     if (this.mode === 'stageIntro') {
       this.updatePlayer(true);
-      if (this.transitionElapsed()) { this.mode = 'playing'; this.spawnNextWave(); }
+      if (this.transitionElapsed()) { this.mode = 'playing'; if (!this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive)) this.spawnNextWave(); }
       return;
     }
     if (this.mode === 'bossWarning') {
@@ -393,7 +420,7 @@ export class Game {
     const stage = STAGES[this.stageIndex];
     const endlessHp = 1 + this.endlessCycle * .35;
     const endlessSpeed = 1 + this.endlessCycle * .05;
-    const hp = base.hp * stage.enemyHp * pressure * endlessHp;
+    const hp = base.hp * stage.enemyHp * pressure * endlessHp * STAT_SCALE;
     const spawnX = isLargeEnemyType(type) ? x : clamp(x, base.radius, this.w - base.radius);
     this.enemies.push({
       id: this.entityId++, type, x: spawnX, y, originX: spawnX, radius: base.radius, alive: true,
@@ -408,7 +435,7 @@ export class Game {
   spawnBoss() {
     const stage = STAGES[this.stageIndex];
     const data = BOSSES[stage.boss];
-    const hp = data.baseHp * stage.bossHp * (1 + this.endlessCycle * .35);
+    const hp = data.baseHp * stage.bossHp * (1 + this.endlessCycle * .35) * STAT_SCALE;
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
@@ -420,8 +447,7 @@ export class Game {
 
   updatePlayer(transitionOnly) {
     const player = this.player;
-    const passive = id => upgradePower(player.build.passives[id] || 0);
-    const speed = player.craft.speed * (1 + passive('engine') * .06);
+    const speed = player.craft.speed;
     if (!transitionOnly) {
       let dx = 0; let dy = 0;
       if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) dx -= 1;
@@ -446,7 +472,7 @@ export class Game {
         player.shadowCooldown -= 1;
         if (player.shadowCooldown <= 0) {
           player.shadowTimer = 120;
-          player.shadowCooldown = 720;
+          player.shadowCooldown = 360;
           player.invincible = Math.max(player.invincible, 120);
           this.announce('SHADOW PHASE', '2.0 SECONDS INVULNERABLE', 900);
         }
@@ -479,7 +505,7 @@ export class Game {
 
   firePrimary() {
     const p = this.player;
-    if (p.fireCooldown > 0 || this.mode !== 'playing') return;
+    if (p.fireCooldown > 0 || this.mode !== 'playing' || p.pilotId === 'kungfu') return;
     const level = upgradePower(p.build.primaryLevel);
     const overclock = upgradePower(p.build.passives.overclock || 0);
     const rate = 1 + overclock * .075;
@@ -549,7 +575,18 @@ export class Game {
 
   updateSecondaries() {
     const p = this.player;
+    if (p.pilotId === 'kungfu') return;
+    if (p.build.fusions?.lanceOrbit) {
+      const count = 3 + this.projectileBonus();
+      for (let index = 0; index < count; index += 1) {
+        const existing = this.effects.find(effect => effect.type === 'lanceOrbit' && effect.slot === index);
+        if (existing) existing.life = 2;
+        else this.addEffect({ type: 'lanceOrbit', slot: index, count, angle: index / count * TAU, x: p.x, y: p.y, life: 2 });
+      }
+    }
     for (const [id, rank] of Object.entries(p.build.secondaries)) {
+      if (p.build.fusions?.seekerOrbit && id === 'homing') continue;
+      if (p.build.fusions?.lanceOrbit && (id === 'rail' || id === 'prism')) continue;
       const level = upgradePower(rank);
       p.secondaryCooldowns[id] = (p.secondaryCooldowns[id] || 0) - 1;
       if (p.secondaryCooldowns[id] > 0) continue;
@@ -568,9 +605,10 @@ export class Game {
         this.setSecondaryCooldown(id, Math.max(30, 88 - level * 9));
       } else if (id === 'drone') {
         const count = Math.min(3, 1 + Math.floor(level / 2)) + this.projectileBonus();
+        const target = p.build.fusions?.seekerOrbit ? pickNearestTarget(p, this.enemies) : null;
         for (let i = 0; i < count; i += 1) {
           const angle = this.frame * .035 + i / count * TAU;
-          this.addPlayerBullet({ id: this.entityId++, x: p.x + Math.cos(angle) * 34, y: p.y + Math.sin(angle) * 20, vx: Math.sin(angle) * .5, vy: -9, radius: 3.2, damage: 1.5 + level * .55, life: 120, color: '#a78bfa', kind: 'drone', pierce: 0, splash: 0 });
+          this.addPlayerBullet({ id: this.entityId++, x: p.x + Math.cos(angle) * 34, y: p.y + Math.sin(angle) * 20, vx: Math.sin(angle) * .5, vy: -9, radius: 3.2, damage: 1.5 + level * .55, life: 120, color: '#a78bfa', kind: target ? 'missile' : 'drone', pierce: 0, splash: 0, targetId: target?.id, guidanceActive: Boolean(target), turn: .08 });
         }
         this.setSecondaryCooldown(id, Math.max(18, 48 - level * 5));
       } else if (id === 'chain') {
@@ -582,10 +620,11 @@ export class Game {
           this.addEffect({ type: 'arc', points, life: 12, maxLife: 12 });
         }
         this.setSecondaryCooldown(id, Math.max(45, 115 - level * 10));
-      } else if (id === 'mines') {
+      } else if (id === 'acid') {
         const count = 1 + this.projectileBonus();
-        for (let index = 0; index < count; index += 1) this.addEffect({ type: 'mine', x: p.x + (index - (count - 1) / 2) * 24, y: p.y + 22, radius: 10, trigger: 42 + level * 5, timer: 180, damage: 6 + level * 3.2 });
-        this.setSecondaryCooldown(id, Math.max(70, 150 - level * 10));
+        const amp = [0, .2, .3, .4][rank];
+        for (let index = 0; index < count; index += 1) this.addPlayerBullet({ id: this.entityId++, x: p.x + (index - (count - 1) / 2) * 14, y: p.y - 18, vx: (index - (count - 1) / 2) * .45, vy: -7.2, radius: 7, damage: 1.1 + level * .32, life: 24, color: '#a3e635', kind: 'acid', pierce: 0, splash: 0, acidAmp: amp });
+        this.setSecondaryCooldown(id, Math.max(10, 28 - level * 2));
       } else if (id === 'rail') {
         const count = 1 + this.projectileBonus();
         for (let index = 0; index < count; index += 1) this.addPlayerBullet({ id: this.entityId++, x: p.x + (index - (count - 1) / 2) * 14, y: p.y - 20, vx: 0, vy: -15, radius: 5, damage: 7 + level * 2.4, life: 75, color: '#fff', kind: 'rail', pierce: 6 + level, splash: 0 });
@@ -669,10 +708,20 @@ export class Game {
 
   rollDamage(base) {
     const level = upgradePower(this.player.build.passives.critical || 0);
-    return Math.random() < level * .055 ? base * (1.65 + level * .07) : base;
+    const criticalDamage = Math.random() < level * .055 ? base * (1.65 + level * .07) : base;
+    const supportRank = this.player.build.passives.support || 0;
+    const chance = [0, .02, .03, .04][supportRank];
+    const multiplier = [1, 1.5, 2, 3][supportRank];
+    return Math.random() < chance ? criticalDamage * multiplier : criticalDamage;
   }
 
   applyBulletStatus(bullet, enemy) {
+    if (bullet.acidAmp) {
+      enemy.acidTimer = 300;
+      enemy.acidAmp = Math.max(enemy.acidAmp || 0, bullet.acidAmp);
+      enemy.statusFlash = 14;
+      enemy.statusFlashColor = '#a3e635';
+    }
     const statuses = bullet.statuses || (bullet.status ? [bullet.status] : []);
     for (const status of statuses) {
       const power = bullet.statusPowers?.[status] || bullet.statusPower || 1;
@@ -704,6 +753,8 @@ export class Game {
     enemy.burnTimer = Math.max(0, (enemy.burnTimer || 0) - 1);
     enemy.chillTimer = Math.max(0, (enemy.chillTimer || 0) - 1);
     enemy.freezeTimer = Math.max(0, (enemy.freezeTimer || 0) - 1);
+    enemy.acidTimer = Math.max(0, (enemy.acidTimer || 0) - 1);
+    enemy.kungfuHitCooldown = Math.max(0, (enemy.kungfuHitCooldown || 0) - 1);
     if (enemy.burnTimer > 0 && this.frame % 15 === 0) this.damageEnemy(enemy, enemy.burnDamage || .1, false);
     if (!enemy.alive) return 0;
     if (enemy.chillTimer <= 0 && enemy.freezeTimer <= 0) enemy.chillStacks = 0;
@@ -736,8 +787,12 @@ export class Game {
         if (enemy.y > 30 && enemy.cooldown <= 0) { this.enemyShoot(enemy); enemy.cooldown = this.enemyCooldown(enemy); }
         if (enemy.y > this.h + 55) { enemy.alive = false; this.enemies.splice(i, 1); continue; }
       }
-      const rr = enemy.radius + this.player.hitRadius;
-      if (this.player.invincible <= 0 && distanceSq(enemy, this.player) < rr * rr) this.hitPlayer();
+      const kungfu = this.player.pilotId === 'kungfu';
+      const rr = enemy.radius + (kungfu ? this.player.radius : this.player.hitRadius);
+      if (distanceSq(enemy, this.player) < rr * rr) {
+        if (kungfu && (enemy.kungfuHitCooldown || 0) <= 0) { this.damageEnemy(enemy, 2.2, true); enemy.kungfuHitCooldown = 4; }
+        else if (!kungfu && this.player.invincible <= 0) this.hitPlayer();
+      }
     }
   }
 
@@ -895,6 +950,12 @@ export class Game {
       bullet.x += bullet.vx; bullet.y += bullet.vy; bullet.life -= 1;
       const rr = bullet.radius + this.player.hitRadius;
       if (canHitPlayer && distanceSq(bullet, this.player) < rr * rr) { this.enemyBullets.splice(i, 1); playerHit = true; continue; }
+      const grazeRadius = bullet.radius + this.player.radius;
+      if (canHitPlayer && this.player.pilotId === 'gambler' && !bullet.grazed && distanceSq(bullet, this.player) < grazeRadius * grazeRadius) {
+        bullet.grazed = true;
+        this.player.grazeBonus += .01;
+        this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 28, text: `+${Math.round(this.player.grazeBonus * 100)}%`, color: '#4cff9b', life: 40, maxLife: 40 });
+      }
       if (bullet.entryGrace > 0) bullet.entryGrace -= 1;
       else if (shouldCullEnemyBullet(bullet, this.w, this.h)) this.enemyBullets.splice(i, 1);
     }
@@ -904,17 +965,18 @@ export class Game {
   recordDamage(amount) {
     if (!(amount > 0)) return;
     this.damageTotal += amount;
+    this.stageDamageTotal += amount;
     this.damageLog.push({ frame: this.runFrames, amount });
     this.updateDps();
   }
 
   updateDps() {
     if (!this.dps) return;
-    const elapsed = Math.max(1 / 60, this.runFrames / 60);
+    const elapsed = Math.max(1 / 60, this.stageFrames / 60);
     const sumWindow = seconds => this.damageLog.reduce((sum, hit) => hit.frame > this.runFrames - seconds * 60 ? sum + hit.amount : sum, 0);
     this.dps.one = sumWindow(1) / Math.min(1, elapsed);
     this.dps.ten = sumWindow(10) / Math.min(10, elapsed);
-    this.dps.total = this.damageTotal / elapsed;
+    this.dps.total = this.stageDamageTotal / elapsed;
     this.dpsBest.one = Math.max(this.dpsBest.one, this.dps.one);
     this.dpsBest.ten = Math.max(this.dpsBest.ten, this.dps.ten);
     this.dpsBest.total = Math.max(this.dpsBest.total, this.dps.total);
@@ -925,7 +987,9 @@ export class Game {
     if (!enemy.alive) return;
     if (enemy.type === 'midboss' && !enemy.orbiting) return;
     const overdrive = this.player?.build?.overdrive || 0;
-    const adjustedDamage = damage * (1 + overdrive * .1);
+    const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
+    const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
+    const adjustedDamage = damage * STAT_SCALE * (1 + overdrive * .1) * pilotMultiplier * acidMultiplier;
     const immortal = Boolean(this.testFlags?.enemiesImmortal);
     this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
     enemy.hp = immortal ? Math.max(1, enemy.hp - adjustedDamage) : enemy.hp - adjustedDamage;
@@ -957,6 +1021,10 @@ export class Game {
 
   killEnemy(enemy) {
     if (!enemy.alive) return;
+    if (enemy.type === 'boss' && this.runMode === 'normal' && this.stageIndex === STAGES.length - 1) {
+      this.beginFinale(enemy);
+      return;
+    }
     enemy.alive = false;
     this.score += enemy.score;
     this.spawnBurst(enemy.x, enemy.y, enemy.type === 'boss' ? 56 : enemy.type === 'midboss' ? 34 : enemy.type === 'elite' ? 28 : 12, enemy.color);
@@ -971,6 +1039,42 @@ export class Game {
     }
   }
 
+  beginFinale(enemy) {
+    enemy.alive = false;
+    this.score += enemy.score;
+    this.mode = 'finale';
+    this.enemyBullets = [];
+    this.playerBullets = [];
+    this.finaleTimer = 200;
+    this.finaleFlash = 0;
+    this.finaleCenter = { x: enemy.x, y: enemy.y, color: enemy.color };
+    this.spawnBurst(enemy.x, enemy.y, 24, enemy.color);
+    this.announce('CORE COLLAPSE', 'FINAL DETONATION', 2200);
+  }
+
+  updateFinale() {
+    this.finaleTimer -= 1;
+    this.updatePlayer(true);
+    this.updateEffects();
+    const center = this.finaleCenter;
+    if (this.finaleTimer > 28 && this.finaleTimer % 12 === 0) {
+      const x = center.x + rand(-58, 58); const y = center.y + rand(-46, 46);
+      this.spawnBurst(x, y, 18, choose(['#fff', '#ffd166', center.color]));
+      this.addEffect({ type: 'ring', x, y, radius: 4, maxRadius: rand(28, 58), life: 16, maxLife: 16, color: '#fff' });
+      this.finaleFlash = Math.max(this.finaleFlash, .16);
+      this.sound('boom');
+    }
+    if (this.finaleTimer === 28) {
+      this.spawnBurst(center.x, center.y, 120, ['#fff', '#ffd166', '#ff3158']);
+      this.addEffect({ type: 'ring', x: center.x, y: center.y, radius: 8, maxRadius: 520, life: 30, maxLife: 30, color: '#fff' });
+      this.finaleFlash = 1;
+      this.sound('bossDown');
+    }
+    this.finaleFlash = Math.max(0, this.finaleFlash - .035);
+    this.updateHud();
+    if (this.finaleTimer <= 0) this.endRun(true);
+  }
+
   maybeDropSupply(enemy, random = Math.random) {
     const needsHeal = this.player.hp < this.player.maxHp;
     const needsBomb = this.player.bombs < this.player.maxBombs;
@@ -979,9 +1083,10 @@ export class Game {
     const salvage = upgradePower(this.player.build.passives.salvage || 0);
     const baseChance = { scout: .006, striker: .008, gunship: .012, elite: .035, midboss: .06 }[enemy.type] || .006;
     const shieldBoost = needsShield ? .02 : 0;
-    if (random() >= Math.min(.14, baseChance + salvage * .004 + shieldBoost)) return false;
+    const kungfuHealBoost = this.player.pilotId === 'kungfu' && needsHeal ? .22 : 0;
+    if (random() >= Math.min(kungfuHealBoost ? .38 : .14, baseChance + salvage * .004 + shieldBoost + kungfuHealBoost)) return false;
     const candidates = [];
-    if (needsHeal) candidates.push('heal', 'heal');
+    if (needsHeal) candidates.push('heal', 'heal', ...(this.player.pilotId === 'kungfu' ? ['heal', 'heal', 'heal', 'heal'] : []));
     if (needsBomb) candidates.push('bomb');
     if (needsShield) candidates.push('shield', 'shield');
     const supply = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
@@ -1002,9 +1107,9 @@ export class Game {
   }
 
   xpOrbStyle(value) {
-    if (value >= 20) return { color: '#ff72f1', glow: 'rgba(255,114,241,.24)', radius: 8 };
-    if (value >= 8) return { color: '#ffd166', glow: 'rgba(255,209,102,.22)', radius: 6.5 };
-    if (value >= 3) return { color: '#42e8ff', glow: 'rgba(66,232,255,.2)', radius: 5 };
+    if (value >= 200) return { color: '#ff72f1', glow: 'rgba(255,114,241,.24)', radius: 8 };
+    if (value >= 80) return { color: '#ffd166', glow: 'rgba(255,209,102,.22)', radius: 6.5 };
+    if (value >= 30) return { color: '#42e8ff', glow: 'rgba(66,232,255,.2)', radius: 5 };
     return { color: '#4cff9b', glow: 'rgba(76,255,155,.18)', radius: 4 };
   }
 
@@ -1071,9 +1176,22 @@ export class Game {
     this.keys.clear();
     this.currentChoices = makeUpgradeChoices(this.player.build);
     const supplies = [];
-    if (this.player.hp < this.player.maxHp) supplies.push({ id: 'repair', category: 'supply', icon: '✚', name: '緊急維修', description: '恢復 2 點生命。' });
+    const repairAmount = 2 * STAT_SCALE * (this.player.pilotId === 'kungfu' ? 2 : 1);
+    if (this.player.hp < this.player.maxHp) supplies.push({ id: 'repair', category: 'supply', icon: '✚', name: '緊急維修', description: `恢復 ${repairAmount} 點生命。` });
     if (this.player.bombs < this.player.maxBombs) supplies.push({ id: 'bomb', category: 'supply', icon: '◈', name: '炸彈補給', description: '補充 1 枚炸彈。' });
     for (const supply of supplies) if (this.currentChoices.length < 3) this.currentChoices.push(supply);
+    const skillChoices = this.currentChoices.filter(choice => choice.category !== 'supply');
+    if (skillChoices.length === 1 && skillChoices[0].id === 'overdrive-boost' && this.currentChoices.length === 1) {
+      this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 34, text: '+10% DMG', color: '#ffd166', life: 70, maxLife: 70 });
+      this.chooseUpgrade(this.currentChoices.indexOf(skillChoices[0]));
+      return;
+    }
+    if (this.player.pilotId === 'joker' && skillChoices.length) {
+      const choice = choose(skillChoices);
+      this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 34, text: `RANDOM · ${choice.name}`, color: '#c084fc', life: 70, maxLife: 70 });
+      this.chooseUpgrade(this.currentChoices.indexOf(choice));
+      return;
+    }
     const isStarterUpgrade = this.upgradeReturnMode === 'stageIntro' && this.player.level === 1;
     this.dom['upgrade-kicker'].textContent = isStarterUpgrade ? 'PRE-FLIGHT UPGRADE' : 'LEVEL UP';
     this.dom['upgrade-title'].textContent = isStarterUpgrade ? '選擇開局強化' : '選擇一項強化';
@@ -1082,7 +1200,8 @@ export class Game {
       const button = document.createElement('button');
       button.className = 'upgrade-card';
       const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.category === 'overdrive' ? this.player.build.overdrive || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
-      const progress = choice.category === 'overdrive' ? `STACK ${current} → ${current + 1}` : `LV ${current} → ${current + 1}`;
+      const next = current + 1 >= WORLD.maxUpgradeRank && ['primary', 'secondary', 'passive'].includes(choice.category) ? 'MAX' : current + 1;
+      const progress = choice.category === 'overdrive' ? `STACK ${current} → ${current + 1}` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
       button.innerHTML = `<span class="upgrade-icon" aria-hidden="true">${skillIconMarkup(choice.icon)}</span><span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · ${progress}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
       button.addEventListener('click', () => this.chooseUpgrade(index));
       holder.append(button);
@@ -1096,13 +1215,14 @@ export class Game {
     const choice = this.currentChoices[index];
     const p = this.player;
     if (choice.id === 'overdrive-boost') p.build.overdrive = (p.build.overdrive || 0) + 1;
+    else if (choice.category === 'fusion') p.build.fusions[choice.id] = true;
     else if (choice.id === 'primary') p.build.primaryLevel = Math.min(WORLD.maxUpgradeRank, p.build.primaryLevel + 1);
     else if (choice.category === 'secondary') p.build.secondaries[choice.id] = Math.min(SECONDARIES[choice.id].max, (p.build.secondaries[choice.id] || 0) + 1);
     else if (choice.category === 'passive') {
       p.build.passives[choice.id] = Math.min(PASSIVES[choice.id].max, (p.build.passives[choice.id] || 0) + 1);
-      if (choice.id === 'armor') { p.maxHp = p.craft.hp + Math.ceil(upgradePower(p.build.passives.armor) / 2); p.hp = Math.min(p.maxHp, p.hp + 1); }
+      if (choice.id === 'armor') { const previous = p.maxHp; p.maxHp = this.calculateMaxHp(p.craft, p.pilotId, p.build.passives.armor); p.hp = Math.min(p.maxHp, p.hp + Math.max(0, p.maxHp - previous)); }
       if (choice.id === 'bombcap') { const previous = p.maxBombs; p.maxBombs = Math.min(5, 3 + Math.max(0, p.build.passives.bombcap - 1)); p.bombs = Math.min(p.maxBombs, p.bombs + Math.max(0, p.maxBombs - previous)); }
-    } else if (choice.id === 'repair') p.hp = Math.min(p.maxHp, p.hp + 2);
+    } else if (choice.id === 'repair') p.hp = Math.min(p.maxHp, p.hp + 2 * STAT_SCALE * (p.pilotId === 'kungfu' ? 2 : 1));
     else if (choice.id === 'bomb') p.bombs = Math.min(p.maxBombs, p.bombs + 1);
     else this.score += 2500;
     p.build.revision += 1;
@@ -1123,11 +1243,7 @@ export class Game {
   updateEffects() {
     for (let i = this.effects.length - 1; i >= 0; i -= 1) {
       const effect = this.effects[i];
-      if (effect.type === 'mine') {
-        effect.timer -= 1; effect.y += .35;
-        const target = this.enemies.find(enemy => enemy.alive && distanceSq(effect, enemy) < effect.trigger ** 2);
-        if (target || effect.timer <= 0) { this.areaDamage(effect.x, effect.y, effect.trigger, effect.damage); this.spawnBurst(effect.x, effect.y, 22, '#fb7185'); this.effects.splice(i, 1); }
-      } else if (effect.type === 'bombard') {
+      if (effect.type === 'bombard') {
         effect.timer -= 1;
         if (effect.timer <= 0) { this.areaDamage(effect.x, effect.y, effect.radius, effect.damage); this.spawnBurst(effect.x, effect.y, 30, '#fb923c'); this.effects.splice(i, 1); }
       } else if (effect.type === 'gravity') {
@@ -1141,6 +1257,14 @@ export class Game {
         }
         if (effect.pulse % 12 === 0) this.areaDamage(effect.x, effect.y, effect.radius, effect.damage);
         if (effect.timer <= 0) this.effects.splice(i, 1);
+      } else if (effect.type === 'lanceOrbit') {
+        effect.life -= 1; effect.angle += .035;
+        effect.x = this.player.x + Math.cos(effect.angle) * 42;
+        effect.y = this.player.y + Math.sin(effect.angle) * 24;
+        for (const enemy of this.enemies) {
+          if (enemy.alive && enemy.y < effect.y && Math.abs(enemy.x - effect.x) <= enemy.radius + 4.5) this.damageEnemy(enemy, .275, false);
+        }
+        if (effect.life <= 0) this.effects.splice(i, 1);
       } else if (effect.type === 'prismSatellite') {
         effect.life -= 1; effect.angle += .045; effect.pulse -= 1;
         effect.x = this.player.x + Math.cos(effect.angle) * 44;
@@ -1180,8 +1304,9 @@ export class Game {
         } else effect.y += .65;
         if (distanceSq(effect, this.player) < 30 ** 2) {
           if (effect.supply === 'heal') {
-            this.player.hp = Math.min(this.player.maxHp, this.player.hp + 1);
-            this.announce('FIELD REPAIR', '+1 HP', 900);
+            const healing = STAT_SCALE * (this.player.pilotId === 'kungfu' ? 2 : 1);
+            this.player.hp = Math.min(this.player.maxHp, this.player.hp + healing);
+            this.announce('FIELD REPAIR', `+${healing} HP`, 900);
           } else if (effect.supply === 'bomb') {
             this.player.bombs = Math.min(this.player.maxBombs, this.player.bombs + 1);
             this.announce('BOMB RESTORED', '+1 BOMB', 900);
@@ -1192,7 +1317,8 @@ export class Game {
           this.effects.splice(i, 1); this.sound('level'); this.updateHud();
         }
         else if (effect.life <= 0 || (!effect.attracting && effect.y > this.h + 30)) this.effects.splice(i, 1);
-      } else { effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
+      } else if (effect.type === 'floatingText') { effect.y -= .55; effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
+      else { effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
     }
   }
 
@@ -1203,7 +1329,7 @@ export class Game {
     const level = upgradePower(this.player.build.passives.bombcap || 0);
     for (const enemy of [...this.enemies]) {
       const large = isLargeEnemyType(enemy.type);
-      const damage = large ? Math.min(enemy.maxHp * .25, 52 + level * 10) : enemy.hp + 1;
+      const damage = large ? Math.min(enemy.maxHp * .025, 52 + level * 10) : enemy.hp / STAT_SCALE + 1;
       this.damageEnemy(enemy, damage, false);
     }
     this.addEffect({ type: 'ring', x: this.player.x, y: this.player.y, radius: 10, maxRadius: 500, life: 42, maxLife: 42, color: '#ffd166' });
@@ -1214,6 +1340,7 @@ export class Game {
 
   hitPlayer() {
     if (!this.player || this.player.invincible > 0 || this.testFlags?.playerInvincible) return;
+    if (this.player.pilotId === 'gambler') this.player.grazeBonus = 0;
     if (this.player.shield > 0) {
       const flux = upgradePower(this.player.build.passives.flux || 0);
       this.player.shield = 0;
@@ -1224,7 +1351,7 @@ export class Game {
       this.announce('SHIELD BREAK', 'PHASE WINDOW ACTIVE', 800);
       this.sound('hit'); this.updateHud(); return;
     }
-    this.player.hp -= 1;
+    this.player.hp -= STAT_SCALE;
     const armor = upgradePower(this.player.build.passives.armor || 0);
     this.player.invincible = 95 + armor * 15;
     this.enemyBullets = this.enemyBullets.filter(b => distanceSq(b, this.player) > 90 ** 2);
@@ -1251,7 +1378,7 @@ export class Game {
     const minutes = Math.floor(elapsedSeconds / 60);
     const seconds = (elapsedSeconds % 60).toFixed(1).padStart(4, '0');
     const dps = value => value.toFixed(1);
-    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>STAGE　${this.stageIndex + 1}/5<br>LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST TOTAL DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　LV ${this.player.build.primaryLevel}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length}/${BUILD_LIMITS.secondary}　PASSIVE　${Object.keys(this.player.build.passives).length}/${BUILD_LIMITS.passive}`;
+    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>STAGE　${this.stageIndex + 1}/5<br>LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length}/${this.player.build.passiveSlots}`;
     this.dom['end-overlay'].classList.remove('hidden');
     this.dom['pause-fab'].classList.add('hidden');
     this.sound(victory ? 'victory' : 'gameover');
@@ -1260,15 +1387,27 @@ export class Game {
   updatePausePanel() {
     if (!this.player) return;
     const p = this.player;
-    const list = (items, catalog) => Object.entries(items).map(([id, rank]) => `${catalog[id].name} Lv.${rank}`).join('　/　') || '尚未取得';
+    const list = (items, catalog) => Object.entries(items).map(([id, rank]) => { const item = catalog[id]; return item ? `${item.name} ${rank >= item.max ? 'MAX' : `Lv.${rank}`}` : id; }).join('　/　') || '尚未取得';
     const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${p.craft.mastery}` : '';
     const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * 10}%` : '';
     const modeLabel = { normal: '一般模式', endless: `無限模式 · 循環 ${this.endlessCycle + 1}`, test: '測試模式' }[this.runMode] || '一般模式';
     const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
     this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
-    this.dom['pause-primary'].textContent = `${p.craft.name} · ${p.craft.primary.toUpperCase()} · Lv.${p.build.primaryLevel}${mastery}${overdrive}`;
-    this.dom['pause-secondary'].textContent = list(p.build.secondaries, SECONDARIES);
+    this.dom['pause-primary'].textContent = `${p.craft.name} · ${p.craft.primary.toUpperCase()} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}${mastery}${overdrive}`;
+    const fusions = Object.keys(p.build.fusions || {}).map(id => FUSIONS[id].name).join('　/　');
+    this.dom['pause-secondary'].textContent = `${list(p.build.secondaries, SECONDARIES)}${fusions ? `　/　合成：${fusions}` : ''}`;
     this.dom['pause-passive'].textContent = list(p.build.passives, PASSIVES);
+    const controls = this.dom['pause-test-controls'];
+    controls.classList[this.runMode !== 'test' ? 'add' : 'remove']('hidden');
+    this.dom['pause-player-invincible'].checked = Boolean(this.testFlags.playerInvincible);
+    this.dom['pause-enemies-immortal'].checked = Boolean(this.testFlags.enemiesImmortal);
+  }
+
+  setTestFlag(flag, enabled) {
+    if (this.runMode !== 'test' || !(flag in this.testFlags)) return false;
+    this.testFlags[flag] = Boolean(enabled);
+    this.updatePausePanel();
+    return true;
   }
 
   setPaused(paused) {
@@ -1368,7 +1507,7 @@ export class Game {
     setText('dps-total', this.dps ? this.dps.total.toFixed(1) : '0.0');
     setClass('pause-fab', 'hidden', !p || ['title', 'levelup', 'gameover', 'victory'].includes(this.mode));
     const displayedHp = p ? clamp(Math.ceil(p.hp), 0, p.maxHp) : 0;
-    setText('hp', p ? '●'.repeat(displayedHp) + '○'.repeat(p.maxHp - displayedHp) : '—');
+    setText('hp', p ? `${displayedHp} / ${p.maxHp}` : '—');
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
     setText('bomb-count', p?.bombs ?? 0);
     setStyle('xp-bar', 'width', p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%');
@@ -1382,11 +1521,13 @@ export class Game {
     setClass('boss-node', 'cleared', Boolean(!boss && routeMode !== 'bossWarning' && (routeMode === 'stageClear' || routeMode === 'victory')));
     const buildRevision = p?.build.revision ?? -1;
     if (buildRevision !== this.hudBuildRevision) {
-      const token = (icon, badge, name, level = badge) => `<span class="skill-token" title="${name} Lv.${level}" aria-label="${name}等級${level}"><i aria-hidden="true">${skillIconMarkup(icon)}</i><b>${badge}</b></span>`;
-      const primaryBadge = p?.build.overdrive ? `+${p.build.overdrive * 10}%` : p?.build.primaryLevel;
+      const token = (icon, badge, name, level = badge) => `<span class="skill-token" title="${name} ${level}" aria-label="${name}${level}"><i aria-hidden="true">${skillIconMarkup(icon)}</i><b>${badge}</b></span>`;
+      const rankBadge = level => level >= WORLD.maxUpgradeRank ? 'MAX' : level;
+      const primaryBadge = rankBadge(p?.build.primaryLevel || 0);
       this.dom['primary-build'].innerHTML = p ? token(PRIMARY_ICON, primaryBadge, `${p.craft.name}主武器`, p.build.primaryLevel) : '—';
-      this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(SECONDARIES[id].icon, level, SECONDARIES[id].name)).join('') || '—' : '—';
-      this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, level, PASSIVES[id].name)).join('') || '—' : '—';
+      const fusionTokens = p ? Object.keys(p.build.fusions || {}).map(id => token(FUSIONS[id].icon, 'F', FUSIONS[id].name, 'FUSION')).join('') : '';
+      this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(SECONDARIES[id].icon, rankBadge(level), SECONDARIES[id].name, level)).join('') + fusionTokens || '—' : '—';
+      this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, rankBadge(level), PASSIVES[id].name, level)).join('') || '—' : '—';
       this.hudBuildRevision = buildRevision;
     }
     setText('mute-button', this.muted ? 'MUTED' : 'SOUND');
@@ -1397,6 +1538,7 @@ export class Game {
     const gradient = ctx.createLinearGradient(0, 0, 0, this.h); gradient.addColorStop(0, stage.theme[0]); gradient.addColorStop(1, stage.theme[1]); ctx.fillStyle = gradient; ctx.fillRect(0, 0, this.w, this.h);
     this.drawBackground(ctx, stage);
     this.drawXp(ctx); this.drawEffects(ctx); this.drawEnemies(ctx); this.drawBullets(ctx); this.drawPlayer(ctx); this.drawParticles(ctx);
+    if (this.finaleFlash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(this.finaleFlash, 0, 1)})`; ctx.fillRect(0,0,this.w,this.h); }
     if (this.mode === 'paused') { ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0,0,this.w,this.h); ctx.fillStyle='#ffd166'; ctx.font='900 38px monospace'; ctx.textAlign='center'; ctx.fillText('PAUSED',this.w/2,this.h/2); }
   }
 
@@ -1420,6 +1562,7 @@ export class Game {
     if(p.shield>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.fillStyle='rgba(192,132,252,.08)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,31+Math.sin(this.frame/10)*2,0,TAU);ctx.fill();ctx.stroke();}
     if(p.shadowTimer>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(p.x,p.y,34+Math.sin(this.frame/5)*4,0,TAU);ctx.stroke();}
     if(p.invincible>0){ctx.strokeStyle='rgba(66,232,255,.65)';ctx.beginPath();ctx.arc(p.x,p.y,27+Math.sin(this.frame/8)*3,0,TAU);ctx.stroke();}
+    if(p.pilotId==='shadow'){const seconds=Math.max(0,Math.ceil((p.shadowTimer>0?p.shadowTimer:p.shadowCooldown)/60));ctx.fillStyle=p.shadowTimer>0?'#c084fc':'#dffcff';ctx.font='900 14px monospace';ctx.textAlign='center';ctx.fillText(String(seconds),p.x,p.y-43);}
   }
 
   drawBossSprite(ctx, enemy) {
@@ -1497,7 +1640,7 @@ export class Game {
       else if(e.type==='midboss'){ctx.rotate(Math.PI/4);ctx.fillRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.strokeRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.rotate(-Math.PI/4);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(0,0,13,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-8,-3,16,6);}
       else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
       if(e.type==='midboss'&&!e.orbiting){ctx.strokeStyle='rgba(66,232,255,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,e.radius+9+Math.sin(this.frame/7)*2,0,TAU);ctx.stroke();}
-      if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0){ctx.globalAlpha=.72;ctx.strokeStyle=e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+      if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0||e.acidTimer>0){ctx.globalAlpha=e.acidTimer>0?clamp(.35+e.acidTimer/600,.35,.82):.72;ctx.strokeStyle=e.acidTimer>0?'#a3e635':e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       if(e.statusFlash>0){ctx.globalAlpha=e.statusFlash/14;ctx.strokeStyle=e.statusFlashColor||'#fff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,e.radius+8,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       if(e.hitFlash>0){ctx.globalAlpha=e.hitFlash/8;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+4,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       ctx.restore();
@@ -1532,13 +1675,15 @@ export class Game {
   drawEffects(ctx) {
     for(const e of this.effects){if(e.type==='arc'||e.type==='prism'){ctx.strokeStyle=e.type==='prism'?'#f0abfc':'#67e8f9';ctx.lineWidth=e.type==='prism'?5:3;ctx.globalAlpha=e.life/e.maxLife;ctx.beginPath();e.points.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x+rand(-3,3),p.y+rand(-3,3));});ctx.stroke();ctx.globalAlpha=1;}
       else if(e.type==='prismSatellite'){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle);ctx.fillStyle='#f0abfc';ctx.shadowColor='#f0abfc';ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(7,0);ctx.lineTo(0,9);ctx.lineTo(-7,0);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(240,171,252,.5)';ctx.beginPath();ctx.arc(0,0,15,0,TAU);ctx.stroke();ctx.restore();}
+      else if(e.type==='lanceOrbit'){ctx.save();ctx.strokeStyle='rgba(125,245,255,.92)';ctx.shadowColor='#42e8ff';ctx.shadowBlur=16;ctx.lineWidth=9;ctx.beginPath();ctx.moveTo(e.x,0);ctx.lineTo(e.x,e.y);ctx.stroke();ctx.fillStyle='#dffcff';ctx.beginPath();ctx.arc(e.x,e.y,7,0,TAU);ctx.fill();ctx.restore();}
       else if(e.type==='interceptorPulse'){const progress=1-e.timer/e.maxTimer;ctx.strokeStyle=`rgba(52,211,153,${.3+progress*.65})`;ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.arc(e.x,e.y,24+progress*e.range,0,TAU);ctx.stroke();ctx.setLineDash([]);for(let n=0;n<6;n+=1){const a=this.frame*.13+n/6*TAU;ctx.fillStyle='#34d399';ctx.fillRect(e.x+Math.cos(a)*(28+progress*18)-2,e.y+Math.sin(a)*(18+progress*12)-2,4,4);}}
-      else if(e.type==='mine'){ctx.fillStyle='#fb7185';ctx.beginPath();ctx.arc(e.x,e.y,8+Math.sin(this.frame/5)*2,0,TAU);ctx.fill();ctx.strokeStyle='rgba(251,113,133,.35)';ctx.beginPath();ctx.arc(e.x,e.y,e.trigger,0,TAU);ctx.stroke();}
+
       else if(e.type==='bombard'){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
       else if(e.type==='gravity'){ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,12+Math.sin(this.frame*.18)*5,0,TAU);ctx.stroke();}
       else if(e.type==='hammer'){const t=1-e.life/e.maxLife;const radius=8+(e.maxRadius-8)*t;ctx.save();ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#facc15';ctx.lineWidth=2;for(let n=0;n<4;n+=1){const a=n/4*TAU+Math.PI/4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
       else if(e.type==='ring'){const t=1-e.life/e.maxLife;e.radius+=(e.maxRadius-e.radius)*.12;ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=4;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       else if(e.type==='supply'){const style=this.supplyStyle(e.supply);const color=style.color;const radius=e.radius||16;ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.4;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,radius+5+Math.sin(this.frame*.16)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.shadowColor=color;ctx.shadowBlur=12;ctx.fillStyle=color;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#07111d';ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(style.label,e.x,e.y+1);ctx.restore();}
+      else if(e.type==='floatingText'){ctx.save();ctx.globalAlpha=clamp(e.life/e.maxLife,0,1);ctx.fillStyle=e.color||'#fff';ctx.font='900 18px monospace';ctx.textAlign='center';ctx.fillText(e.text,e.x,e.y);ctx.restore();}
     }
   }
 

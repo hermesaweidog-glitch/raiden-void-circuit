@@ -1,4 +1,4 @@
-import { AIRCRAFT, PASSIVES, PILOTS, SECONDARIES } from './config.js';
+import { AIRCRAFT, BUILD_LIMITS, PASSIVES, PILOTS, SECONDARIES } from './config.js';
 import { Game } from './game.js';
 
 const canvas = document.querySelector('#game');
@@ -29,7 +29,7 @@ aircraftSelect.innerHTML = Object.values(AIRCRAFT).map(craft => `
 `).join('');
 
 pilotSelect.innerHTML = Object.values(PILOTS).map(pilot => `
-  <button class="pilot-card${pilot.id === selectedPilot ? ' selected' : ''}" data-pilot="${pilot.id}"><i>${pilot.icon}</i><span><strong>${pilot.name}</strong><small>${pilot.subtitle} · ${pilot.ability}</small></span></button>
+  <button class="pilot-card${pilot.id === selectedPilot ? ' selected' : ''}" data-pilot="${pilot.id}"><i><img src="${pilot.art}" alt="" draggable="false"></i><span><strong>${pilot.name}</strong><small>${pilot.subtitle} · ${pilot.ability}</small></span></button>
 `).join('');
 
 const testChips = (catalog, name) => Object.values(catalog).map(item => `
@@ -37,6 +37,20 @@ const testChips = (catalog, name) => Object.values(catalog).map(item => `
 `).join('');
 document.querySelector('#test-secondaries').innerHTML = testChips(SECONDARIES, 'test-secondary');
 document.querySelector('#test-passives').innerHTML = testChips(PASSIVES, 'test-passive');
+
+const syncTestLimits = () => {
+  const bonus = selectedPilot === 'joker' ? 1 : 0;
+  for (const [name, baseLimit, countId] of [['test-secondary', BUILD_LIMITS.secondary, 'test-secondary-count'], ['test-passive', BUILD_LIMITS.passive, 'test-passive-count']]) {
+    const inputs = [...document.querySelectorAll(`input[name="${name}"]`)];
+    const limit = baseLimit + bonus;
+    inputs.filter(input => input.checked).slice(limit).forEach(input => { input.checked = false; });
+    const count = inputs.filter(input => input.checked).length;
+    for (const input of inputs) input.disabled = !input.checked && count >= limit;
+    document.querySelector(`#${countId}`).textContent = `${count} / ${limit}`;
+  }
+};
+document.querySelector('#test-secondaries').addEventListener('change', syncTestLimits);
+document.querySelector('#test-passives').addEventListener('change', syncTestLimits);
 
 const selectCard = (container, attribute, value) => {
   for (const button of container.querySelectorAll(`[${attribute}]`)) button.classList.toggle('selected', button.getAttribute(attribute) === value);
@@ -65,6 +79,7 @@ for (const button of aircraftSelect.querySelectorAll('[data-craft]')) button.add
 for (const button of pilotSelect.querySelectorAll('[data-pilot]')) button.addEventListener('click', () => {
   selectedPilot = button.dataset.pilot;
   selectCard(pilotSelect, 'data-pilot', selectedPilot);
+  syncTestLimits();
 });
 
 document.querySelector('#setup-back').addEventListener('click', showModeSelect);
@@ -75,6 +90,7 @@ document.querySelector('#deploy-button').addEventListener('click', () => {
     craftId: selectedCraft,
     pilotId: selectedPilot,
     startStage: Number(document.querySelector('#test-stage').value),
+    startAtBoss: selectedMode === 'test' && document.querySelector('#test-start-boss').checked,
     secondaries: selectedMode === 'test' ? values('test-secondary') : [],
     passives: selectedMode === 'test' ? values('test-passive') : [],
     playerInvincible: selectedMode === 'test' && document.querySelector('#test-player-invincible').checked,
@@ -91,6 +107,10 @@ document.querySelector('#bomb-button').addEventListener('pointerdown', event => 
 document.querySelector('#pause-button').addEventListener('click', () => game.togglePause());
 document.querySelector('#pause-fab').addEventListener('click', () => game.togglePause());
 document.querySelector('#resume-button').addEventListener('click', () => game.togglePause());
+document.querySelector('#title-button').addEventListener('click', () => game.showTitle());
+for (const [id, flag] of [['pause-player-invincible', 'playerInvincible'], ['pause-enemies-immortal', 'enemiesImmortal']]) {
+  document.querySelector(`#${id}`).addEventListener('change', event => game.setTestFlag(flag, event.target.checked));
+}
 document.querySelector('#mute-button').addEventListener('click', () => game.toggleMute());
 document.querySelector('#retry-button').addEventListener('click', () => game.restart());
 
