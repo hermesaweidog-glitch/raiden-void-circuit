@@ -172,6 +172,7 @@ export class Game {
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
+    this.jokerBonusPick = false;
     this.dom['title-overlay'].classList.add('hidden');
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
@@ -464,7 +465,7 @@ export class Game {
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
-      age: 0, phase: 0, hitFlash: 0, score: 10000 * stage.id, xp: 65 + stage.id * 15, pressure: 1,
+      age: 0, phase: 0, hitFlash: 0, score: 10000 * stage.id, xp: 65 + stage.id * 15, pressure: 1, arriving: true,
     });
     this.announce(data.name, data.title, 1700);
     this.sound('boss');
@@ -552,9 +553,9 @@ export class Game {
       if (level >= 3 && projectileBonus) volleyDamage += 1.8 + level * .3;
       baseDps = volleyDamage * 60 / cooldown;
     }
-    const critical = upgradePower(player.build.passives.critical || 0);
+    const critical = upgradePower(player === this.player ? this.passiveRank('critical') : player.build.passives.critical || 0);
     const expectedCritical = 1 + critical * .055 * ((1.65 + critical * .07) - 1);
-    const supportRank = player.build.passives.support || 0;
+    const supportRank = player === this.player ? this.passiveRank('support') : player.build.passives.support || 0;
     const expectedSupport = 1 + [0, .02, .03, .04][supportRank] * ([1, 1.5, 2, 3][supportRank] - 1);
     return baseDps * expectedCritical * expectedSupport;
   }
@@ -601,7 +602,7 @@ export class Game {
       }
     } else {
       p.fireCooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
-      const hammer = primaryMaxed ? { thunderHammer: true, hammerRadius: 78 + level * 4, hammerDamage: 6 + level * 1.6 } : {};
+      const hammer = primaryMaxed ? { thunderHammer: true, hammerRadius: (78 + level * 4) * 1.5, hammerDamage: (6 + level * 1.6) * .5 } : {};
       add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166', ...hammer });
       if (level >= 3 || this.projectileBonus()) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, kind: 'cannon', color: '#fb923c', ...hammer }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, kind: 'cannon', color: '#fb923c', ...hammer }); }
       if (level >= 3 && this.projectileBonus()) add(.65, -8.6, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 7, kind: 'cannon', color: '#fb923c', ...hammer });
@@ -626,7 +627,7 @@ export class Game {
   }
 
   setSecondaryCooldown(id, frames) {
-    const capacitor = upgradePower(this.player.build.passives.capacitor || 0);
+    const capacitor = upgradePower(this.passiveRank('capacitor'));
     this.player.secondaryCooldowns[id] = Math.max(12, Math.round(frames * (1 - capacitor * .045)));
   }
 
@@ -636,7 +637,7 @@ export class Game {
       this.updateKungfuSecondaries();
       return;
     }
-    if (p.build.fusions?.seekerOrbit) {
+    if (p.build.fusions?.seekerOrbit || p.build.fusions?.seekerOrbitPlus) {
       const droneLevel = upgradePower(3);
       const missileLevel = upgradePower(3);
       const satelliteCount = Math.min(3, 1 + Math.floor(droneLevel / 2)) + this.projectileBonus();
@@ -659,7 +660,7 @@ export class Game {
               id: this.entityId++, x: satellite.x, y: satellite.y - 6,
               vx: (shot - (missileCount - 1) / 2) * .7, vy: -6.2, radius: 5, damage: 8.75,
               life: 190, color: '#ff9f1c', kind: 'missile', pierce: 0, splash: 24,
-              targetId: target.id, guidanceActive: true, turn: .08 + upgradePower(p.build.passives.guidance || 0) * .005,
+              targetId: target.id, guidanceActive: true, turn: .08 + upgradePower(this.passiveRank('guidance')) * .005,
               reacquired: false,
             });
           }
@@ -673,6 +674,35 @@ export class Game {
         const existing = this.effects.find(effect => effect.type === 'lanceOrbit' && effect.slot === index);
         if (existing) existing.life = 2;
         else this.addEffect({ type: 'lanceOrbit', slot: index, count, angle: index / count * TAU, x: p.x, y: p.y, life: 2 });
+      }
+    }
+    if (p.build.fusions?.clusterStars) {
+      p.secondaryCooldowns.clusterStars = (p.secondaryCooldowns.clusterStars || 0) - 1;
+      if (p.secondaryCooldowns.clusterStars <= 0) {
+        const level = upgradePower(3);
+        const targets = this.nearestEnemies(p, 3 + this.projectileBonus());
+        for (const target of targets) {
+          const angle = Math.atan2(target.y - p.y, target.x - p.x);
+          this.addPlayerBullet({
+            id: this.entityId++, x: p.x, y: p.y - 12,
+            vx: Math.cos(angle) * 16, vy: Math.sin(angle) * 16,
+            radius: 5, damage: 7 + level * 2.4, life: 60, color: '#f0abfc', kind: 'rail', pierce: 6 + level, splash: 0,
+          });
+        }
+        this.setSecondaryCooldown('clusterStars', Math.max(70, 155 - level * 13));
+      }
+    }
+    if (p.build.fusions?.blackHole) {
+      p.secondaryCooldowns.blackHole = (p.secondaryCooldowns.blackHole || 0) - 1;
+      if (p.secondaryCooldowns.blackHole <= 0) {
+        const level = upgradePower(3);
+        const count = 1 + this.projectileBonus();
+        const targets = this.nearestEnemies(p, count);
+        for (let index = 0; index < count && targets.length; index += 1) {
+          const target = targets[index] || targets[0];
+          this.addEffect({ type: 'gravity', blackHole: true, x: target.x + (index - (count - 1) / 2) * 22, y: target.y, radius: (52 + level * 6) * 1.15, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0 });
+        }
+        this.setSecondaryCooldown('blackHole', Math.max(95, 190 - level * 15));
       }
     }
     for (const [id, rank] of Object.entries(p.build.secondaries)) {
@@ -689,7 +719,7 @@ export class Game {
             id: this.entityId++, x: p.x + (i - (count - 1) / 2) * 18, y: p.y,
             vx: (i - (count - 1) / 2) * .7, vy: -6.2, radius: 5, damage: 3 + level * 1.15,
             life: 190, color: '#ffb703', kind: 'missile', pierce: 0, splash: 14 + level * 2,
-            targetId: target.id, guidanceActive: true, turn: .035 + level * .009 + upgradePower(p.build.passives.guidance || 0) * .005,
+            targetId: target.id, guidanceActive: true, turn: .035 + level * .009 + upgradePower(this.passiveRank('guidance')) * .005,
             reacquired: false,
           });
         }
@@ -873,7 +903,7 @@ export class Game {
       }
       if (bullet.kind === 'missile' && bullet.guidanceActive) {
         let guided = updateGuidance(bullet, this.enemies, bullet);
-        if (!guided.guidanceActive && !bullet.reacquired && upgradePower(this.player.build.passives.guidance || 0) >= 5) {
+        if (!guided.guidanceActive && !bullet.reacquired && upgradePower(this.passiveRank('guidance')) >= 5) {
           const next = pickNearestTarget(bullet, this.enemies);
           if (next) guided = { ...guided, targetId: next.id, guidanceActive: true, reacquired: true };
         }
@@ -886,11 +916,10 @@ export class Game {
         const rr = bullet.radius + enemy.radius;
         if (distanceSq(bullet, enemy) > rr * rr) continue;
         bullet.hitIds ||= new Set(); bullet.hitIds.add(enemy.id);
-        const wasAlive = enemy.alive;
         this.damageEnemy(enemy, this.rollDamage(bullet.damage), true, bullet.primary ? 'primary' : null);
         this.applyBulletStatus(bullet, enemy);
         if (bullet.splash) this.areaDamage(bullet.x, bullet.y, bullet.splash, bullet.damage * .45, enemy.id, bullet.primary ? 'primary' : null);
-        if (wasAlive && !enemy.alive && bullet.thunderHammer) this.triggerThunderHammer(enemy.x, enemy.y, bullet.hammerRadius, bullet.hammerDamage, enemy.id, bullet.primary ? 'primary' : null);
+        if (bullet.thunderHammer) this.triggerThunderHammer(enemy.x, enemy.y, bullet.hammerRadius, bullet.hammerDamage, enemy.id, bullet.primary ? 'primary' : null);
         if (bullet.pierce > 0) bullet.pierce -= 1;
         else { this.playerBullets.splice(i, 1); removed = true; }
         break;
@@ -899,11 +928,27 @@ export class Game {
     }
   }
 
+  passiveRank(id) {
+    const p = this.player;
+    if (!p) return 0;
+    const fusions = p.build.fusions || {};
+    if (fusions.langinus && (id === 'critical' || id === 'support')) return 3;
+    if (fusions.suicideSquad && (id === 'bombcap' || id === 'payload')) return 3;
+    if (fusions.luckyStar && (id === 'salvage' || id === 'magnet' || id === 'harvester')) return 3;
+    if (fusions.seekerOrbitPlus && id === 'guidance') return 3;
+    return p.build.passives[id] || 0;
+  }
+
+  luckyChanceBonus() {
+    return this.player?.build?.fusions?.luckyStar ? .02 : 0;
+  }
+
   rollDamage(base) {
-    const level = upgradePower(this.player.build.passives.critical || 0);
-    const criticalDamage = Math.random() < level * .055 ? base * (1.65 + level * .07) : base;
-    const supportRank = this.player.build.passives.support || 0;
-    const chance = [0, .02, .03, .04][supportRank];
+    const lucky = this.luckyChanceBonus();
+    const level = upgradePower(this.passiveRank('critical'));
+    const criticalDamage = Math.random() < level * .055 + lucky ? base * (1.65 + level * .07) : base;
+    const supportRank = this.passiveRank('support');
+    const chance = [0, .02, .03, .04][supportRank] + (supportRank ? lucky : 0);
     const multiplier = [1, 1.5, 2, 3][supportRank];
     return Math.random() < chance ? criticalDamage * multiplier : criticalDamage;
   }
@@ -922,7 +967,7 @@ export class Game {
       enemy.statusFlashColor = { burn: '#ff8a4c', chill: '#42e8ff', shock: '#facc15' }[status];
       if (status === 'burn') {
         enemy.burnTimer = Math.max(enemy.burnTimer || 0, 90 + power * 12);
-        enemy.burnDamage = Math.max(enemy.burnDamage || 0, .08 + power * .035);
+        enemy.burnDamage = this.primaryDamagePerSecond() * .3 / 4;
       } else if (status === 'chill') {
         enemy.chillTimer = Math.max(enemy.chillTimer || 0, 75 + power * 6);
         enemy.chillStacks = (enemy.chillStacks || 0) + 1;
@@ -1098,6 +1143,7 @@ export class Game {
       boss.y = Math.min(118, boss.y + 1.35 * motionScale);
       if (boss.y >= 118) {
         boss.orbiting = true;
+        boss.arriving = false;
         boss.orbitAge = 0;
         boss.orbitCenterX = boss.x;
       }
@@ -1205,10 +1251,11 @@ export class Game {
   damageEnemy(enemy, damage, particles = true, source = null) {
     if (!enemy.alive) return;
     if (enemy.type === 'midboss' && !enemy.orbiting) return;
+    if (enemy.type === 'boss' && enemy.arriving) return;
     const overdrive = this.player?.build?.overdrive || 0;
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
     const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
-    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && Math.random() < (this.player.build.soulTaker || 1) / 100;
+    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && Math.random() < (this.player.build.soulTaker || 1) / 100 + this.luckyChanceBonus();
     const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * .1) * pilotMultiplier * acidMultiplier;
     const immortal = Boolean(this.testFlags?.enemiesImmortal);
     this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
@@ -1224,7 +1271,7 @@ export class Game {
 
   areaDamage(x, y, radius, damage, ignoredId = null, source = null) {
     const r2 = radius * radius;
-    const payload = upgradePower(this.player?.build.passives.payload || 0);
+    const payload = upgradePower(this.passiveRank('payload'));
     const boostedDamage = damage * (1 + payload * .06);
     for (const enemy of this.enemies) {
       const dx = enemy.x - x; const dy = enemy.y - y;
@@ -1305,11 +1352,11 @@ export class Game {
     const needsBomb = this.player.bombs < this.player.maxBombs;
     const needsShield = this.player.shield < 1 && this.player.shieldsDropped < 2;
     if (!needsHeal && !needsBomb && !needsShield) return false;
-    const salvage = upgradePower(this.player.build.passives.salvage || 0);
+    const salvage = upgradePower(this.passiveRank('salvage'));
     const baseChance = { scout: .006, striker: .008, gunship: .012, elite: .035, midboss: .06 }[enemy.type] || .006;
     const shieldBoost = needsShield ? .02 : 0;
     const kungfuHealBoost = this.player.pilotId === 'kungfu' && needsHeal ? .22 : 0;
-    if (random() >= Math.min(kungfuHealBoost ? .38 : .14, baseChance + salvage * .004 + shieldBoost + kungfuHealBoost)) return false;
+    if (random() >= Math.min(kungfuHealBoost ? .38 : .14, baseChance + salvage * .004 + shieldBoost + kungfuHealBoost) + this.luckyChanceBonus()) return false;
     const candidates = [];
     if (needsHeal) candidates.push('heal', 'heal', ...(this.player.pilotId === 'kungfu' ? ['heal', 'heal', 'heal', 'heal'] : []));
     if (needsBomb) candidates.push('bomb');
@@ -1354,7 +1401,7 @@ export class Game {
 
   updateXpOrbs() {
     if (!this.player) return;
-    const magnet = upgradePower(this.player.build.passives.magnet || 0);
+    const magnet = upgradePower(this.passiveRank('magnet'));
     const range = 42 + magnet * 30;
     for (let i = this.xpOrbs.length - 1; i >= 0; i -= 1) {
       const orb = this.xpOrbs[i];
@@ -1380,7 +1427,7 @@ export class Game {
 
   grantXp(amount, defer = false) {
     if (!this.player) return;
-    const harvester = upgradePower(this.player.build.passives.harvester || 0);
+    const harvester = upgradePower(this.passiveRank('harvester'));
     this.player.xp += Math.max(1, Math.round(amount * (1 + harvester * .08) * this.resourceMultiplier()));
     while (this.player.level < WORLD.maxLevel && this.player.xp >= this.player.xpNeed) {
       this.player.xp -= this.player.xpNeed;
@@ -1395,8 +1442,9 @@ export class Game {
 
   showUpgrade() {
     if (this.player.pendingLevels <= 0) return;
+    if (this.mode === 'levelup') return;
     this.upgradeReturnMode = this.mode;
-    const choiceCount = this.player.pilotId === 'joker' && Math.random() < .2 ? 4 : 3;
+    const choiceCount = 3;
     this.currentChoices = makeUpgradeChoices(this.player.build, Math.random, choiceCount);
     const supplies = [];
     const repairAmount = this.repairAmount();
@@ -1445,10 +1493,22 @@ export class Game {
     else if (choice.id === 'soul-taker-boost') p.build.soulTaker = Math.min(5, (p.build.soulTaker || 1) + .5);
     else if (choice.id === 'battlefield-cleanup-boost') p.build.battlefieldCleanup = (p.build.battlefieldCleanup || 0) + 1;
     else if (choice.category === 'fusion') {
+      const fusion = FUSIONS[choice.id];
       p.build.fusions[choice.id] = true;
-      for (const id of FUSIONS[choice.id].requires) {
+      for (const id of fusion.requires) {
         delete p.build.secondaries[id];
         delete p.secondaryCooldowns[id];
+      }
+      for (const id of fusion.consumesSecondaries || []) {
+        delete p.build.secondaries[id];
+        delete p.secondaryCooldowns[id];
+      }
+      for (const id of fusion.requiresPassives || []) delete p.build.passives[id];
+      if (choice.id === 'seekerOrbitPlus') delete p.build.fusions.seekerOrbit;
+      if (choice.id === 'suicideSquad') {
+        const previous = p.maxBombs;
+        p.maxBombs = Math.min(5, 3 + 2) + (p.pilotId === 'rambo' ? 1 : 0);
+        p.bombs = Math.min(p.maxBombs, p.bombs + Math.max(0, p.maxBombs - previous));
       }
     }
     else if (choice.id === 'primary') p.build.primaryLevel = Math.min(WORLD.maxUpgradeRank, p.build.primaryLevel + 1);
@@ -1465,6 +1525,15 @@ export class Game {
     else this.score += 2500;
     p.build.revision += 1;
     p.pendingLevels -= 1;
+    if (p.pilotId === 'joker' && choice.category !== 'supply') {
+      if (!this.jokerBonusPick && Math.random() < .2) {
+        this.jokerBonusPick = true;
+        p.pendingLevels += 1;
+        this.addEffect({ type: 'floatingText', x: p.x, y: p.y - 50, text: 'JOKER BONUS', color: '#c084fc', life: 70, maxLife: 70 });
+      } else {
+        this.jokerBonusPick = false;
+      }
+    }
     if (!preserveInput) {
       p.inputLock = 18;
       this.pointer.active = false;
@@ -1492,6 +1561,10 @@ export class Game {
           if (!enemy.alive || enemy.type === 'boss' || (enemy.type === 'midboss' && !enemy.orbiting)) continue;
           const d2 = distanceSq(effect, enemy);
           if (d2 > effect.radius ** 2) continue;
+          if (effect.blackHole) {
+            enemy.acidTimer = Math.max(enemy.acidTimer || 0, 90);
+            enemy.acidAmp = Math.max(enemy.acidAmp || 0, .4);
+          }
           enemy.x += (effect.x - enemy.x) * .035;
           enemy.y += (effect.y - enemy.y) * .02;
         }
@@ -1532,7 +1605,7 @@ export class Game {
         }
       } else if (effect.type === 'supply') {
         effect.life -= 1;
-        const magnet = upgradePower(this.player.build.passives.magnet || 0);
+        const magnet = upgradePower(this.passiveRank('magnet'));
         const dx = this.player.x - effect.x; const dy = this.player.y - effect.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < (42 + magnet * 30) ** 2 || this.mode === 'stageClear' || effect.y >= this.h - 150) {
@@ -1562,11 +1635,9 @@ export class Game {
     }
   }
 
-  useBomb() {
-    if (!this.player || this.mode !== 'playing' || this.player.bombs <= 0 || this.player.bombLock > 0 || this.player.inputLock > 0) return false;
-    this.player.bombs -= 1; this.player.bombLock = 65; this.player.invincible = Math.max(this.player.invincible, 150);
+  detonateBomb() {
     this.enemyBullets = [];
-    const level = upgradePower(this.player.build.passives.bombcap || 0);
+    const level = upgradePower(this.passiveRank('bombcap'));
     for (const enemy of [...this.enemies]) {
       const large = isLargeEnemyType(enemy.type);
       const ramboMultiplier = large && this.player.pilotId === 'rambo' ? 1.5 : 1;
@@ -1575,13 +1646,20 @@ export class Game {
     }
     this.addEffect({ type: 'ring', x: this.player.x, y: this.player.y, radius: 10, maxRadius: 500, life: 42, maxLife: 42, color: '#ffd166' });
     this.spawnBurst(this.player.x, this.player.y, 90, '#ffd166');
+    this.sound('bomb');
+  }
+
+  useBomb() {
+    if (!this.player || this.mode !== 'playing' || this.player.bombs <= 0 || this.player.bombLock > 0 || this.player.inputLock > 0) return false;
+    this.player.bombs -= 1; this.player.bombLock = 65; this.player.invincible = Math.max(this.player.invincible, 150);
+    this.detonateBomb();
     navigator.vibrate?.(45);
-    this.sound('bomb'); this.updateHud(); return true;
+    this.updateHud(); return true;
   }
 
   hitPlayer(damage = STAT_SCALE) {
     if (!this.player || this.player.invincible > 0 || this.testFlags?.playerInvincible) return;
-    if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion || 20) / 100) {
+    if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion || 20) / 100 + this.luckyChanceBonus()) {
       this.player.invincible = 18;
       this.addEffect({ type: 'kungfuDodge', x: this.player.x, y: this.player.y, life: 18, maxLife: 18 });
       this.spawnBurst(this.player.x, this.player.y, 12, '#e0f2fe');
@@ -1616,6 +1694,11 @@ export class Game {
     const armor = upgradePower(this.player.build.passives.armor || 0);
     this.player.invincible = this.player.pilotId === 'shadow' ? Math.max(120, 95 + armor * 15) : 95 + armor * 15;
     this.enemyBullets = this.enemyBullets.filter(b => distanceSq(b, this.player) > 90 ** 2);
+    if (this.player.build.fusions?.suicideSquad && this.player.bombs > 0) {
+      this.player.bombs -= 1;
+      this.detonateBomb();
+      this.announce('SUICIDE SQUAD', 'AUTO BOMB TRIGGERED', 900);
+    }
     if (this.player.pilotId === 'shadow') {
       const radius = 135;
       const damage = this.primaryDamagePerSecond() * 2;
@@ -1924,7 +2007,7 @@ export class Game {
       if(e.type==='boss')this.drawBossSprite(ctx,e);
       else if(e.type==='midboss'){ctx.rotate(Math.PI/4);ctx.fillRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.strokeRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.rotate(-Math.PI/4);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(0,0,13,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-8,-3,16,6);}
       else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
-      if(e.type==='midboss'&&!e.orbiting){ctx.strokeStyle='rgba(66,232,255,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,e.radius+9+Math.sin(this.frame/7)*2,0,TAU);ctx.stroke();}
+      if((e.type==='midboss'&&!e.orbiting)||(e.type==='boss'&&e.arriving)){ctx.strokeStyle='rgba(66,232,255,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,e.radius+9+Math.sin(this.frame/7)*2,0,TAU);ctx.stroke();}
       if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0||e.acidTimer>0){ctx.globalAlpha=e.acidTimer>0?clamp(.35+e.acidTimer/600,.35,.82):.72;ctx.strokeStyle=e.acidTimer>0?'#a3e635':e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       if(e.kungfuSlowTimer>0){ctx.strokeStyle='rgba(52,211,153,.8)';ctx.lineWidth=3;ctx.setLineDash([4,4]);ctx.beginPath();ctx.arc(0,0,e.radius+9,0,TAU);ctx.stroke();ctx.setLineDash([]);}
       if(e.kungfuAttackLock>0){ctx.strokeStyle='rgba(251,146,60,.95)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-9,-9);ctx.lineTo(9,9);ctx.moveTo(9,-9);ctx.lineTo(-9,9);ctx.stroke();}

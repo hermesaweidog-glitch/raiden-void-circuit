@@ -20,6 +20,30 @@ export function seededShuffle(items, random = Math.random) {
   return out;
 }
 
+export function fusionConsumedSets(fusions) {
+  const consumedSecondaries = new Set();
+  const consumedPassives = new Set();
+  for (const id of Object.keys(fusions || {})) {
+    const fusion = FUSIONS[id];
+    if (!fusion) continue;
+    for (const sid of fusion.requires || []) consumedSecondaries.add(sid);
+    for (const sid of fusion.consumesSecondaries || []) consumedSecondaries.add(sid);
+    for (const pid of fusion.requiresPassives || []) consumedPassives.add(pid);
+  }
+  return { consumedSecondaries, consumedPassives };
+}
+
+export function fusionEligible(fusion, build, secondaryCatalog) {
+  const secondaries = build.secondaries || {};
+  const passives = build.passives || {};
+  const fusions = build.fusions || {};
+  if (fusions[fusion.id]) return false;
+  if (fusion.requiresFusion && !fusions[fusion.requiresFusion]) return false;
+  if (!(fusion.requires || []).every(id => secondaryCatalog[id] && (secondaries[id] || 0) >= secondaryCatalog[id].max)) return false;
+  if (!(fusion.requiresPassives || []).every(id => PASSIVES[id] && (passives[id] || 0) >= PASSIVES[id].max)) return false;
+  return true;
+}
+
 export function makeUpgradePool(build) {
   const pool = [];
   const kungfu = build.secondarySet === 'kungfu';
@@ -32,10 +56,14 @@ export function makeUpgradePool(build) {
   const secondaries = build.secondaries || {};
   const fusions = build.fusions || {};
   const fusionCatalog = Object.values(FUSIONS).filter(fusion => fusion.set === (kungfu ? 'kungfu' : 'standard'));
-  const occupiedSecondarySlots = Object.keys(secondaries).length + Object.keys(fusions).length;
+  const { consumedSecondaries, consumedPassives } = fusionConsumedSets(fusions);
+  const secondaryFusionCount = Object.keys(fusions).filter(id => FUSIONS[id] && FUSIONS[id].kind !== 'passive').length;
+  const passiveFusionCount = Object.keys(fusions).filter(id => FUSIONS[id]?.kind === 'passive').length;
+  const occupiedSecondarySlots = Object.keys(secondaries).length + secondaryFusionCount;
   for (const item of Object.values(secondaryCatalog)) {
     const level = secondaries[item.id] || 0;
     if (level >= item.max) continue;
+    if (consumedSecondaries.has(item.id)) continue;
     if (level > 0 || occupiedSecondarySlots < (build.secondarySlots || BUILD_LIMITS.secondary)) {
       pool.push({ ...item, category: 'secondary', level });
     }
@@ -44,15 +72,16 @@ export function makeUpgradePool(build) {
   for (const item of Object.values(PASSIVES)) {
     const level = passives[item.id] || 0;
     if (level >= item.max) continue;
+    if (consumedPassives.has(item.id)) continue;
     const inheritedByFusion = item.requiresSecondary && Object.keys(fusions).some(id => FUSIONS[id]?.requires.includes(item.requiresSecondary));
     if (level === 0 && item.requiresSecondary && !secondaries[item.requiresSecondary] && !inheritedByFusion) continue;
     if (level === 0 && item.requiresPrimaryLevel && (build.primaryLevel || 1) < item.requiresPrimaryLevel) continue;
-    if (level > 0 || Object.keys(passives).length < (build.passiveSlots || BUILD_LIMITS.passive)) {
+    if (level > 0 || Object.keys(passives).length + passiveFusionCount < (build.passiveSlots || BUILD_LIMITS.passive)) {
       pool.push({ ...item, category: 'passive', level });
     }
   }
   for (const fusion of fusionCatalog) {
-    if (!fusions[fusion.id] && fusion.requires.every(id => secondaries[id] >= secondaryCatalog[id].max)) pool.push(fusion);
+    if (fusionEligible(fusion, build, secondaryCatalog)) pool.push(fusion);
   }
   if (isBuildMaxed(build)) {
     pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '超頻：火力', description: `所有攻擊永久增加 10%；目前總加成 +${(build.overdrive || 0) * 10}%。` });
@@ -79,12 +108,14 @@ export function isBuildMaxed(build) {
   const kungfu = build.secondarySet === 'kungfu';
   const secondaryCatalog = kungfu ? KUNGFU_SECONDARIES : SECONDARIES;
   const fusionCatalog = Object.values(FUSIONS).filter(fusion => fusion.set === (kungfu ? 'kungfu' : 'standard'));
+  const secondaryFusionCount = Object.keys(fusions).filter(id => FUSIONS[id] && FUSIONS[id].kind !== 'passive').length;
+  const passiveFusionCount = Object.keys(fusions).filter(id => FUSIONS[id]?.kind === 'passive').length;
   return (build.primaryLevel || 1) >= 3
-    && Object.keys(secondaries).length + Object.keys(fusions).length >= (build.secondarySlots || BUILD_LIMITS.secondary)
+    && Object.keys(secondaries).length + secondaryFusionCount >= (build.secondarySlots || BUILD_LIMITS.secondary)
     && Object.entries(secondaries).every(([id, rank]) => secondaryCatalog[id] && rank >= secondaryCatalog[id].max)
-    && Object.keys(passives).length >= (build.passiveSlots || BUILD_LIMITS.passive)
+    && Object.keys(passives).length + passiveFusionCount >= (build.passiveSlots || BUILD_LIMITS.passive)
     && Object.entries(passives).every(([id, rank]) => PASSIVES[id] && rank >= PASSIVES[id].max)
-    && fusionCatalog.every(fusion => fusion.requires.some(id => (secondaries[id] || 0) < secondaryCatalog[id].max) || build.fusions?.[fusion.id]);
+    && fusionCatalog.every(fusion => build.fusions?.[fusion.id] || !fusionEligible(fusion, build, secondaryCatalog));
 }
 
 export function makeUpgradeChoices(build, random = Math.random, count = 3) {

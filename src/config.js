@@ -23,10 +23,10 @@ export const AIRCRAFT = {
 
 export const PILOTS = {
   imperial: { id: 'imperial', name: '帝國兵', icon: '◇', art: 'assets/pilots/imperial.webp', subtitle: '戰場清理', ability: '所有資源效率可透過超頻每次 +1%，無上限。' },
-  rambo: { id: 'rambo', name: '藍波', icon: '✚', art: 'assets/pilots/rambo.webp', subtitle: '生存專家', ability: '初始生命與炸彈、生命與炸彈上限各 +1；擊倒 BOSS 補滿炸彈，炸彈對大型目標傷害 +50%。' },
+  rambo: { id: 'rambo', name: '藍波', icon: '✚', art: 'assets/pilots/rambo.webp', subtitle: '生存專家', ability: '生命與炸彈上限增加1階段；擊倒 BOSS 補滿炸彈，炸彈對大型目標傷害 +50%。' },
   gemini: { id: 'gemini', name: '雙子星', icon: 'Ⅱ', art: 'assets/pilots/gemini.webp', subtitle: '雙重火控', ability: '機體放大 20%；主武器與副武器每次發射數量 +1。' },
   shadow: { id: 'shadow', name: '陰影', icon: '◐', art: 'assets/pilots/shadow.webp', subtitle: '相位潛行', ability: '每 6 秒潛入陰影 2 秒；受傷後獲得 2 秒無敵，並以主武器 2 秒 DPS 對周圍造成相位反擊。' },
-  joker: { id: 'joker', name: '小丑', icon: '♢', art: 'assets/pilots/joker.webp', subtitle: '混沌選牌', ability: '升級隨機選擇；副武器與被動技能上限各 +1；20% 機率增加一個升級選項。' },
+  joker: { id: 'joker', name: '小丑', icon: '♢', art: 'assets/pilots/joker.webp', subtitle: '混沌選牌', ability: '副武器與被動技能裝備上限各 +1；自動選擇升級項目，並有 20% 機率額外再獲得一次升級項目。' },
   reaper: { id: 'reaper', name: '死神', icon: '☠', art: 'assets/pilots/reaper.webp', subtitle: '致命契約', ability: '初始最大生命 -20 HP；所有傷害 +50%；主武器有 1% 機率直接擊殺，可超頻至 5%。' },
   kungfu: { id: 'kungfu', name: '功夫', icon: '拳', art: 'assets/pilots/kungfu.webp', subtitle: '鐵身宗師', ability: '無法射擊；生命與生命提升、恢復效果加倍，以無傷碰撞攻擊敵人。' },
   gambler: { id: 'gambler', name: '賭徒', icon: '◆', art: 'assets/pilots/gambler.webp', subtitle: '極限擦彈', ability: '核心判定縮小；敵彈接觸機身即使狂熱 +1% 傷害，被擊中重置；初始生命減半。' },
@@ -70,7 +70,13 @@ export const PASSIVES = {
 
 export const FUSIONS = {
   seekerOrbit: { id: 'seekerOrbit', icon: 'assets/icons/seeker-orbit.svg', name: '追獵軌道', category: 'fusion', set: 'standard', requires: ['drone', 'homing'], description: '每個軌道衛星發射滿級數量的橘色追蹤導彈。' },
+  seekerOrbitPlus: { id: 'seekerOrbitPlus', icon: 'assets/icons/seeker-orbit-plus.svg', name: '追獵軌道+', category: 'fusion', set: 'standard', requires: [], requiresPassives: ['guidance'], requiresFusion: 'seekerOrbit', consumesSecondaries: ['drone', 'homing'], description: '追獵軌道內建滿級導引電腦（含重新鎖定），並移除導引電腦。' },
   lanceOrbit: { id: 'lanceOrbit', icon: 'assets/icons/lance-orbit.svg', name: '貫通光環', category: 'fusion', set: 'standard', requires: ['rail', 'prism'], description: '磁軌與稜鏡合成繞機貫通雷射，傷害等同一級 Lancer。' },
+  clusterStars: { id: 'clusterStars', icon: 'assets/icons/cluster-stars.svg', name: '群星', category: 'fusion', set: 'standard', requires: ['bombard', 'prism'], description: '鎖定多個目標，朝各目標方向發射一發高速直線貫通射線。' },
+  blackHole: { id: 'blackHole', icon: 'assets/icons/black-hole.svg', name: '黑洞', category: 'fusion', set: 'standard', requires: ['acid', 'gravity'], description: '重力井合併酸蝕增傷效果，牽引範圍稍微擴大。' },
+  langinus: { id: 'langinus', icon: 'assets/icons/langeinus.svg', name: '朗基努斯之槍', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['critical', 'support'], description: '暴擊矩陣與支援協定效果合併，恆為滿級。' },
+  suicideSquad: { id: 'suicideSquad', icon: 'assets/icons/suicide-assault.svg', name: '自殺突擊隊', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['bombcap', 'payload'], description: '炸彈電容與聚能彈頭效果合併；被擊中時自動觸發炸彈效果並消耗 1 枚炸彈（無庫存不觸發）。' },
+  luckyStar: { id: 'luckyStar', icon: 'assets/icons/lucky-star.svg', name: '幸運星', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['salvage', 'magnet', 'harvester'], description: '戰場回收、磁力核心與經驗收割器效果合併；所有受機率影響的效果，機率額外 +2%。' },
   taijiMaster: { id: 'taijiMaster', icon: 'assets/icons/taiji-master.svg', name: '太極宗', category: 'fusion', set: 'kungfu', requires: ['pushHands', 'ironMountain'], description: '異色推手可清除範圍內敵彈，並具備滿級鐵山靠效果。' },
   sixHarmony: { id: 'sixHarmony', icon: 'assets/icons/six-harmony.svg', name: '六合拳', category: 'fusion', set: 'kungfu', requires: ['afterimage', 'jointStrike'], description: '殘影優先分散攻擊；單一目標承受全部殘影，並附帶關節緩速。' },
 };

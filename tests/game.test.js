@@ -297,6 +297,23 @@ test('particle saturation drops overflow work instead of shifting the entire arr
   assert.equal(game.particles[0], marker);
 });
 
+test('a sector boss is invulnerable until reaching its combat station', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.debugForceBoss();
+  const boss = game.enemies.find(enemy => enemy.type === 'boss');
+  const hp = boss.hp;
+
+  game.damageEnemy(boss, 50, false);
+  assert.equal(boss.hp, hp);
+  for (let i = 0; i < 400 && boss.arriving; i += 1) game.updateBoss(boss);
+  assert.equal(boss.arriving, false);
+  game.damageEnemy(boss, 50, false);
+  assert.ok(boss.hp < hp);
+});
+
 test('destroying a boss grants one immediate upgrade without XP or a next-stage prompt', () => {
   const { game } = makeGame();
   game.start('falcon');
@@ -304,6 +321,7 @@ test('destroying a boss grants one immediate upgrade without XP or a next-stage 
   game.mode = 'playing';
   game.debugForceBoss();
   const boss = game.enemies.find(enemy => enemy.type === 'boss');
+  for (let i = 0; i < 400 && boss.arriving; i += 1) game.updateBoss(boss);
   boss.hp = 1;
   const xp = game.player.xp;
 
@@ -882,7 +900,7 @@ test('maxed loadouts automatically stack ten-percent attack upgrades and keep a 
   game.player.build.primaryLevel = 3;
   game.player.build.secondaries = { homing: 3, rail: 3, drone: 3 };
   game.player.build.passives = { magnet: 3, armor: 3, critical: 3, support: 3, overclock: 3, bombcap: 3 };
-  game.player.build.fusions = { seekerOrbit: true };
+  game.player.build.fusions = { seekerOrbit: true, langinus: true };
   game.player.hp = game.player.maxHp;
   game.player.bombs = game.player.maxBombs;
   game.player.pendingLevels = 1;
@@ -970,6 +988,48 @@ test('wasp thunder hammer explodes when a primary shot destroys an enemy', () =>
   assert.equal(target.alive, false);
   assert.ok(nearby.hp < 100);
   assert.ok(game.effects.some(effect => effect.type === 'hammer'));
+});
+
+test('wasp thunder hammer triggers on every hit with wider radius and halved damage', () => {
+  const { game } = makeGame();
+  game.start('wasp');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 3;
+  game.player.fireCooldown = 0;
+  game.firePrimary();
+  const bullet = game.playerBullets.find(item => item.thunderHammer);
+  assert.equal(bullet.hammerRadius, (78 + 5 * 4) * 1.5);
+  assert.equal(bullet.hammerDamage, (6 + 5 * 1.6) * .5);
+
+  const tough = { id: 94, type: 'gunship', x: 100, y: 100, radius: 10, hp: 100000, maxHp: 100000, alive: true, score: 1, xp: 0, color: '#fff' };
+  const nearby = { id: 95, type: 'scout', x: 170, y: 100, radius: 10, hp: 100, maxHp: 100, alive: true, score: 1, xp: 0, color: '#fff' };
+  Object.assign(bullet, { x: tough.x, y: tough.y, vx: 0, vy: 0 });
+  game.playerBullets = [bullet];
+  game.enemies = [tough, nearby];
+
+  game.updatePlayerBullets();
+
+  assert.equal(tough.alive, true, 'the target survives the hit');
+  assert.ok(nearby.hp < 100, 'hammer still splashes neighbours on a non-lethal hit');
+  assert.ok(game.effects.some(effect => effect.type === 'hammer'));
+});
+
+test('falcon burn deals thirty percent of primary dps without stacking', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.build.primaryLevel = 3;
+  const enemy = { id: 96, type: 'gunship', x: 100, y: 100, radius: 10, hp: 100000, maxHp: 100000, alive: true, score: 1, xp: 0, color: '#fff' };
+  const bullet = { statuses: ['burn'], statusPowers: { burn: 5 }, damage: 1 };
+
+  game.applyBulletStatus(bullet, enemy);
+  const expected = game.primaryDamagePerSecond() * .3 / 4;
+  assert.equal(enemy.burnDamage, expected);
+
+  game.applyBulletStatus(bullet, enemy);
+  assert.equal(enemy.burnDamage, expected, 'reapplying burn must not stack the damage');
 });
 
 test('bombs destroy ordinary enemies but only damage large targets', () => {
@@ -1505,6 +1565,89 @@ test('acid vulnerability, support protocol, and both fusion payloads alter comba
   assert.equal(game.playerBullets.length, 0);
 });
 
+test('cluster stars fires piercing rays toward multiple locked targets', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  game.mode = 'playing';
+  game.player.build.secondaries = {};
+  game.player.build.fusions = { clusterStars: true };
+  game.player.secondaryCooldowns = {};
+  const enemyAt = (id, x, y) => ({ id, type: 'scout', x, y, radius: 10, hp: 100, maxHp: 100, alive: true, score: 0, xp: 0, color: '#fff' });
+  game.enemies = [enemyAt(601, 100, 100), enemyAt(602, 380, 120), enemyAt(603, 240, 60)];
+  game.playerBullets = [];
+
+  game.updateSecondaries();
+
+  const rays = game.playerBullets.filter(bullet => bullet.kind === 'rail');
+  assert.equal(rays.length, 3, 'one ray per locked target');
+  assert.ok(rays.every(ray => ray.pierce > 0), 'rays pierce through targets');
+  assert.ok(rays.every(ray => Math.hypot(ray.vx, ray.vy) > 10), 'rays are high-speed');
+  const angles = new Set(rays.map(ray => Math.atan2(ray.vy, ray.vx).toFixed(2)));
+  assert.equal(angles.size, 3, 'each ray points at a distinct target');
+});
+
+test('black hole gravity wells apply the acid amplification debuff', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  game.mode = 'playing';
+  game.player.build.secondaries = {};
+  game.player.build.fusions = { blackHole: true };
+  game.player.secondaryCooldowns = {};
+  const enemy = { id: 611, type: 'scout', x: 240, y: 200, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [enemy];
+  game.effects = [];
+
+  game.updateSecondaries();
+  const well = game.effects.find(effect => effect.type === 'gravity' && effect.blackHole);
+  assert.ok(well, 'black hole spawns a flagged gravity well');
+  assert.ok(well.radius > 52 + 5 * 6, 'pull radius is wider than a max-rank gravity well');
+
+  game.updateEffects();
+  assert.ok(enemy.acidTimer > 0, 'trapped enemies receive the acid debuff');
+  assert.equal(enemy.acidAmp, .4, 'debuff uses the max-rank acid amplification');
+});
+
+test('suicide squad auto-detonates a bomb when the player takes damage', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  game.mode = 'playing';
+  game.player.build.fusions = { suicideSquad: true };
+  game.player.invincible = 0;
+  game.player.shield = 0;
+  game.player.bombs = 2;
+  const scout = { id: 621, type: 'scout', x: 240, y: 200, radius: 10, hp: 10, maxHp: 10, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [scout];
+  game.enemyBullets = [{ x: 0, y: 0, radius: 4 }];
+
+  game.hitPlayer();
+
+  assert.equal(game.player.bombs, 1, 'one bomb is consumed');
+  assert.equal(scout.alive, false, 'the auto-bomb clears ordinary enemies');
+  assert.equal(game.enemyBullets.length, 0, 'the auto-bomb clears enemy bullets');
+
+  game.player.invincible = 0;
+  game.player.bombs = 0;
+  game.hitPlayer();
+  assert.equal(game.player.bombs, 0, 'no trigger without bomb stock');
+});
+
+test('seeker orbit plus keeps satellites firing and grants max guidance with relock', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  game.mode = 'playing';
+  game.player.build.secondaries = {};
+  game.player.build.passives = {};
+  game.player.build.fusions = { seekerOrbitPlus: true };
+  game.player.secondaryCooldowns = {};
+  const enemy = { id: 631, type: 'scout', x: 240, y: 200, radius: 10, hp: 100, maxHp: 100, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [enemy];
+  game.playerBullets = [];
+
+  assert.equal(game.passiveRank('guidance'), 3, 'fused guidance reads as max rank');
+  game.updateSecondaries();
+  assert.ok(game.playerBullets.some(bullet => bullet.kind === 'missile' && bullet.guidanceActive), 'satellites still launch homing missiles');
+});
+
 test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', () => {
   let setup = makeGame();
   setup.game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'joker' });
@@ -1643,25 +1786,26 @@ test('rambo supply chain refills bombs after bosses and bombs deal fifty percent
   assert.equal(large.hp, 99220);
 });
 
-test('joker has a twenty percent chance to generate a fourth upgrade choice', () => {
-  const choiceCount = random => {
+test('joker has a twenty percent chance to earn one bonus pick without chaining', () => {
+  const pendingAfterPick = (random, bonusAlreadyGranted = false) => {
     const { game } = makeGame();
     game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'joker' });
-    game.player.pendingLevels = 1;
     game.mode = 'playing';
-    let count = 0;
-    game.chooseUpgrade = () => { count = game.currentChoices.length; };
+    game.player.pendingLevels = 1;
+    game.jokerBonusPick = bonusAlreadyGranted;
+    game.currentChoices = [{ id: 'magnet', category: 'passive', icon: 'assets/icons/magnet.webp', name: '磁力核心', description: '' }];
     const originalRandom = Math.random;
     try {
       Math.random = () => random;
-      game.showUpgrade();
+      game.chooseUpgrade(0, true);
     } finally {
       Math.random = originalRandom;
     }
-    return count;
+    return game.player.pendingLevels;
   };
-  assert.equal(choiceCount(.19), 4);
-  assert.equal(choiceCount(.2), 3);
+  assert.equal(pendingAfterPick(.19), 1, 'bonus roll below 20% grants exactly one extra pick');
+  assert.equal(pendingAfterPick(.2), 0, 'roll at or above 20% grants nothing');
+  assert.equal(pendingAfterPick(.19, true), 0, 'a bonus pick never chains into another bonus');
 });
 
 test('joker auto-upgrades without pausing combat or clearing held input', () => {

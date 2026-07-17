@@ -43,7 +43,7 @@ test('a completely maxed loadout offers an unlimited ten-percent attack upgrade'
     primaryLevel: 3,
     secondaries: { homing: 3, rail: 3, drone: 3 },
     passives: { magnet: 3, armor: 3, critical: 3, support: 3, overclock: 3, bombcap: 3 },
-    fusions: { seekerOrbit: true },
+    fusions: { seekerOrbit: true, langinus: true },
     secondarySlots: 3,
     passiveSlots: 6,
     overdrive: 7,
