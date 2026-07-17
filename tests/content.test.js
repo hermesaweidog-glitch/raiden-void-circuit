@@ -15,7 +15,7 @@ test('final content roster is complete', () => {
   assert.equal(STAGES.length, 5);
   assert.equal(Object.keys(BOSSES).length, 5);
   assert.equal(Object.keys(PILOTS).length, 8);
-  assert.deepEqual(Object.keys(FUSIONS), ['seekerOrbit', 'lanceOrbit']);
+  assert.deepEqual(Object.keys(FUSIONS), ['seekerOrbit', 'lanceOrbit', 'taijiMaster', 'sixHarmony']);
 });
 
 test('runtime budgets are explicit and mobile-safe', () => {

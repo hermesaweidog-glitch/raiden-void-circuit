@@ -430,7 +430,7 @@ test('upgrade cards and combat build strip render skill icons with ranks and MAX
   game.player.build.revision += 1;
   game.updateHud();
 
-  assert.match(game.dom['primary-build'].innerHTML, /skill-token.+primary-cannon\.webp.+>1</);
+  assert.match(game.dom['primary-build'].innerHTML, /skill-token.+primary-cannon\.webp.+>1 · \+0%</);
   assert.match(game.dom['secondary-build'].innerHTML, /skill-token.+homing\.webp.+>2</);
   assert.match(game.dom['passive-build'].innerHTML, /skill-token.+armor\.webp.+>MAX</);
   assert.doesNotMatch(game.dom['secondary-build'].innerHTML, />追蹤飛彈</);
@@ -453,6 +453,34 @@ test('fusion consumes both component weapons and renders as one MAX secondary', 
   assert.match(game.dom['secondary-build'].innerHTML, /追獵軌道/);
   assert.match(game.dom['secondary-build'].innerHTML, />MAX</);
   assert.doesNotMatch(game.dom['secondary-build'].innerHTML, /軌道無人機|追蹤飛彈/);
+});
+
+test('seeker orbit launches max-rank orange missiles from every satellite', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial', secondaries: ['drone', 'homing'] });
+  game.player.pendingLevels = 1;
+  game.currentChoices = [FUSIONS.seekerOrbit];
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+  game.chooseUpgrade(0);
+  game.player.x = 240;
+  game.player.y = 500;
+  game.enemies = [{ id: 700, type: 'scout', x: 240, y: 180, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' }];
+  game.playerBullets = [];
+  game.effects = [];
+  game.player.secondaryCooldowns.seekerOrbit = 0;
+
+  game.updateSecondaries();
+
+  const satellites = game.effects.filter(effect => effect.type === 'seekerSatellite');
+  const missiles = game.playerBullets.filter(bullet => bullet.kind === 'missile');
+  assert.equal(satellites.length, 3);
+  assert.equal(missiles.length, 9);
+  assert.equal(new Set(missiles.map(missile => `${missile.x.toFixed(2)},${missile.y.toFixed(2)}`)).size, 3);
+  assert.ok(missiles.every(missile => missile.color === '#ff9f1c'));
+  assert.ok(missiles.every(missile => missile.damage === 8.75 && missile.splash === 24));
+  assert.ok(missiles.every(missile => missile.guidanceActive && missile.targetId === 700));
+  assert.ok(!game.playerBullets.some(bullet => bullet.color === '#a78bfa'));
 });
 
 test('end screen remains actionable when browser storage rejects a new high score', () => {
@@ -849,7 +877,7 @@ test('new passive modules alter cooldown, area damage, shield window, and XP gai
 
 test('maxed loadouts automatically stack ten-percent attack upgrades and keep a MAX primary token', () => {
   const { game } = makeGame();
-  game.start('falcon');
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'gemini' });
   game.chooseUpgrade(0);
   game.player.build.primaryLevel = 3;
   game.player.build.secondaries = { homing: 3, rail: 3, drone: 3 };
@@ -875,7 +903,7 @@ test('maxed loadouts automatically stack ten-percent attack upgrades and keep a 
   assert.equal(game.player.build.overdrive, 1);
   assert.equal(enemy.hp, 890);
   game.updateHud();
-  assert.match(game.dom['primary-build'].innerHTML, />MAX</);
+  assert.match(game.dom['primary-build'].innerHTML, />MAX · \+10%</);
 });
 
 test('maxed primaries use one fixed craft-specific payload', () => {
@@ -1061,6 +1089,26 @@ test('shadow periodically enters a two-second invulnerable phase', () => {
   assert.ok(game.player.invincible > 0);
 });
 
+test('shadow takes a two-second invulnerability window and retaliates for two seconds of primary DPS', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'shadow' });
+  game.mode = 'playing';
+  game.player.invincible = 0;
+  game.player.x = 240;
+  game.player.y = 600;
+  const near = { id: 801, type: 'scout', x: 280, y: 560, radius: 10, hp: 10000, maxHp: 10000, alive: true, score: 0, xp: 0, color: '#fff' };
+  const far = { ...near, id: 802, x: 20, y: 100 };
+  game.enemies = [near, far];
+  const expectedDamage = game.primaryDamagePerSecond() * 2 * 10;
+
+  game.hitPlayer(5);
+
+  assert.equal(game.player.invincible, 120);
+  assert.equal(near.hp, 10000 - expectedDamage);
+  assert.equal(far.hp, 10000);
+  assert.ok(game.effects.some(effect => effect.type === 'shadowRetaliation'));
+});
+
 test('DPS tracks rolling one-second, ten-second, and current-stage values plus peaks', () => {
   const { game } = makeGame();
   game.start('falcon');
@@ -1183,6 +1231,48 @@ test('kungfu alone reaches the upper combat lane and basic fist ranks increase c
   assert.equal(setup.game.player.targetY, setup.game.h * .28);
 });
 
+test('kungfu primary HUD shows total overclock firepower and MAX dodge while dodge upgrades prevent enemy damage', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu' });
+  game.player.build.overdrive = 3;
+  game.player.build.revision += 1;
+  game.updateHud();
+
+  assert.equal(game.player.build.evasion, 20);
+  assert.match(game.dom['primary-build'].innerHTML, /基本拳法/);
+  assert.match(game.dom['primary-build'].innerHTML, /火力 \+30%/);
+  assert.doesNotMatch(game.dom['primary-build'].innerHTML, /\+110%/);
+  assert.match(game.dom['primary-build'].innerHTML, /唯快不破/);
+  assert.match(game.dom['primary-build'].innerHTML, /20%/);
+  assert.match(game.dom['primary-build'].innerHTML, /<b>MAX · \+30%<\/b>/);
+  assert.match(game.dom['primary-build'].innerHTML, /<b>MAX · 20%<\/b>/);
+
+  game.currentChoices = [{ id: 'evasion-boost', category: 'evasion' }];
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+  game.chooseUpgrade(0);
+  assert.equal(game.player.build.evasion, 22);
+
+  game.player.hp = game.player.maxHp;
+  game.player.shield = 1;
+  game.player.invincible = 0;
+  const originalRandom = Math.random;
+  try {
+    Math.random = () => .1;
+    game.hitPlayer(10);
+    assert.equal(game.player.hp, game.player.maxHp);
+    assert.equal(game.player.shield, 1);
+    assert.ok(game.effects.some(effect => effect.type === 'kungfuDodge'));
+
+    Math.random = () => .99;
+    game.player.invincible = 0;
+    game.hitPlayer(10);
+    assert.equal(game.player.shield, 0);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
 test('kiai clears bullets while joint strike slows nearby targets and push hands attacks only forward', () => {
   const { game } = makeGame();
   game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['kiai', 'jointStrike', 'pushHands'] });
@@ -1210,6 +1300,96 @@ test('kiai clears bullets while joint strike slows nearby targets and push hands
   assert.ok(game.effects.some(effect => effect.type === 'pushHands'));
 });
 
+test('focused payload boosts kungfu area damage by thirty percent and reach by forty percent', () => {
+  const measurePush = passives => {
+    const { game } = makeGame();
+    game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['pushHands'], passives });
+    game.player.x = 240;
+    game.player.y = 500;
+    const target = { id: 590, type: 'scout', x: 240, y: 430, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+    game.enemies = [target];
+    game.player.secondaryCooldowns.pushHands = 0;
+    const originalRandom = Math.random;
+    try {
+      Math.random = () => .99;
+      game.updateSecondaries();
+    } finally {
+      Math.random = originalRandom;
+    }
+    const effect = game.effects.find(item => item.type === 'pushHands');
+    return { damage: 1000 - target.hp, range: effect.range, width: effect.width };
+  };
+
+  const base = measurePush([]);
+  const boosted = measurePush(['payload']);
+  assert.ok(Math.abs(boosted.damage / base.damage - 1.3) < 1e-9);
+  assert.ok(Math.abs(boosted.range / base.range - 1.4) < 1e-9);
+  assert.ok(Math.abs(boosted.width / base.width - 1.4) < 1e-9);
+});
+
+test('taiji master consumes its techniques, clears its colored push area, and applies iron mountain', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['pushHands', 'ironMountain', 'ironBell'] });
+  game.player.pendingLevels = 1;
+  game.currentChoices = [FUSIONS.taijiMaster];
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+  game.chooseUpgrade(0);
+
+  assert.deepEqual(game.player.build.secondaries, { ironBell: 3 });
+  assert.deepEqual(game.player.build.fusions, { taijiMaster: true });
+
+  game.player.x = 240;
+  game.player.y = 500;
+  game.enemyBullets = [
+    { x: 240, y: 430, vx: 0, vy: 1, radius: 4, life: 100 },
+    { x: 20, y: 430, vx: 0, vy: 1, radius: 4, life: 100 },
+  ];
+  const target = { id: 601, type: 'scout', x: 240, y: 420, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [target];
+  game.player.secondaryCooldowns.taijiMaster = 0;
+  game.updateSecondaries();
+
+  assert.equal(game.enemyBullets.length, 1);
+  assert.equal(game.enemyBullets[0].x, 20);
+  assert.ok(target.hp < 950);
+  assert.equal(target.kungfuAttackLock, 90);
+  assert.equal(target.ironMountainCooldown, 300);
+  assert.ok(game.effects.some(effect => effect.type === 'pushHands' && effect.color === '#facc15'));
+  assert.ok(game.effects.some(effect => effect.type === 'ironMountain'));
+});
+
+test('six harmony focuses all afterimages on one enemy but spreads and slows against groups', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['afterimage', 'jointStrike'] });
+  game.player.pendingLevels = 1;
+  game.currentChoices = [FUSIONS.sixHarmony];
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+  game.chooseUpgrade(0);
+  game.player.x = 240;
+  game.player.y = 500;
+
+  const makeTarget = (id, x) => ({ id, type: 'scout', x, y: 390, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' });
+  const solo = makeTarget(610, 240);
+  game.enemies = [solo];
+  game.player.secondaryCooldowns.sixHarmony = 0;
+  game.updateSecondaries();
+  assert.ok(solo.hp < 900);
+  assert.equal(solo.kungfuSlowTimer, 90);
+  assert.equal(solo.kungfuSlowFactor, .6);
+  assert.equal(game.effects.filter(effect => effect.type === 'afterimage').length, 3);
+
+  const group = [makeTarget(611, 180), makeTarget(612, 240), makeTarget(613, 300)];
+  game.enemies = group;
+  game.effects = [];
+  game.player.secondaryCooldowns.sixHarmony = 0;
+  game.updateSecondaries();
+  assert.ok(group.every(target => target.hp < 1000));
+  assert.ok(group.every(target => target.kungfuSlowTimer === 90 && target.kungfuSlowFactor === .6));
+  assert.equal(game.effects.filter(effect => effect.type === 'afterimage').length, 3);
+});
+
 test('iron bell stacks behind item shields while afterimage and iron mountain deliver martial damage', () => {
   let setup = makeGame();
   setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['ironBell'] });
@@ -1220,11 +1400,17 @@ test('iron bell stacks behind item shields while afterimage and iron mountain de
   assert.equal(setup.game.player.kungfuShieldTimer, 240);
   setup.game.player.shield = 1;
   setup.game.player.invincible = 0;
-  setup.game.hitPlayer();
-  assert.equal(setup.game.player.shield, 0, 'item shield must be consumed first');
-  assert.equal(setup.game.player.kungfuShield, 1);
-  setup.game.player.invincible = 0;
-  setup.game.hitPlayer();
+  const originalRandom = Math.random;
+  try {
+    Math.random = () => .99;
+    setup.game.hitPlayer();
+    assert.equal(setup.game.player.shield, 0, 'item shield must be consumed first');
+    assert.equal(setup.game.player.kungfuShield, 1);
+    setup.game.player.invincible = 0;
+    setup.game.hitPlayer();
+  } finally {
+    Math.random = originalRandom;
+  }
   assert.equal(setup.game.player.kungfuShield, 0);
   assert.equal(setup.game.player.hp, setup.game.player.maxHp);
 
@@ -1327,8 +1513,7 @@ test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', 
   assert.equal(setup.game.player.build.secondarySlots, 4);
 
   setup = makeGame();
-  setup.game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'reaper' });
-  setup.game.chooseUpgrade(0);
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'reaper' });
   const reaperTarget = { id: 502, type: 'scout', x: 0, y: 0, radius: 8, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
   setup.game.damageEnemy(reaperTarget, 10, false);
   assert.equal(setup.game.player.maxHp, setup.game.player.craft.hp * 10 - 20);
@@ -1350,20 +1535,152 @@ test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', 
   assert.ok(bodyTarget.hp < 1000);
 
   setup = makeGame();
-  setup.game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'gambler' });
-  setup.game.chooseUpgrade(0);
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'gambler' });
   setup.game.mode = 'playing';
   setup.game.player.y = 650;
   setup.game.player.invincible = 0;
   assert.equal(setup.game.player.hitRadius, 2);
   assert.equal(setup.game.player.maxHp, Math.floor(setup.game.player.craft.hp * 10 / 2));
-  setup.game.enemyBullets = [{ x: setup.game.player.x + 30, y: setup.game.player.y, vx: 0, vy: 0, radius: 5, life: 30 }];
+  setup.game.enemyBullets = [{ x: setup.game.player.x + 33, y: setup.game.player.y + 15, vx: 0, vy: 0, radius: 5, life: 30 }];
   setup.game.updateEnemyBullets();
   assert.equal(setup.game.player.grazeBonus, .01);
+  setup.game.updateHud();
+  assert.match(setup.game.dom['primary-build'].innerHTML, /狂熱/);
+  assert.match(setup.game.dom['primary-build'].innerHTML, /\+1%/);
   setup.game.enemyBullets = [{ x: setup.game.player.x, y: setup.game.player.y, vx: 0, vy: 0, radius: 5, life: 30 }];
   setup.game.player.invincible = 0;
   setup.game.updateEnemyBullets();
   assert.equal(setup.game.player.grazeBonus, 0);
+});
+
+test('pilot extra primary tokens expose soul taker, battlefield cleanup, and supply chain values', () => {
+  let setup = makeGame();
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'reaper' });
+  setup.game.updateHud();
+  assert.match(setup.game.dom['primary-build'].innerHTML, /奪魂者/);
+  assert.match(setup.game.dom['primary-build'].innerHTML, /1%/);
+
+  setup = makeGame();
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  setup.game.updateHud();
+  assert.match(setup.game.dom['primary-build'].innerHTML, /戰場清理/);
+  assert.match(setup.game.dom['primary-build'].innerHTML, /\+0%/);
+
+  setup = makeGame();
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'rambo' });
+  setup.game.updateHud();
+  assert.match(setup.game.dom['primary-build'].innerHTML, /補給鏈/);
+  assert.match(setup.game.dom['primary-build'].innerHTML, /MAX/);
+});
+
+test('soul taker executes only primary targets and its overclock caps at five percent', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'reaper' });
+  const enemy = () => ({ id: 700, type: 'scout', x: 0, y: 0, radius: 8, hp: 10000, maxHp: 10000, alive: true, score: 0, xp: 0, color: '#fff' });
+  const originalRandom = Math.random;
+  try {
+    Math.random = () => .009;
+    const secondaryTarget = enemy();
+    game.damageEnemy(secondaryTarget, 1, false);
+    assert.equal(secondaryTarget.alive, true);
+    const primaryTarget = enemy();
+    game.damageEnemy(primaryTarget, 1, false, 'primary');
+    assert.equal(primaryTarget.alive, false);
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  game.player.build.soulTaker = 4.5;
+  game.currentChoices = [{ id: 'soul-taker-boost', category: 'soulTaker' }];
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+  game.chooseUpgrade(0);
+  assert.equal(game.player.build.soulTaker, 5);
+});
+
+test('battlefield cleanup scales XP and both repair sources with one resource multiplier', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  game.player.build.battlefieldCleanup = 50;
+  game.grantXp(100, true);
+  assert.equal(game.player.xp, 150);
+
+  game.player.hp = 0;
+  game.currentChoices = [{ id: 'repair', category: 'supply' }];
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+  game.chooseUpgrade(0);
+  assert.equal(game.player.hp, 30);
+
+  game.player.hp = 0;
+  game.effects = [{ type: 'supply', supply: 'heal', x: game.player.x, y: game.player.y, life: 10, radius: 16 }];
+  game.updateEffects();
+  assert.equal(game.player.hp, 15);
+
+  game.currentChoices = [{ id: 'battlefield-cleanup-boost', category: 'battlefieldCleanup' }];
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+  game.chooseUpgrade(0);
+  assert.equal(game.player.build.battlefieldCleanup, 51);
+});
+
+test('rambo supply chain refills bombs after bosses and bombs deal fifty percent more to large targets', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'rambo' });
+  game.mode = 'playing';
+  game.player.bombs = 0;
+  const defeatedBoss = { id: 701, type: 'boss', x: 240, y: 100, radius: 52, hp: 0, maxHp: 10000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.killEnemy(defeatedBoss);
+  assert.equal(game.player.bombs, game.player.maxBombs);
+
+  game.mode = 'playing';
+  game.player.bombs = 1;
+  game.player.bombLock = 0;
+  game.player.invincible = 0;
+  const large = { id: 702, type: 'boss', x: 240, y: 100, radius: 52, hp: 100000, maxHp: 100000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [large];
+  game.useBomb();
+  assert.equal(large.hp, 99220);
+});
+
+test('joker has a twenty percent chance to generate a fourth upgrade choice', () => {
+  const choiceCount = random => {
+    const { game } = makeGame();
+    game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'joker' });
+    game.player.pendingLevels = 1;
+    game.mode = 'playing';
+    let count = 0;
+    game.chooseUpgrade = () => { count = game.currentChoices.length; };
+    const originalRandom = Math.random;
+    try {
+      Math.random = () => random;
+      game.showUpgrade();
+    } finally {
+      Math.random = originalRandom;
+    }
+    return count;
+  };
+  assert.equal(choiceCount(.19), 4);
+  assert.equal(choiceCount(.2), 3);
+});
+
+test('joker auto-upgrades without pausing combat or clearing held input', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'joker' });
+  game.mode = 'playing';
+  game.player.pendingLevels = 1;
+  game.player.inputLock = 0;
+  game.pointer = { ...game.pointer, active: true, id: 9, x: 180, y: 610 };
+  game.keys.add('ArrowLeft');
+
+  game.showUpgrade();
+
+  assert.equal(game.mode, 'playing');
+  assert.equal(game.dom['upgrade-overlay'].classList.contains('hidden'), true);
+  assert.equal(game.pointer.active, true);
+  assert.equal(game.pointer.id, 9);
+  assert.equal(game.keys.has('ArrowLeft'), true);
+  assert.equal(game.player.inputLock, 0);
 });
 
 test('the normal sector-five boss enters a rewardless multi-burst finale before victory', () => {

@@ -22,14 +22,14 @@ export const AIRCRAFT = {
 };
 
 export const PILOTS = {
-  imperial: { id: 'imperial', name: '帝國兵', icon: '◇', art: 'assets/pilots/imperial.webp', subtitle: '標準駕駛', ability: '無特殊效果。' },
-  rambo: { id: 'rambo', name: '藍波', icon: '✚', art: 'assets/pilots/rambo.webp', subtitle: '生存專家', ability: '初始生命與炸彈、生命與炸彈上限各 +1。' },
+  imperial: { id: 'imperial', name: '帝國兵', icon: '◇', art: 'assets/pilots/imperial.webp', subtitle: '戰場清理', ability: '所有資源效率可透過超頻每次 +1%，無上限。' },
+  rambo: { id: 'rambo', name: '藍波', icon: '✚', art: 'assets/pilots/rambo.webp', subtitle: '生存專家', ability: '初始生命與炸彈、生命與炸彈上限各 +1；擊倒 BOSS 補滿炸彈，炸彈對大型目標傷害 +50%。' },
   gemini: { id: 'gemini', name: '雙子星', icon: 'Ⅱ', art: 'assets/pilots/gemini.webp', subtitle: '雙重火控', ability: '機體放大 20%；主武器與副武器每次發射數量 +1。' },
-  shadow: { id: 'shadow', name: '陰影', icon: '◐', art: 'assets/pilots/shadow.webp', subtitle: '相位潛行', ability: '每 6 秒潛入陰影 2 秒，期間完全無敵。' },
-  joker: { id: 'joker', name: '小丑', icon: '♢', art: 'assets/pilots/joker.webp', subtitle: '混沌選牌', ability: '升級隨機選擇；副武器與被動技能上限各 +1。' },
-  reaper: { id: 'reaper', name: '死神', icon: '☠', art: 'assets/pilots/reaper.webp', subtitle: '致命契約', ability: '初始最大生命 -20 HP；所有傷害增加 50%。' },
+  shadow: { id: 'shadow', name: '陰影', icon: '◐', art: 'assets/pilots/shadow.webp', subtitle: '相位潛行', ability: '每 6 秒潛入陰影 2 秒；受傷後獲得 2 秒無敵，並以主武器 2 秒 DPS 對周圍造成相位反擊。' },
+  joker: { id: 'joker', name: '小丑', icon: '♢', art: 'assets/pilots/joker.webp', subtitle: '混沌選牌', ability: '升級隨機選擇；副武器與被動技能上限各 +1；20% 機率增加一個升級選項。' },
+  reaper: { id: 'reaper', name: '死神', icon: '☠', art: 'assets/pilots/reaper.webp', subtitle: '致命契約', ability: '初始最大生命 -20 HP；所有傷害 +50%；主武器有 1% 機率直接擊殺，可超頻至 5%。' },
   kungfu: { id: 'kungfu', name: '功夫', icon: '拳', art: 'assets/pilots/kungfu.webp', subtitle: '鐵身宗師', ability: '無法射擊；生命與生命提升、恢復效果加倍，以無傷碰撞攻擊敵人。' },
-  gambler: { id: 'gambler', name: '賭徒', icon: '◆', art: 'assets/pilots/gambler.webp', subtitle: '極限擦彈', ability: '核心判定縮小；每次擦彈永久 +1% 傷害，被擊中重置；初始生命減半。' },
+  gambler: { id: 'gambler', name: '賭徒', icon: '◆', art: 'assets/pilots/gambler.webp', subtitle: '極限擦彈', ability: '核心判定縮小；敵彈接觸機身即使狂熱 +1% 傷害，被擊中重置；初始生命減半。' },
 };
 
 export const SECONDARIES = {
@@ -63,14 +63,16 @@ export const PASSIVES = {
   bombcap: { id: 'bombcap', icon: 'assets/icons/bombcap.webp', name: '炸彈電容', max: 3, description: '增加炸彈上限與爆炸傷害。' },
   support: { id: 'support', icon: 'assets/icons/support.svg', name: '支援協定', max: 3, description: '2%／3%／4% 機率使本次傷害成為 1.5／2／3 倍。' },
   capacitor: { id: 'capacitor', icon: 'assets/icons/capacitor.webp', name: '戰術電容', max: 3, description: '縮短所有副武器的冷卻時間。' },
-  payload: { id: 'payload', icon: 'assets/icons/payload.webp', name: '聚能彈頭', max: 3, description: '提高爆炸與範圍攻擊傷害。' },
+  payload: { id: 'payload', icon: 'assets/icons/payload.webp', name: '聚能彈頭', max: 3, description: '提高爆炸與範圍攻擊傷害；功夫範圍技亦會擴大判定。' },
   flux: { id: 'flux', icon: 'assets/icons/flux.webp', name: '相位穩流', max: 3, description: '延長一次性護盾觸發後的無敵時間。' },
   harvester: { id: 'harvester', icon: 'assets/icons/harvester.webp', name: '經驗收割器', max: 3, description: '提高所有經驗值取得量。' },
 };
 
 export const FUSIONS = {
-  seekerOrbit: { id: 'seekerOrbit', icon: 'assets/icons/seeker-orbit.svg', name: '追獵軌道', category: 'fusion', requires: ['drone', 'homing'], description: '軌道無人機改射追蹤飛彈；數量與傷害維持合成前水準。' },
-  lanceOrbit: { id: 'lanceOrbit', icon: 'assets/icons/lance-orbit.svg', name: '貫通光環', category: 'fusion', requires: ['rail', 'prism'], description: '磁軌與稜鏡合成繞機貫通雷射，傷害等同一級 Lancer。' },
+  seekerOrbit: { id: 'seekerOrbit', icon: 'assets/icons/seeker-orbit.svg', name: '追獵軌道', category: 'fusion', set: 'standard', requires: ['drone', 'homing'], description: '每個軌道衛星發射滿級數量的橘色追蹤導彈。' },
+  lanceOrbit: { id: 'lanceOrbit', icon: 'assets/icons/lance-orbit.svg', name: '貫通光環', category: 'fusion', set: 'standard', requires: ['rail', 'prism'], description: '磁軌與稜鏡合成繞機貫通雷射，傷害等同一級 Lancer。' },
+  taijiMaster: { id: 'taijiMaster', icon: 'assets/icons/taiji-master.svg', name: '太極宗', category: 'fusion', set: 'kungfu', requires: ['pushHands', 'ironMountain'], description: '異色推手可清除範圍內敵彈，並具備滿級鐵山靠效果。' },
+  sixHarmony: { id: 'sixHarmony', icon: 'assets/icons/six-harmony.svg', name: '六合拳', category: 'fusion', set: 'kungfu', requires: ['afterimage', 'jointStrike'], description: '殘影優先分散攻擊；單一目標承受全部殘影，並附帶關節緩速。' },
 };
 
 export const STAGES = [

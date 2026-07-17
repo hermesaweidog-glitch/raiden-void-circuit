@@ -31,6 +31,7 @@ export function makeUpgradePool(build) {
   }
   const secondaries = build.secondaries || {};
   const fusions = build.fusions || {};
+  const fusionCatalog = Object.values(FUSIONS).filter(fusion => fusion.set === (kungfu ? 'kungfu' : 'standard'));
   const occupiedSecondarySlots = Object.keys(secondaries).length + Object.keys(fusions).length;
   for (const item of Object.values(secondaryCatalog)) {
     const level = secondaries[item.id] || 0;
@@ -50,11 +51,23 @@ export function makeUpgradePool(build) {
       pool.push({ ...item, category: 'passive', level });
     }
   }
-  for (const fusion of kungfu ? [] : Object.values(FUSIONS)) {
-    if (!fusions[fusion.id] && fusion.requires.every(id => secondaries[id] >= SECONDARIES[id].max)) pool.push(fusion);
+  for (const fusion of fusionCatalog) {
+    if (!fusions[fusion.id] && fusion.requires.every(id => secondaries[id] >= secondaryCatalog[id].max)) pool.push(fusion);
   }
   if (isBuildMaxed(build)) {
-    pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '無限超載', description: `所有攻擊永久增加 10%；目前已累加 ${build.overdrive || 0} 次。` });
+    pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '超頻：火力', description: `所有攻擊永久增加 10%；目前總加成 +${(build.overdrive || 0) * 10}%。` });
+    if (kungfu && (build.evasion || 20) < 80) {
+      const current = build.evasion || 20;
+      pool.push({ id: 'evasion-boost', category: 'evasion', icon: 'assets/icons/swift-defense.svg', name: '唯快不破', description: `迴避機率由 ${current}% 提升至 ${Math.min(80, current + 2)}%；最高 80%。` });
+    }
+    if (build.pilotId === 'reaper' && (build.soulTaker || 1) < 5) {
+      const current = build.soulTaker || 1;
+      pool.push({ id: 'soul-taker-boost', category: 'soulTaker', icon: 'assets/icons/soul-taker.svg', name: '超頻：奪魂者', description: `主武器即死機率由 ${current}% 提升至 ${Math.min(5, current + .5)}%；最高 5%。` });
+    }
+    if (build.pilotId === 'imperial') {
+      const current = build.battlefieldCleanup || 0;
+      pool.push({ id: 'battlefield-cleanup-boost', category: 'battlefieldCleanup', icon: 'assets/icons/battlefield-cleanup.svg', name: '超頻：戰場清理', description: `所有資源獲得效率由 +${current}% 提升至 +${current + 1}%；無上限。` });
+    }
   }
   return pool;
 }
@@ -65,16 +78,17 @@ export function isBuildMaxed(build) {
   const fusions = build.fusions || {};
   const kungfu = build.secondarySet === 'kungfu';
   const secondaryCatalog = kungfu ? KUNGFU_SECONDARIES : SECONDARIES;
+  const fusionCatalog = Object.values(FUSIONS).filter(fusion => fusion.set === (kungfu ? 'kungfu' : 'standard'));
   return (build.primaryLevel || 1) >= 3
     && Object.keys(secondaries).length + Object.keys(fusions).length >= (build.secondarySlots || BUILD_LIMITS.secondary)
     && Object.entries(secondaries).every(([id, rank]) => secondaryCatalog[id] && rank >= secondaryCatalog[id].max)
     && Object.keys(passives).length >= (build.passiveSlots || BUILD_LIMITS.passive)
     && Object.entries(passives).every(([id, rank]) => PASSIVES[id] && rank >= PASSIVES[id].max)
-    && (kungfu || Object.values(FUSIONS).every(fusion => fusion.requires.some(id => (secondaries[id] || 0) < SECONDARIES[id].max) || build.fusions?.[fusion.id]));
+    && fusionCatalog.every(fusion => fusion.requires.some(id => (secondaries[id] || 0) < secondaryCatalog[id].max) || build.fusions?.[fusion.id]);
 }
 
-export function makeUpgradeChoices(build, random = Math.random) {
-  return seededShuffle(makeUpgradePool(build), random).slice(0, 3);
+export function makeUpgradeChoices(build, random = Math.random, count = 3) {
+  return seededShuffle(makeUpgradePool(build), random).slice(0, count);
 }
 
 export function updateGuidance(missile, enemies, position) {

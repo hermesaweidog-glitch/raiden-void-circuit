@@ -134,6 +134,79 @@ test('kungfu builds offer basic fist ranks and only six martial secondary techni
   assert.ok(!pool.some(item => ['homing', 'guidance', 'seekerOrbit', 'lanceOrbit'].includes(item.id)));
 });
 
+test('kungfu skill pairs expose martial fusions and block post-max boosts until consumed', () => {
+  const build = {
+    primaryLevel: 3,
+    secondarySet: 'kungfu',
+    secondaries: { pushHands: 3, ironMountain: 3, afterimage: 3, jointStrike: 3 },
+    passives: { magnet: 3, overclock: 3, armor: 3, critical: 3, salvage: 3, payload: 3 },
+    secondarySlots: 4,
+    passiveSlots: 6,
+    fusions: {},
+    evasion: 20,
+  };
+
+  let pool = makeUpgradePool(build);
+  assert.deepEqual(new Set(pool.filter(item => item.category === 'fusion').map(item => item.id)), new Set(['taijiMaster', 'sixHarmony']));
+  assert.ok(!pool.some(item => ['overdrive-boost', 'evasion-boost'].includes(item.id)));
+
+  build.secondaries = { kiai: 3, ironBell: 3 };
+  build.fusions = { taijiMaster: true, sixHarmony: true };
+  pool = makeUpgradePool(build);
+  assert.ok(!pool.some(item => ['taijiMaster', 'sixHarmony'].includes(item.id)));
+  assert.ok(pool.some(item => item.id === 'overdrive-boost'));
+  assert.ok(pool.some(item => item.id === 'evasion-boost'));
+});
+
+test('maxed kungfu builds choose between attack and dodge until dodge reaches eighty percent', () => {
+  const build = {
+    primaryLevel: 3,
+    secondarySet: 'kungfu',
+    secondaries: { kiai: 3, ironBell: 3, ironMountain: 3 },
+    passives: { magnet: 3, overclock: 3, armor: 3, critical: 3, salvage: 3, payload: 3 },
+    secondarySlots: 3,
+    passiveSlots: 6,
+    fusions: {},
+    evasion: 20,
+    overdrive: 0,
+  };
+
+  let pool = makeUpgradePool(build);
+  assert.deepEqual(new Set(pool.filter(item => ['overdrive', 'evasion'].includes(item.category)).map(item => item.id)), new Set(['overdrive-boost', 'evasion-boost']));
+  assert.match(pool.find(item => item.id === 'evasion-boost').description, /20%.*22%/);
+
+  build.evasion = 80;
+  pool = makeUpgradePool(build);
+  assert.ok(pool.some(item => item.id === 'overdrive-boost'));
+  assert.ok(!pool.some(item => item.id === 'evasion-boost'));
+});
+
+test('pilot-specific overclock upgrades expose capped soul taking and uncapped battlefield cleanup', () => {
+  const maxedBuild = pilotId => ({
+    pilotId,
+    primaryLevel: 3,
+    secondarySet: 'standard',
+    secondarySlots: 3,
+    passiveSlots: 6,
+    secondaries: { chain: 3, rail: 3, bombard: 3 },
+    passives: { magnet: 3, overclock: 3, armor: 3, critical: 3, salvage: 3, guidance: 3 },
+    fusions: {},
+    overdrive: 0,
+  });
+
+  const reaper = { ...maxedBuild('reaper'), soulTaker: 1 };
+  assert.deepEqual(makeUpgradePool(reaper).map(item => item.id), ['overdrive-boost', 'soul-taker-boost']);
+  assert.match(makeUpgradePool(reaper)[1].description, /1%.*1\.5%/);
+  reaper.soulTaker = 5;
+  assert.deepEqual(makeUpgradePool(reaper).map(item => item.id), ['overdrive-boost']);
+
+  const imperial = { ...maxedBuild('imperial'), battlefieldCleanup: 0 };
+  assert.deepEqual(makeUpgradePool(imperial).map(item => item.id), ['overdrive-boost', 'battlefield-cleanup-boost']);
+  imperial.battlefieldCleanup = 137;
+  assert.deepEqual(makeUpgradePool(imperial).map(item => item.id), ['overdrive-boost', 'battlefield-cleanup-boost']);
+  assert.match(makeUpgradePool(imperial)[1].description, /137%.*138%/);
+});
+
 test('homing missile never reacquires after target death', () => {
   const missile = { targetId: 7, guidanceActive: true, vx: 0, vy: -5, turn: 0.1 };
   const enemies = [{ id: 8, x: 120, y: 80, alive: true }];
