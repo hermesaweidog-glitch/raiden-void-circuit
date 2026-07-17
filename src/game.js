@@ -681,12 +681,17 @@ export class Game {
       if (p.secondaryCooldowns.clusterStars <= 0) {
         const level = upgradePower(3);
         const targets = this.nearestEnemies(p, 3 + this.projectileBonus());
+        if (targets.length) {
+          this.addEffect({ type: 'clusterFlash', x: p.x, y: p.y - 14, life: 18, maxLife: 18 });
+          this.spawnBurst(p.x, p.y - 14, 10, ['#fff', '#f0abfc']);
+        }
         for (const target of targets) {
           const angle = Math.atan2(target.y - p.y, target.x - p.x);
+          this.addEffect({ type: 'clusterLock', x: target.x, y: target.y, life: 22, maxLife: 22 });
           this.addPlayerBullet({
             id: this.entityId++, x: p.x, y: p.y - 12,
             vx: Math.cos(angle) * 16, vy: Math.sin(angle) * 16,
-            radius: 5, damage: 7 + level * 2.4, life: 60, color: '#f0abfc', kind: 'rail', pierce: 6 + level, splash: 0,
+            radius: 5, damage: 7 + level * 2.4, life: 60, color: '#f0abfc', kind: 'cluster', pierce: 6 + level, splash: 0,
           });
         }
         this.setSecondaryCooldown('clusterStars', Math.max(70, 155 - level * 13));
@@ -1255,7 +1260,7 @@ export class Game {
     const overdrive = this.player?.build?.overdrive || 0;
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
     const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
-    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && Math.random() < (this.player.build.soulTaker || 1) / 100 + this.luckyChanceBonus();
+    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && Math.random() < (this.player.build.soulTaker || 1) / 100 + this.luckyChanceBonus();
     const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * .1) * pilotMultiplier * acidMultiplier;
     const immortal = Boolean(this.testFlags?.enemiesImmortal);
     this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
@@ -1748,9 +1753,11 @@ export class Game {
     const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
     this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
     this.dom['pause-primary'].textContent = `${kungfu ? `基本拳法 · 傷害 +${KUNGFU_FIST_DAMAGE_BONUS[p.build.primaryLevel]}% · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}　/　唯快不破 · 迴避 ${p.build.evasion || 20}% · MAX` : `${p.craft.name} · ${p.craft.primary.toUpperCase()} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}`}${mastery}${overdrive}`;
-    const fusions = Object.keys(p.build.fusions || {}).map(id => FUSIONS[id].name).join('　/　');
-    this.dom['pause-secondary'].textContent = `${list(p.build.secondaries, this.secondaryCatalog(p))}${fusions ? `　/　合成：${fusions}` : ''}`;
-    this.dom['pause-passive'].textContent = list(p.build.passives, PASSIVES);
+    const fusionNames = kind => Object.keys(p.build.fusions || {}).filter(id => (FUSIONS[id]?.kind === 'passive') === (kind === 'passive')).map(id => FUSIONS[id].name).join('　/　');
+    const weaponFusions = fusionNames('secondary');
+    const passiveFusions = fusionNames('passive');
+    this.dom['pause-secondary'].textContent = `${list(p.build.secondaries, this.secondaryCatalog(p))}${weaponFusions ? `　/　合成：${weaponFusions}` : ''}`;
+    this.dom['pause-passive'].textContent = `${list(p.build.passives, PASSIVES)}${passiveFusions ? `　/　合成：${passiveFusions}` : ''}`;
     const controls = this.dom['pause-test-controls'];
     controls.classList[this.runMode !== 'test' ? 'add' : 'remove']('hidden');
     this.dom['pause-player-invincible'].checked = Boolean(this.testFlags.playerInvincible);
@@ -1887,14 +1894,17 @@ export class Game {
       const extraPrimaryToken = !p ? ''
         : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `MAX · ${p.build.evasion || 20}%`, `唯快不破 · 迴避 ${p.build.evasion || 20}%`, 'MAX')
         : p.pilotId === 'gambler' ? token('assets/icons/frenzy.svg', `+${Math.round((p.grazeBonus || 0) * 100)}%`, `狂熱 · 傷害 +${Math.round((p.grazeBonus || 0) * 100)}%`)
-        : p.pilotId === 'reaper' ? token('assets/icons/soul-taker.svg', `${p.build.soulTaker || 1}%`, `奪魂者 · 主武器即死 ${p.build.soulTaker || 1}%`)
+        : p.pilotId === 'reaper' ? token('assets/icons/soul-taker.svg', `${(p.build.soulTaker || 1) + (p.build.fusions?.luckyStar ? 2 : 0)}%`, `奪魂者 · 主武器即死 ${(p.build.soulTaker || 1) + (p.build.fusions?.luckyStar ? 2 : 0)}%`)
         : p.pilotId === 'imperial' ? token('assets/icons/battlefield-cleanup.svg', `+${p.build.battlefieldCleanup || 0}%`, `戰場清理 · 資源效率 +${p.build.battlefieldCleanup || 0}%`)
         : p.pilotId === 'rambo' ? token('assets/icons/supply-chain.svg', 'MAX', '補給鏈 · 擊倒 BOSS 補滿炸彈', 'MAX')
         : '';
       this.dom['primary-build'].innerHTML = p ? primaryToken + extraPrimaryToken : '—';
-      const fusionTokens = p ? Object.keys(p.build.fusions || {}).map(id => token(FUSIONS[id].icon, 'MAX', FUSIONS[id].name, 'MAX')).join('') : '';
-      this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(secondaryCatalog[id].icon, rankBadge(level), secondaryCatalog[id].name, level)).join('') + fusionTokens || '—' : '—';
-      this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, rankBadge(level), PASSIVES[id].name, level)).join('') || '—' : '—';
+      const fusionToken = id => token(FUSIONS[id].icon, 'MAX', FUSIONS[id].name, 'MAX');
+      const fusionIds = p ? Object.keys(p.build.fusions || {}) : [];
+      const secondaryFusionTokens = fusionIds.filter(id => FUSIONS[id]?.kind !== 'passive').map(fusionToken).join('');
+      const passiveFusionTokens = fusionIds.filter(id => FUSIONS[id]?.kind === 'passive').map(fusionToken).join('');
+      this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(secondaryCatalog[id].icon, rankBadge(level), secondaryCatalog[id].name, level)).join('') + secondaryFusionTokens || '—' : '—';
+      this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, rankBadge(level), PASSIVES[id].name, level)).join('') + passiveFusionTokens || '—' : '—';
       this.hudBuildRevision = buildRevision;
     }
     setText('mute-button', this.muted ? 'MUTED' : 'SOUND');
@@ -2035,6 +2045,7 @@ export class Game {
         ctx.save();ctx.strokeStyle='#42e8ff';ctx.globalAlpha=.2;ctx.lineWidth=b.radius*3;ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x,b.endY);ctx.stroke();ctx.globalAlpha=.95;ctx.strokeStyle='#dffcff';ctx.lineWidth=Math.max(2,b.radius*.52);ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x,b.endY);ctx.stroke();
         if(b.statuses?.includes('shock')){ctx.strokeStyle='#facc15';ctx.globalAlpha=.75;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(b.x,b.y);for(let y=b.y-24,step=0;y>b.endY;y-=24,step+=1)ctx.lineTo(b.x+(step%2?4:-4),Math.max(y,b.endY));ctx.stroke();}ctx.restore();continue;
       }
+      if(b.kind==='cluster'){const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);ctx.shadowColor='#f0abfc';ctx.shadowBlur=14;ctx.fillStyle='rgba(240,171,252,.28)';ctx.beginPath();ctx.ellipse(-14,0,20,5,0,0,TAU);ctx.fill();ctx.fillStyle='#f0abfc';ctx.beginPath();ctx.ellipse(0,0,11,3.6,0,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(3,0,5,2,0,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=1.5;const tw=this.frame*.5+b.id;ctx.beginPath();ctx.moveTo(-6+Math.sin(tw)*3,-6);ctx.lineTo(-2,0);ctx.lineTo(-6+Math.cos(tw)*3,6);ctx.stroke();ctx.restore();continue;}
       ctx.fillStyle=b.color;ctx.globalAlpha=.22;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.5,0,TAU);ctx.fill();ctx.globalAlpha=1;if(b.kind==='rail'){ctx.fillRect(b.x-b.radius/2,b.y-16,b.radius,32);}else{ctx.beginPath();ctx.ellipse(b.x,b.y,b.radius,b.radius*(b.kind==='missile'?1.8:1.4),0,0,TAU);ctx.fill();}const colors={burn:'#ff8a4c',chill:'#42e8ff',shock:'#facc15'};(b.statuses||[]).forEach((status,index)=>{ctx.strokeStyle=colors[status];ctx.lineWidth=2;ctx.globalAlpha=.8;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*1.8+index*3,0,TAU);ctx.stroke();});ctx.globalAlpha=1;
     }
     for(const b of this.enemyBullets){ctx.fillStyle=b.color;ctx.globalAlpha=.18;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.2,0,TAU);ctx.fill();ctx.globalAlpha=1;ctx.beginPath();ctx.arc(b.x,b.y,b.radius,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.globalAlpha=.55;ctx.beginPath();ctx.arc(b.x-1.5,b.y-1.5,b.radius*.28,0,TAU);ctx.fill();ctx.globalAlpha=1;}
@@ -2058,7 +2069,9 @@ export class Game {
       else if(e.type==='kungfuDodge'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#e0f2fe';ctx.lineWidth=3;for(let n=-1;n<=1;n+=1){ctx.beginPath();ctx.moveTo(e.x-16+n*12-t*28,e.y+20);ctx.quadraticCurveTo(e.x+n*12,e.y-24,e.x+16+n*12+t*28,e.y-4);ctx.stroke();}ctx.restore();}
 
       else if(e.type==='bombard'){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
-      else if(e.type==='gravity'){ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,12+Math.sin(this.frame*.18)*5,0,TAU);ctx.stroke();}
+      else if(e.type==='gravity'){const inner=12+Math.sin(this.frame*.18)*5;if(e.blackHole){ctx.save();ctx.fillStyle='rgba(163,230,53,.14)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='rgba(163,230,53,.55)';ctx.lineWidth=1.5;ctx.setLineDash([6,7]);ctx.beginPath();ctx.arc(e.x,e.y,e.radius*.82,this.frame*.03,this.frame*.03+TAU);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.fill();ctx.strokeStyle='#a3e635';ctx.lineWidth=2.5;ctx.stroke();for(let n=0;n<3;n+=1){const a=this.frame*.09+n/3*TAU;ctx.strokeStyle='rgba(217,249,157,.7)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,inner+6,a,a+1.4);ctx.stroke();}ctx.restore();}else{ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.stroke();}}
+      else if(e.type==='clusterLock'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(t*2.4);ctx.globalAlpha=1-t;ctx.strokeStyle='#f0abfc';ctx.lineWidth=2.5;const r=18-t*8;for(let n=0;n<4;n+=1){const a=n/4*TAU;ctx.beginPath();ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);ctx.lineTo(Math.cos(a)*(r-6),Math.sin(a)*(r-6));ctx.stroke();}ctx.strokeStyle='rgba(240,171,252,.5)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,r,0,TAU);ctx.stroke();ctx.restore();}
+      else if(e.type==='clusterFlash'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.globalAlpha=1-t;ctx.shadowColor='#f0abfc';ctx.shadowBlur=18;for(let n=0;n<6;n+=1){const a=n/6*TAU+t*1.2;ctx.strokeStyle=n%2?'#fff':'#f0abfc';ctx.lineWidth=3-t*2;ctx.beginPath();ctx.moveTo(Math.cos(a)*4,Math.sin(a)*4);ctx.lineTo(Math.cos(a)*(14+t*26),Math.sin(a)*(14+t*26));ctx.stroke();}ctx.restore();}
       else if(e.type==='hammer'){const t=1-e.life/e.maxLife;const radius=8+(e.maxRadius-8)*t;ctx.save();ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#facc15';ctx.lineWidth=2;for(let n=0;n<4;n+=1){const a=n/4*TAU+Math.PI/4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
       else if(e.type==='shadowRetaliation'){const t=1-e.life/e.maxLife;const radius=12+(e.maxRadius-12)*(1-(1-t)**3);ctx.save();ctx.globalAlpha=1-t;ctx.fillStyle='rgba(34,8,56,.3)';ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#6b21a8';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,radius*.72,0,TAU);ctx.stroke();for(let n=0;n<4;n+=1){const a=n/4*TAU+t*1.8;ctx.beginPath();ctx.moveTo(e.x+Math.cos(a)*radius*.2,e.y+Math.sin(a)*radius*.2);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
       else if(e.type==='ring'){const t=1-e.life/e.maxLife;e.radius+=(e.maxRadius-e.radius)*.12;ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=4;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.globalAlpha=1;}

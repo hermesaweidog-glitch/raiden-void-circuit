@@ -473,6 +473,27 @@ test('fusion consumes both component weapons and renders as one MAX secondary', 
   assert.doesNotMatch(game.dom['secondary-build'].innerHTML, /軌道無人機|追蹤飛彈/);
 });
 
+test('passive fusions render in the passive strip instead of the secondary strip', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.player.build.secondaries = { chain: 3 };
+  game.player.build.passives = { armor: 2 };
+  game.player.build.fusions = { seekerOrbit: true, langinus: true, suicideSquad: true, luckyStar: true };
+  game.player.build.revision += 1;
+  game.updateHud();
+
+  assert.match(game.dom['secondary-build'].innerHTML, /追獵軌道/, 'weapon fusions stay in the secondary strip');
+  assert.doesNotMatch(game.dom['secondary-build'].innerHTML, /朗基努斯之槍|自殺突擊隊|幸運星/, 'passive fusions must not render as secondaries');
+  assert.match(game.dom['passive-build'].innerHTML, /朗基努斯之槍/);
+  assert.match(game.dom['passive-build'].innerHTML, /自殺突擊隊/);
+  assert.match(game.dom['passive-build'].innerHTML, /幸運星/);
+
+  game.updatePausePanel();
+  assert.doesNotMatch(game.dom['pause-secondary'].textContent, /朗基努斯之槍|自殺突擊隊|幸運星/);
+  assert.match(game.dom['pause-passive'].textContent, /朗基努斯之槍/);
+});
+
 test('seeker orbit launches max-rank orange missiles from every satellite', () => {
   const { game } = makeGame();
   game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial', secondaries: ['drone', 'homing'] });
@@ -1578,12 +1599,14 @@ test('cluster stars fires piercing rays toward multiple locked targets', () => {
 
   game.updateSecondaries();
 
-  const rays = game.playerBullets.filter(bullet => bullet.kind === 'rail');
+  const rays = game.playerBullets.filter(bullet => bullet.kind === 'cluster');
   assert.equal(rays.length, 3, 'one ray per locked target');
   assert.ok(rays.every(ray => ray.pierce > 0), 'rays pierce through targets');
   assert.ok(rays.every(ray => Math.hypot(ray.vx, ray.vy) > 10), 'rays are high-speed');
   const angles = new Set(rays.map(ray => Math.atan2(ray.vy, ray.vx).toFixed(2)));
   assert.equal(angles.size, 3, 'each ray points at a distinct target');
+  assert.equal(game.effects.filter(effect => effect.type === 'clusterLock').length, 3, 'each target receives a lock-on marker');
+  assert.ok(game.effects.some(effect => effect.type === 'clusterFlash'), 'launch produces a muzzle starburst');
 });
 
 test('black hole gravity wells apply the acid amplification debuff', () => {
@@ -1650,7 +1673,13 @@ test('seeker orbit plus keeps satellites firing and grants max guidance with rel
 
 test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', () => {
   let setup = makeGame();
-  setup.game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'joker' });
+  const jokerRandom = Math.random;
+  try {
+    Math.random = () => .5;
+    setup.game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'joker' });
+  } finally {
+    Math.random = jokerRandom;
+  }
   assert.equal(setup.game.mode, 'stageIntro', 'joker must auto-pick the opening upgrade');
   assert.equal(setup.game.player.pendingLevels, 0);
   assert.equal(setup.game.player.build.secondarySlots, 4);
@@ -1658,7 +1687,13 @@ test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', 
   setup = makeGame();
   setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'reaper' });
   const reaperTarget = { id: 502, type: 'scout', x: 0, y: 0, radius: 8, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
-  setup.game.damageEnemy(reaperTarget, 10, false);
+  const reaperRandom = Math.random;
+  try {
+    Math.random = () => .99;
+    setup.game.damageEnemy(reaperTarget, 10, false);
+  } finally {
+    Math.random = reaperRandom;
+  }
   assert.equal(setup.game.player.maxHp, setup.game.player.craft.hp * 10 - 20);
   assert.equal(reaperTarget.hp, 850);
 
@@ -1729,6 +1764,10 @@ test('soul taker executes only primary targets and its overclock caps at five pe
     const primaryTarget = enemy();
     game.damageEnemy(primaryTarget, 1, false, 'primary');
     assert.equal(primaryTarget.alive, false);
+    const boss = { id: 701, type: 'boss', bossId: 'manta', x: 0, y: 118, radius: 52, hp: 10000, maxHp: 10000, alive: true, orbiting: true, score: 0, xp: 0, color: '#fff' };
+    game.damageEnemy(boss, 1, false, 'primary');
+    assert.equal(boss.alive, true, 'soul taker must never execute a boss');
+    assert.ok(boss.hp > 9000, 'the boss only takes regular damage');
   } finally {
     Math.random = originalRandom;
   }
@@ -1739,6 +1778,20 @@ test('soul taker executes only primary targets and its overclock caps at five pe
   game.mode = 'levelup';
   game.chooseUpgrade(0);
   assert.equal(game.player.build.soulTaker, 5);
+
+  game.player.build.fusions = { luckyStar: true };
+  game.player.build.revision += 1;
+  const originalRandom2 = Math.random;
+  try {
+    Math.random = () => .069;
+    const luckyTarget = { id: 702, type: 'scout', x: 0, y: 0, radius: 8, hp: 10000, maxHp: 10000, alive: true, score: 0, xp: 0, color: '#fff' };
+    game.damageEnemy(luckyTarget, 1, false, 'primary');
+    assert.equal(luckyTarget.alive, false, 'lucky star adds two percent to the soul taker roll');
+  } finally {
+    Math.random = originalRandom2;
+  }
+  game.updateHud();
+  assert.match(game.dom['primary-build'].innerHTML, /7%/, 'the HUD soul taker badge includes the lucky star bonus');
 });
 
 test('battlefield cleanup scales XP and both repair sources with one resource multiplier', () => {
