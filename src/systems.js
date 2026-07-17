@@ -30,10 +30,12 @@ export function makeUpgradePool(build) {
       : { id: 'primary', category: 'primary', icon: PRIMARY_ICON, name: '主武器強化', description: '提升主武器火力與彈道。' });
   }
   const secondaries = build.secondaries || {};
+  const fusions = build.fusions || {};
+  const occupiedSecondarySlots = Object.keys(secondaries).length + Object.keys(fusions).length;
   for (const item of Object.values(secondaryCatalog)) {
     const level = secondaries[item.id] || 0;
     if (level >= item.max) continue;
-    if (level > 0 || Object.keys(secondaries).length < (build.secondarySlots || BUILD_LIMITS.secondary)) {
+    if (level > 0 || occupiedSecondarySlots < (build.secondarySlots || BUILD_LIMITS.secondary)) {
       pool.push({ ...item, category: 'secondary', level });
     }
   }
@@ -41,13 +43,13 @@ export function makeUpgradePool(build) {
   for (const item of Object.values(PASSIVES)) {
     const level = passives[item.id] || 0;
     if (level >= item.max) continue;
-    if (level === 0 && item.requiresSecondary && !secondaries[item.requiresSecondary]) continue;
+    const inheritedByFusion = item.requiresSecondary && Object.keys(fusions).some(id => FUSIONS[id]?.requires.includes(item.requiresSecondary));
+    if (level === 0 && item.requiresSecondary && !secondaries[item.requiresSecondary] && !inheritedByFusion) continue;
     if (level === 0 && item.requiresPrimaryLevel && (build.primaryLevel || 1) < item.requiresPrimaryLevel) continue;
     if (level > 0 || Object.keys(passives).length < (build.passiveSlots || BUILD_LIMITS.passive)) {
       pool.push({ ...item, category: 'passive', level });
     }
   }
-  const fusions = build.fusions || {};
   for (const fusion of kungfu ? [] : Object.values(FUSIONS)) {
     if (!fusions[fusion.id] && fusion.requires.every(id => secondaries[id] >= SECONDARIES[id].max)) pool.push(fusion);
   }
@@ -60,10 +62,11 @@ export function makeUpgradePool(build) {
 export function isBuildMaxed(build) {
   const secondaries = build.secondaries || {};
   const passives = build.passives || {};
+  const fusions = build.fusions || {};
   const kungfu = build.secondarySet === 'kungfu';
   const secondaryCatalog = kungfu ? KUNGFU_SECONDARIES : SECONDARIES;
   return (build.primaryLevel || 1) >= 3
-    && Object.keys(secondaries).length >= (build.secondarySlots || BUILD_LIMITS.secondary)
+    && Object.keys(secondaries).length + Object.keys(fusions).length >= (build.secondarySlots || BUILD_LIMITS.secondary)
     && Object.entries(secondaries).every(([id, rank]) => secondaryCatalog[id] && rank >= secondaryCatalog[id].max)
     && Object.keys(passives).length >= (build.passiveSlots || BUILD_LIMITS.passive)
     && Object.entries(passives).every(([id, rank]) => PASSIVES[id] && rank >= PASSIVES[id].max)

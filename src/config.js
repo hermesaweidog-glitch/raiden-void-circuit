@@ -27,7 +27,7 @@ export const PILOTS = {
   gemini: { id: 'gemini', name: '雙子星', icon: 'Ⅱ', art: 'assets/pilots/gemini.webp', subtitle: '雙重火控', ability: '機體放大 20%；主武器與副武器每次發射數量 +1。' },
   shadow: { id: 'shadow', name: '陰影', icon: '◐', art: 'assets/pilots/shadow.webp', subtitle: '相位潛行', ability: '每 6 秒潛入陰影 2 秒，期間完全無敵。' },
   joker: { id: 'joker', name: '小丑', icon: '♢', art: 'assets/pilots/joker.webp', subtitle: '混沌選牌', ability: '升級隨機選擇；副武器與被動技能上限各 +1。' },
-  reaper: { id: 'reaper', name: '死神', icon: '☠', art: 'assets/pilots/reaper.webp', subtitle: '致命契約', ability: '初始最大生命 -2；所有傷害增加 50%。' },
+  reaper: { id: 'reaper', name: '死神', icon: '☠', art: 'assets/pilots/reaper.webp', subtitle: '致命契約', ability: '初始最大生命 -20 HP；所有傷害增加 50%。' },
   kungfu: { id: 'kungfu', name: '功夫', icon: '拳', art: 'assets/pilots/kungfu.webp', subtitle: '鐵身宗師', ability: '無法射擊；生命與生命提升、恢復效果加倍，以無傷碰撞攻擊敵人。' },
   gambler: { id: 'gambler', name: '賭徒', icon: '◆', art: 'assets/pilots/gambler.webp', subtitle: '極限擦彈', ability: '核心判定縮小；每次擦彈永久 +1% 傷害，被擊中重置；初始生命減半。' },
 };
@@ -36,7 +36,7 @@ export const SECONDARIES = {
   homing: { id: 'homing', icon: 'assets/icons/homing.webp', name: '追蹤飛彈', max: 3, color: '#ffb703', description: '鎖定單一目標；目標死亡後停止導引。' },
   drone: { id: 'drone', icon: 'assets/icons/drone.webp', name: '軌道無人機', max: 3, color: '#8b5cf6', description: '環繞機體並定期射擊。' },
   chain: { id: 'chain', icon: 'assets/icons/chain.webp', name: '連鎖電弧', max: 3, color: '#67e8f9', description: '定時由機體跳電，瞬間連鎖附近敵人。' },
-  acid: { id: 'acid', icon: 'assets/icons/acid.svg', name: '酸性噴霧', max: 3, color: '#a3e635', description: '短距接觸傷害；使目標 5 秒內承受傷害 +20%／30%／40%。' },
+  acid: { id: 'acid', icon: 'assets/icons/acid.svg', name: '酸性噴霧', max: 3, color: '#a3e635', description: '向前扇形噴射酸霧；使目標 5 秒內承受傷害 +20%／30%／40%。' },
   rail: { id: 'rail', icon: 'assets/icons/rail.webp', name: '磁軌爆發', max: 3, color: '#f8fafc', description: '定時發射高傷害貫通彈。' },
   bombard: { id: 'bombard', icon: 'assets/icons/bombard.webp', name: '轟炸莢艙', max: 3, color: '#fb923c', description: '標記敵群位置後進行範圍轟炸。' },
   gravity: { id: 'gravity', icon: 'assets/icons/gravity.webp', name: '微型重力井', max: 3, color: '#c084fc', description: '週期性生成奇點，牽引並持續傷害敵群。' },

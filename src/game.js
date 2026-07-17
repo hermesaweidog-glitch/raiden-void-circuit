@@ -6,6 +6,7 @@ const rand = (min, max) => min + Math.random() * (max - min);
 const choose = items => items[(Math.random() * items.length) | 0];
 const skillIconMarkup = icon => icon.startsWith('assets/') ? `<img src="${icon}" alt="" draggable="false">` : icon;
 const isLargeEnemyType = type => type === 'elite' || type === 'midboss' || type === 'boss';
+const enemyDamage = type => isLargeEnemyType(type) ? 10 : 5;
 const readStorage = (key, fallback = null) => {
   try { return localStorage.getItem(key) ?? fallback; }
   catch { return fallback; }
@@ -597,6 +598,22 @@ export class Game {
       this.updateKungfuSecondaries();
       return;
     }
+    if (p.build.fusions?.seekerOrbit) {
+      p.secondaryCooldowns.seekerOrbit = (p.secondaryCooldowns.seekerOrbit || 0) - 1;
+      if (p.secondaryCooldowns.seekerOrbit <= 0) {
+        const target = pickNearestTarget(p, this.enemies);
+        if (target) {
+          const count = 3 + this.projectileBonus();
+          for (let index = 0; index < count; index += 1) this.addPlayerBullet({
+            id: this.entityId++, x: p.x + (index - (count - 1) / 2) * 14, y: p.y - 18,
+            vx: (index - (count - 1) / 2) * .25, vy: -9, radius: 3.2, damage: 4.25,
+            life: 150, color: '#a78bfa', kind: 'missile', pierce: 0, splash: 0,
+            targetId: target.id, guidanceActive: true, turn: .08 + upgradePower(p.build.passives.guidance || 0) * .005,
+          });
+        }
+        this.setSecondaryCooldown('seekerOrbit', 23);
+      }
+    }
     if (p.build.fusions?.lanceOrbit) {
       const count = 3 + this.projectileBonus();
       for (let index = 0; index < count; index += 1) {
@@ -606,7 +623,7 @@ export class Game {
       }
     }
     for (const [id, rank] of Object.entries(p.build.secondaries)) {
-      if (p.build.fusions?.seekerOrbit && id === 'homing') continue;
+      if (p.build.fusions?.seekerOrbit && (id === 'homing' || id === 'drone')) continue;
       if (p.build.fusions?.lanceOrbit && (id === 'rail' || id === 'prism')) continue;
       const level = upgradePower(rank);
       p.secondaryCooldowns[id] = (p.secondaryCooldowns[id] || 0) - 1;
@@ -642,9 +659,14 @@ export class Game {
         }
         this.setSecondaryCooldown(id, Math.max(45, 115 - level * 10));
       } else if (id === 'acid') {
-        const count = 1 + this.projectileBonus();
+        const count = 3 + rank * 2 + this.projectileBonus();
         const amp = [0, .2, .3, .4][rank];
-        for (let index = 0; index < count; index += 1) this.addPlayerBullet({ id: this.entityId++, x: p.x + (index - (count - 1) / 2) * 14, y: p.y - 18, vx: (index - (count - 1) / 2) * .45, vy: -7.2, radius: 7, damage: 1.1 + level * .32, life: 24, color: '#a3e635', kind: 'acid', pierce: 0, splash: 0, acidAmp: amp });
+        const spread = .76;
+        for (let index = 0; index < count; index += 1) {
+          const angle = -Math.PI / 2 + (index / Math.max(1, count - 1) - .5) * spread;
+          this.addPlayerBullet({ id: this.entityId++, x: p.x, y: p.y - 18, vx: Math.cos(angle) * 7.8, vy: Math.sin(angle) * 7.8, radius: 7.5, damage: .35 + level * .09, life: 36, color: '#a3e635', kind: 'acid', pierce: 0, splash: 0, acidAmp: amp });
+        }
+        this.addEffect({ type: 'acidCone', x: p.x, y: p.y - 18, range: 280, halfAngle: spread / 2, life: 12, maxLife: 12 });
         this.setSecondaryCooldown(id, Math.max(10, 28 - level * 2));
       } else if (id === 'rail') {
         const count = 1 + this.projectileBonus();
@@ -878,7 +900,7 @@ export class Game {
           const overclock = upgradePower(this.player.build.passives.overclock || 0);
           enemy.kungfuHitCooldown = Math.max(2, 4 - Math.floor(overclock / 2));
         }
-        else if (!kungfu && this.player.invincible <= 0) this.hitPlayer();
+        else if (!kungfu && this.player.invincible <= 0) this.hitPlayer(enemyDamage(enemy.type));
       }
     }
   }
@@ -913,20 +935,20 @@ export class Game {
     } else if (this.stageIndex === 1) {
       for (let turret = -1; turret <= 1; turret += 1) {
         const x = enemy.x + turret * 34;
-        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, enemy.y + 7, speed * .94, shot * .13 + turret * .025, enemy.color);
+        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, enemy.y + 7, speed * .94, shot * .13 + turret * .025, enemy.color, 10);
       }
     } else if (this.stageIndex === 2) {
       for (const x of [enemy.x - 36, enemy.x + 36]) {
-        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, enemy.y, speed, shot * .14, enemy.color);
+        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, enemy.y, speed, shot * .14, enemy.color, 10);
       }
     } else if (this.stageIndex === 3) {
       for (let shot = 0; shot < 14; shot += 1) {
         const angle = shot / 14 * TAU + enemy.age * .018;
-        this.addEnemyBullet(enemy.x, enemy.y, Math.cos(angle) * speed * .7, Math.sin(angle) * speed * .7, 5, enemy.color);
+        this.addEnemyBullet(enemy.x, enemy.y, Math.cos(angle) * speed * .7, Math.sin(angle) * speed * .7, 5, enemy.color, 360, 0, 10);
       }
     } else {
       for (const x of [-36, this.w + 36]) {
-        for (let row = 0; row < 4; row += 1) this.addEnemyBullet(x, 170 + row * 88, x < this.w / 2 ? speed * .82 : -speed * .82, speed * .58, 5, '#c084fc', 360, 30);
+        for (let row = 0; row < 4; row += 1) this.addEnemyBullet(x, 170 + row * 88, x < this.w / 2 ? speed * .82 : -speed * .82, speed * .58, 5, '#c084fc', 360, 30, 10);
       }
     }
     this.sound('enemy');
@@ -938,19 +960,19 @@ export class Game {
     return Math.max(28, base / stage.fireRate / enemy.pressure + rand(-12, 16));
   }
 
-  addEnemyBullet(x, y, vx, vy, radius = 5, color = '#ff6b6b', life = 360, entryGrace = 0) {
+  addEnemyBullet(x, y, vx, vy, radius = 5, color = '#ff6b6b', life = 360, entryGrace = 0, damage = 5) {
     if (this.enemyBullets.length >= WORLD.maxEnemyBullets) return false;
-    this.enemyBullets.push({ x, y, vx, vy, radius, color, life, entryGrace });
+    this.enemyBullets.push({ x, y, vx, vy, radius, color, life, entryGrace, damage });
     return true;
   }
 
   aim(enemy, speed, angleOffset = 0) {
-    this.aimFrom(enemy.x, enemy.y, speed, angleOffset, enemy.color);
+    this.aimFrom(enemy.x, enemy.y, speed, angleOffset, enemy.color, enemyDamage(enemy.type));
   }
 
-  aimFrom(x, y, speed, angleOffset = 0, color = '#ff6b6b') {
+  aimFrom(x, y, speed, angleOffset = 0, color = '#ff6b6b', damage = 5) {
     const angle = Math.atan2(this.player.y - y, this.player.x - x) + angleOffset;
-    this.addEnemyBullet(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 4.5, color);
+    this.addEnemyBullet(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 4.5, color, 360, 0, damage);
   }
 
   enemyShoot(enemy) {
@@ -1003,16 +1025,16 @@ export class Game {
     const s = STAGES[this.stageIndex];
     const speed = (1.75 + boss.phase * .22) * s.bulletSpeed;
     const radial = (count, bulletSpeed, offset = 0, skip = () => false) => {
-      for (let n = 0; n < count; n += 1) { if (skip(n)) continue; const a = n / count * TAU + offset; this.addEnemyBullet(boss.x, boss.y, Math.cos(a) * bulletSpeed, Math.sin(a) * bulletSpeed, 5, boss.color); }
+      for (let n = 0; n < count; n += 1) { if (skip(n)) continue; const a = n / count * TAU + offset; this.addEnemyBullet(boss.x, boss.y, Math.cos(a) * bulletSpeed, Math.sin(a) * bulletSpeed, 5, boss.color, 360, 0, 10); }
     };
     if (boss.bossId === 'manta') {
       for (let n = -3; n <= 3; n += 1) this.aim(boss, speed, n * .13);
       if (boss.phase >= 1) radial(10, speed * .88, boss.age * .025);
-      if (boss.phase >= 2) for (let x = 25; x < this.w; x += 42) if (Math.abs(x - this.player.x) > 45) this.addEnemyBullet(x, boss.y + 12, 0, speed * 1.28, 5.5, '#ff3158');
+      if (boss.phase >= 2) for (let x = 25; x < this.w; x += 42) if (Math.abs(x - this.player.x) > 45) this.addEnemyBullet(x, boss.y + 12, 0, speed * 1.28, 5.5, '#ff3158', 360, 0, 10);
     } else if (boss.bossId === 'carrier') {
       for (let turret = -1; turret <= 1; turret += 1) {
         const x = boss.x + turret * 42;
-        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, boss.y + 9, speed * .96, shot * .13 + turret * .025, boss.color);
+        for (let shot = -1; shot <= 1; shot += 1) this.aimFrom(x, boss.y + 9, speed * .96, shot * .13 + turret * .025, boss.color, 10);
       }
       if (boss.phase >= 1) radial(12, speed * .58, boss.age * .01);
       if (boss.phase >= 2) { for (let i = 0; i < 2; i += 1) this.spawnEnemy('striker', boss.x + (i ? 55 : -55), boss.y + 20, 1.25, 2, i); for (let n = -3; n <= 3; n += 1) this.aim(boss, speed, n * .16); }
@@ -1026,7 +1048,7 @@ export class Game {
       if (boss.phase >= 2) radial(22, speed, boss.age * .02, n => n % 11 === 5 || n % 11 === 6);
     } else {
       const gateTop = 145 + Math.sin(boss.age * .055) * 75;
-      for (const x of [-36, this.w + 36]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, gateTop + n * 110, x < this.w / 2 ? speed * .9 : -speed * .9, speed * .62, 5, '#c084fc', 360, 30);
+      for (const x of [-36, this.w + 36]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, gateTop + n * 110, x < this.w / 2 ? speed * .9 : -speed * .9, speed * .62, 5, '#c084fc', 360, 30, 10);
       if (boss.phase >= 1) radial(20, speed * .82, boss.age * .075);
       if (boss.phase >= 2) { radial(28, speed * 1.05, boss.age * .028, n => n >= 12 && n <= 15); this.aim(boss, speed * 1.7); }
     }
@@ -1035,13 +1057,13 @@ export class Game {
 
   updateEnemyBullets() {
     const canHitPlayer = this.player.invincible <= 0;
-    let playerHit = false;
+    let playerHitDamage = 0;
     for (let i = this.enemyBullets.length - 1; i >= 0; i -= 1) {
       const bullet = this.enemyBullets[i];
       bullet.x += bullet.vx; bullet.y += bullet.vy; bullet.life -= 1;
       const rr = bullet.radius + this.player.hitRadius;
-      if (canHitPlayer && distanceSq(bullet, this.player) < rr * rr) { this.enemyBullets.splice(i, 1); playerHit = true; continue; }
-      const grazeRadius = bullet.radius + this.player.radius;
+      if (canHitPlayer && distanceSq(bullet, this.player) < rr * rr) { this.enemyBullets.splice(i, 1); playerHitDamage = Math.max(playerHitDamage, bullet.damage || 5); continue; }
+      const grazeRadius = bullet.radius + this.player.radius + 16;
       if (canHitPlayer && this.player.pilotId === 'gambler' && !bullet.grazed && distanceSq(bullet, this.player) < grazeRadius * grazeRadius) {
         bullet.grazed = true;
         this.player.grazeBonus += .01;
@@ -1050,7 +1072,7 @@ export class Game {
       if (bullet.entryGrace > 0) bullet.entryGrace -= 1;
       else if (shouldCullEnemyBullet(bullet, this.w, this.h)) this.enemyBullets.splice(i, 1);
     }
-    if (playerHit) this.hitPlayer();
+    if (playerHitDamage > 0) this.hitPlayer(playerHitDamage);
   }
 
   recordDamage(amount) {
@@ -1262,9 +1284,6 @@ export class Game {
   showUpgrade() {
     if (this.player.pendingLevels <= 0) return;
     this.upgradeReturnMode = this.mode;
-    this.mode = 'levelup';
-    this.pointer.active = false;
-    this.keys.clear();
     this.currentChoices = makeUpgradeChoices(this.player.build);
     const supplies = [];
     const repairAmount = 2 * STAT_SCALE * (this.player.pilotId === 'kungfu' ? 2 : 1);
@@ -1274,9 +1293,12 @@ export class Game {
     const skillChoices = this.currentChoices.filter(choice => choice.category !== 'supply');
     if (skillChoices.length === 1 && skillChoices[0].id === 'overdrive-boost' && this.currentChoices.length === 1) {
       this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 34, text: '+10% DMG', color: '#ffd166', life: 70, maxLife: 70 });
-      this.chooseUpgrade(this.currentChoices.indexOf(skillChoices[0]));
+      this.chooseUpgrade(this.currentChoices.indexOf(skillChoices[0]), true);
       return;
     }
+    this.mode = 'levelup';
+    this.pointer.active = false;
+    this.keys.clear();
     if (this.player.pilotId === 'joker' && skillChoices.length) {
       const choice = choose(skillChoices);
       this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 34, text: `RANDOM · ${choice.name}`, color: '#c084fc', life: 70, maxLife: 70 });
@@ -1301,12 +1323,18 @@ export class Game {
     this.sound('level');
   }
 
-  chooseUpgrade(index) {
-    if (this.mode !== 'levelup' || !this.currentChoices?.[index]) return;
+  chooseUpgrade(index, preserveInput = false) {
+    if ((!preserveInput && this.mode !== 'levelup') || !this.currentChoices?.[index]) return;
     const choice = this.currentChoices[index];
     const p = this.player;
     if (choice.id === 'overdrive-boost') p.build.overdrive = (p.build.overdrive || 0) + 1;
-    else if (choice.category === 'fusion') p.build.fusions[choice.id] = true;
+    else if (choice.category === 'fusion') {
+      p.build.fusions[choice.id] = true;
+      for (const id of FUSIONS[choice.id].requires) {
+        delete p.build.secondaries[id];
+        delete p.secondaryCooldowns[id];
+      }
+    }
     else if (choice.id === 'primary') p.build.primaryLevel = Math.min(WORLD.maxUpgradeRank, p.build.primaryLevel + 1);
     else if (choice.category === 'secondary') {
       const item = this.secondaryCatalog(p)[choice.id];
@@ -1321,9 +1349,11 @@ export class Game {
     else this.score += 2500;
     p.build.revision += 1;
     p.pendingLevels -= 1;
-    p.inputLock = 18;
-    this.pointer.active = false;
-    this.keys.clear();
+    if (!preserveInput) {
+      p.inputLock = 18;
+      this.pointer.active = false;
+      this.keys.clear();
+    }
     this.dom['upgrade-overlay'].classList.add('hidden');
     this.mode = this.upgradeReturnMode || 'playing';
     if (this.mode === 'stageClear') {
@@ -1432,7 +1462,7 @@ export class Game {
     this.sound('bomb'); this.updateHud(); return true;
   }
 
-  hitPlayer() {
+  hitPlayer(damage = STAT_SCALE) {
     if (!this.player || this.player.invincible > 0 || this.testFlags?.playerInvincible) return;
     if (this.player.pilotId === 'gambler') this.player.grazeBonus = 0;
     if (this.player.shield > 0) {
@@ -1456,7 +1486,7 @@ export class Game {
       this.announce('GOLDEN BELL', 'MARTIAL GUARD BROKEN', 800);
       this.sound('hit'); this.updateHud(); return;
     }
-    this.player.hp -= STAT_SCALE;
+    this.player.hp -= damage;
     const armor = upgradePower(this.player.build.passives.armor || 0);
     this.player.invincible = 95 + armor * 15;
     this.enemyBullets = this.enemyBullets.filter(b => distanceSq(b, this.player) > 90 ** 2);
@@ -1633,7 +1663,7 @@ export class Game {
       const kungfu = p?.build.secondarySet === 'kungfu';
       const secondaryCatalog = this.secondaryCatalog(p);
       this.dom['primary-build'].innerHTML = p ? token(kungfu ? 'assets/icons/basic-fist.svg' : PRIMARY_ICON, primaryBadge, kungfu ? '基本拳法' : `${p.craft.name}主武器`, p.build.primaryLevel) : '—';
-      const fusionTokens = p ? Object.keys(p.build.fusions || {}).map(id => token(FUSIONS[id].icon, 'F', FUSIONS[id].name, 'FUSION')).join('') : '';
+      const fusionTokens = p ? Object.keys(p.build.fusions || {}).map(id => token(FUSIONS[id].icon, 'MAX', FUSIONS[id].name, 'MAX')).join('') : '';
       this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(secondaryCatalog[id].icon, rankBadge(level), secondaryCatalog[id].name, level)).join('') + fusionTokens || '—' : '—';
       this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, rankBadge(level), PASSIVES[id].name, level)).join('') || '—' : '—';
       this.hudBuildRevision = buildRevision;
@@ -1788,6 +1818,7 @@ export class Game {
       else if(e.type==='prismSatellite'){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle);ctx.fillStyle='#f0abfc';ctx.shadowColor='#f0abfc';ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(7,0);ctx.lineTo(0,9);ctx.lineTo(-7,0);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(240,171,252,.5)';ctx.beginPath();ctx.arc(0,0,15,0,TAU);ctx.stroke();ctx.restore();}
       else if(e.type==='lanceOrbit'){ctx.save();ctx.strokeStyle='rgba(125,245,255,.92)';ctx.shadowColor='#42e8ff';ctx.shadowBlur=16;ctx.lineWidth=9;ctx.beginPath();ctx.moveTo(e.x,0);ctx.lineTo(e.x,e.y);ctx.stroke();ctx.fillStyle='#dffcff';ctx.beginPath();ctx.arc(e.x,e.y,7,0,TAU);ctx.fill();ctx.restore();}
       else if(e.type==='interceptorPulse'){const progress=1-e.timer/e.maxTimer;ctx.strokeStyle=`rgba(52,211,153,${.3+progress*.65})`;ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.arc(e.x,e.y,24+progress*e.range,0,TAU);ctx.stroke();ctx.setLineDash([]);for(let n=0;n<6;n+=1){const a=this.frame*.13+n/6*TAU;ctx.fillStyle='#34d399';ctx.fillRect(e.x+Math.cos(a)*(28+progress*18)-2,e.y+Math.sin(a)*(18+progress*12)-2,4,4);}}
+      else if(e.type==='acidCone'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.globalAlpha=(1-t)*.22;ctx.fillStyle='#a3e635';ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,e.range*(.72+t*.28),-Math.PI/2-e.halfAngle,-Math.PI/2+e.halfAngle);ctx.closePath();ctx.fill();ctx.strokeStyle='#d9f99d';ctx.globalAlpha=(1-t)*.58;ctx.lineWidth=2;ctx.stroke();ctx.restore();}
       else if(e.type==='kiai'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#fb7185';ctx.lineWidth=6-3*t;for(let n=0;n<3;n+=1){ctx.beginPath();ctx.arc(e.x,e.y,24+t*(this.w*.8)+n*18,0,TAU);ctx.stroke();}ctx.restore();}
       else if(e.type==='jointStrike'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#34d399';ctx.lineWidth=7-4*t;ctx.beginPath();ctx.arc(e.x,e.y,e.radius*(.65+t*.5),0,TAU);ctx.stroke();for(let n=0;n<4;n+=1){const a=n/4*TAU+Math.PI/4;ctx.beginPath();ctx.moveTo(e.x+Math.cos(a)*18,e.y+Math.sin(a)*18);ctx.lineTo(e.x+Math.cos(a)*e.radius,e.y+Math.sin(a)*e.radius);ctx.stroke();}ctx.restore();}
       else if(e.type==='pushHands'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=(1-t)*.75;ctx.fillStyle='#38bdf8';ctx.fillRect(e.x-e.width/2,e.y-e.range,e.width,e.range);ctx.strokeStyle='#e0f2fe';ctx.lineWidth=4;for(let n=0;n<3;n+=1){const y=e.y-e.range*(.35+n*.25)-t*14;ctx.beginPath();ctx.moveTo(e.x-e.width/2,y);ctx.lineTo(e.x+e.width/2,y);ctx.stroke();}ctx.restore();}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { STAGES, WORLD } from '../src/config.js';
+import { FUSIONS, STAGES, WORLD } from '../src/config.js';
 import { Game } from '../src/game.js';
 
 class FakeClassList {
@@ -436,6 +436,25 @@ test('upgrade cards and combat build strip render skill icons with ranks and MAX
   assert.doesNotMatch(game.dom['secondary-build'].innerHTML, />追蹤飛彈</);
 });
 
+test('fusion consumes both component weapons and renders as one MAX secondary', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.player.build.secondaries = { drone: 3, homing: 3, chain: 3 };
+  game.currentChoices = [FUSIONS.seekerOrbit];
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+
+  game.chooseUpgrade(0);
+  game.updateHud();
+
+  assert.deepEqual(game.player.build.secondaries, { chain: 3 });
+  assert.equal(game.player.build.fusions.seekerOrbit, true);
+  assert.match(game.dom['secondary-build'].innerHTML, /追獵軌道/);
+  assert.match(game.dom['secondary-build'].innerHTML, />MAX</);
+  assert.doesNotMatch(game.dom['secondary-build'].innerHTML, /軌道無人機|追蹤飛彈/);
+});
+
 test('end screen remains actionable when browser storage rejects a new high score', () => {
   for (const victory of [false, true]) {
     const { game } = makeGame();
@@ -456,19 +475,42 @@ test('multiple enemy bullets hitting in one frame only damage the player once', 
   game.chooseUpgrade(0);
   game.mode = 'playing';
   game.player.invincible = 0;
-  game.enemyBullets = Array.from({ length: 2 }, () => ({
+  game.enemyBullets = [5, 10].map(damage => ({
     x: game.player.x,
     y: game.player.y,
     vx: 0,
     vy: 0,
     radius: 5,
     life: 60,
+    damage,
   }));
   const hp = game.player.hp;
 
   assert.doesNotThrow(() => game.updateEnemyBullets());
   assert.equal(game.player.hp, hp - 10);
   assert.equal(game.enemyBullets.length, 0);
+});
+
+test('small enemies deal five damage while elite and boss attacks deal ten', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const shooter = { x: 240, y: 120, age: 0, phase: 0, pressure: 1, color: '#fff' };
+
+  game.enemyShoot({ ...shooter, type: 'scout' });
+  assert.ok(game.enemyBullets.length > 0);
+  assert.ok(game.enemyBullets.every(bullet => bullet.damage === 5));
+
+  game.enemyBullets = [];
+  game.enemyShoot({ ...shooter, type: 'elite' });
+  assert.ok(game.enemyBullets.length > 0);
+  assert.ok(game.enemyBullets.every(bullet => bullet.damage === 10));
+
+  game.enemyBullets = [];
+  game.bossAttack({ ...shooter, type: 'boss', bossId: 'manta' });
+  assert.ok(game.enemyBullets.length > 0);
+  assert.ok(game.enemyBullets.every(bullet => bullet.damage === 10));
 });
 
 test('HUD clamps invalid negative HP instead of crashing the frame loop', () => {
@@ -817,11 +859,18 @@ test('maxed loadouts automatically stack ten-percent attack upgrades and keep a 
   game.player.bombs = game.player.maxBombs;
   game.player.pendingLevels = 1;
   game.mode = 'playing';
+  game.pointer = { active: true, id: 7, x: 120, y: 600 };
+  game.keys.add('ArrowLeft');
+  game.player.inputLock = 0;
   const enemy = { id: 450, type: 'scout', x: 100, y: 100, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
 
   game.showUpgrade();
   assert.equal(game.mode, 'playing');
   assert.equal(game.dom['upgrade-overlay'].classList.contains('hidden'), true);
+  assert.equal(game.pointer.active, true);
+  assert.equal(game.pointer.id, 7);
+  assert.equal(game.keys.has('ArrowLeft'), true);
+  assert.equal(game.player.inputLock, 0);
   game.damageEnemy(enemy, 10, false);
   assert.equal(game.player.build.overdrive, 1);
   assert.equal(enemy.hp, 890);
@@ -1235,8 +1284,13 @@ test('acid vulnerability, support protocol, and both fusion payloads alter comba
   game.player.build.secondaries = { acid: 3 };
   game.player.secondaryCooldowns.acid = 0;
   game.updateSecondaries();
-  const acid = game.playerBullets.find(bullet => bullet.kind === 'acid');
-  assert.ok(acid && acid.life <= 24);
+  const acidSpray = game.playerBullets.filter(bullet => bullet.kind === 'acid');
+  const acid = acidSpray[Math.floor(acidSpray.length / 2)];
+  assert.equal(acidSpray.length, 9);
+  assert.ok(acidSpray.every(bullet => bullet.life === 36));
+  assert.ok(Math.min(...acidSpray.map(bullet => bullet.vx)) < -2);
+  assert.ok(Math.max(...acidSpray.map(bullet => bullet.vx)) > 2);
+  assert.ok(game.effects.some(effect => effect.type === 'acidCone'));
   game.applyBulletStatus(acid, target);
   game.damageEnemy(target, 10, false);
   assert.equal(target.hp, 1860);
@@ -1303,7 +1357,7 @@ test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', 
   setup.game.player.invincible = 0;
   assert.equal(setup.game.player.hitRadius, 2);
   assert.equal(setup.game.player.maxHp, Math.floor(setup.game.player.craft.hp * 10 / 2));
-  setup.game.enemyBullets = [{ x: setup.game.player.x + 12, y: setup.game.player.y, vx: 0, vy: 0, radius: 5, life: 30 }];
+  setup.game.enemyBullets = [{ x: setup.game.player.x + 30, y: setup.game.player.y, vx: 0, vy: 0, radius: 5, life: 30 }];
   setup.game.updateEnemyBullets();
   assert.equal(setup.game.player.grazeBonus, .01);
   setup.game.enemyBullets = [{ x: setup.game.player.x, y: setup.game.player.y, vx: 0, vy: 0, radius: 5, life: 30 }];

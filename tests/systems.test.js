@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isBuildMaxed, makeUpgradeChoices, makeUpgradePool, midbossProgress, shouldCullEnemyBullet, splitXpValue, stageProgress, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from '../src/systems.js';
-import { ENEMY_TYPES, STAGES } from '../src/config.js';
+import { ENEMY_TYPES, PILOTS, STAGES } from '../src/config.js';
+
+test('reaper description uses HP units for its twenty-point penalty', () => {
+  assert.match(PILOTS.reaper.ability, /最大生命 -20 HP/);
+  assert.doesNotMatch(PILOTS.reaper.ability, /生命 -2；/);
+});
 
 test('upgrade choices are unique and omit maxed items', () => {
   const build = {
@@ -89,6 +94,26 @@ test('maxed skill pairs expose each fusion exactly once before overdrive', () =>
   pool = makeUpgradePool(build);
   assert.ok(!pool.some(item => item.id === 'seekerOrbit'));
   assert.ok(pool.some(item => item.id === 'lanceOrbit'));
+});
+
+test('a fusion occupies one secondary slot and reopens exactly one weapon slot', () => {
+  const build = {
+    primaryLevel: 3,
+    secondaries: { chain: 3 },
+    passives: {},
+    secondarySlots: 3,
+    passiveSlots: 6,
+    fusions: { seekerOrbit: true },
+  };
+
+  const pool = makeUpgradePool(build);
+  assert.ok(pool.some(item => item.id === 'acid'));
+  assert.ok(pool.some(item => item.id === 'rail'));
+  assert.ok(!pool.some(item => item.id === 'seekerOrbit'));
+
+  build.secondaries.acid = 3;
+  const filledPool = makeUpgradePool(build);
+  assert.ok(!filledPool.some(item => item.id === 'rail'));
 });
 
 test('kungfu builds offer basic fist ranks and only six martial secondary techniques', () => {
