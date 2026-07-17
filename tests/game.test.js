@@ -1094,6 +1094,115 @@ test('test deployment enforces pilot slot caps and can start directly at the sel
   assert.equal(game.enemies.length, 1, 'boss deployment must not also spawn wave one');
 });
 
+test('kungfu deployment keeps only three martial techniques and marks its dedicated build', () => {
+  const { game } = makeGame();
+  game.start({
+    runMode: 'test', craftId: 'falcon', pilotId: 'kungfu',
+    secondaries: ['homing', 'kiai', 'jointStrike', 'pushHands', 'ironBell'],
+    passives: ['guidance', 'overclock'],
+  });
+
+  assert.equal(game.player.build.secondarySet, 'kungfu');
+  assert.deepEqual(game.player.build.secondaries, { kiai: 3, jointStrike: 3, pushHands: 3 });
+  assert.deepEqual(game.player.build.passives, { overclock: 3 });
+  assert.equal(game.player.build.secondarySlots, 3);
+});
+
+test('kungfu alone reaches the upper combat lane and basic fist ranks increase collision damage', () => {
+  let setup = makeGame();
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu' });
+  setup.game.mode = 'playing';
+  setup.game.player.y = setup.game.h * .14;
+  setup.game.player.targetY = setup.game.player.y;
+  setup.game.keys.add('ArrowUp');
+  setup.game.updatePlayer(false);
+  assert.equal(setup.game.player.targetY, setup.game.h * .14);
+
+  const target = { id: 505, type: 'scout', x: setup.game.player.x, y: setup.game.player.y, originX: setup.game.player.x, formation: 0, index: 0, speed: 0, cooldown: 999, age: 0, radius: 12, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  setup.game.player.build.primaryLevel = 3;
+  setup.game.enemies = [target];
+  setup.game.updateEnemies();
+  assert.equal(target.hp, 958);
+
+  setup = makeGame();
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  setup.game.mode = 'playing';
+  setup.game.player.y = setup.game.h * .28;
+  setup.game.player.targetY = setup.game.player.y;
+  setup.game.keys.add('ArrowUp');
+  setup.game.updatePlayer(false);
+  assert.equal(setup.game.player.targetY, setup.game.h * .28);
+});
+
+test('kiai clears bullets while joint strike slows nearby targets and push hands attacks only forward', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['kiai', 'jointStrike', 'pushHands'] });
+  game.mode = 'playing';
+  game.player.x = 240;
+  game.player.y = 500;
+  game.enemyBullets = [{ x: 10, y: 10, vx: 0, vy: 1, radius: 4, life: 100 }];
+  const near = { id: 506, type: 'scout', x: 240, y: 450, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  const forward = { id: 507, type: 'scout', x: 285, y: 410, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  const behind = { id: 508, type: 'scout', x: 240, y: 600, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [near, forward, behind];
+  game.player.secondaryCooldowns = { kiai: 0, jointStrike: 0, pushHands: 0 };
+
+  game.updateSecondaries();
+
+  assert.equal(game.enemyBullets.length, 0);
+  assert.equal(game.kungfuFreezeTimer, 72);
+  assert.ok(near.hp < 1000);
+  assert.equal(near.kungfuSlowTimer, 90);
+  assert.equal(near.kungfuSlowFactor, .6);
+  assert.ok(forward.hp < 1000);
+  assert.equal(behind.hp, 1000);
+  assert.ok(game.effects.some(effect => effect.type === 'kiai'));
+  assert.ok(game.effects.some(effect => effect.type === 'jointStrike'));
+  assert.ok(game.effects.some(effect => effect.type === 'pushHands'));
+});
+
+test('iron bell stacks behind item shields while afterimage and iron mountain deliver martial damage', () => {
+  let setup = makeGame();
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['ironBell'] });
+  setup.game.mode = 'playing';
+  setup.game.player.secondaryCooldowns.ironBell = 0;
+  setup.game.updateSecondaries();
+  assert.equal(setup.game.player.kungfuShield, 1);
+  assert.equal(setup.game.player.kungfuShieldTimer, 240);
+  setup.game.player.shield = 1;
+  setup.game.player.invincible = 0;
+  setup.game.hitPlayer();
+  assert.equal(setup.game.player.shield, 0, 'item shield must be consumed first');
+  assert.equal(setup.game.player.kungfuShield, 1);
+  setup.game.player.invincible = 0;
+  setup.game.hitPlayer();
+  assert.equal(setup.game.player.kungfuShield, 0);
+  assert.equal(setup.game.player.hp, setup.game.player.maxHp);
+
+  setup = makeGame();
+  setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['afterimage', 'ironMountain'] });
+  setup.game.mode = 'playing';
+  setup.game.player.x = 240;
+  setup.game.player.y = 500;
+  const targets = [0, 1, 2, 3].map(index => ({ id: 510 + index, type: 'scout', x: 180 + index * 40, y: 390, originX: 180 + index * 40, formation: 0, index, speed: 0, cooldown: 999, age: 0, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' }));
+  setup.game.enemies = targets;
+  setup.game.player.secondaryCooldowns.afterimage = 0;
+  setup.game.updateSecondaries();
+  assert.equal(targets.filter(target => target.hp < 1000).length, 3);
+  assert.equal(setup.game.effects.filter(effect => effect.type === 'afterimage').length, 3);
+
+  const collisionTarget = targets[0];
+  collisionTarget.x = setup.game.player.x;
+  collisionTarget.originX = setup.game.player.x;
+  collisionTarget.y = setup.game.player.y;
+  collisionTarget.hp = 1000;
+  setup.game.enemies = [collisionTarget];
+  setup.game.updateEnemies();
+  assert.ok(collisionTarget.hp < 930);
+  assert.equal(collisionTarget.kungfuAttackLock, 90);
+  assert.equal(collisionTarget.ironMountainCooldown, 300);
+});
+
 test('test immortality flags can be cancelled from pause and stage DPS freezes outside combat', () => {
   const { game } = makeGame();
   game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial', playerInvincible: true, enemiesImmortal: true });

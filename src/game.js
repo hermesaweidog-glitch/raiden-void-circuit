@@ -1,4 +1,4 @@
-import { AIRCRAFT, BUILD_LIMITS, FUSIONS, SECONDARIES, PASSIVES, PILOTS, PRIMARY_ICON, STAT_SCALE, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
+import { AIRCRAFT, BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, SECONDARIES, PASSIVES, PILOTS, PRIMARY_ICON, STAT_SCALE, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
 
 const TAU = Math.PI * 2;
@@ -106,7 +106,7 @@ export class Game {
       this.pointer.y = p.y;
       const scale = this.touchSeen ? 1.15 : 1;
       this.player.targetX = clamp(this.pointer.playerX + (p.x - this.pointer.startX) * scale, 24, this.w - 24);
-      this.player.targetY = clamp(this.pointer.playerY + (p.y - this.pointer.startY) * scale, this.h * .28, this.h - 35);
+      this.player.targetY = clamp(this.pointer.playerY + (p.y - this.pointer.startY) * scale, this.playerMinY(), this.h - 35);
     }, { passive: false });
     const release = event => {
       if (!event || event.pointerId === this.pointer.id) this.pointer.active = false;
@@ -130,8 +130,9 @@ export class Game {
     };
     const isTest = this.runMode === 'test';
     const slotBonus = pilot.id === 'joker' ? 1 : 0;
-    const selectedSecondaries = isTest ? Object.fromEntries([...new Set(options.secondaries || [])].filter(id => SECONDARIES[id]).slice(0, BUILD_LIMITS.secondary + slotBonus).map(id => [id, SECONDARIES[id].max])) : {};
-    const selectedPassives = isTest ? Object.fromEntries([...new Set(options.passives || [])].filter(id => PASSIVES[id]).slice(0, BUILD_LIMITS.passive + slotBonus).map(id => [id, PASSIVES[id].max])) : {};
+    const secondaryCatalog = pilot.id === 'kungfu' ? KUNGFU_SECONDARIES : SECONDARIES;
+    const selectedSecondaries = isTest ? Object.fromEntries([...new Set(options.secondaries || [])].filter(id => secondaryCatalog[id]).slice(0, BUILD_LIMITS.secondary + slotBonus).map(id => [id, secondaryCatalog[id].max])) : {};
+    const selectedPassives = isTest ? Object.fromEntries([...new Set(options.passives || [])].filter(id => PASSIVES[id] && !(pilot.id === 'kungfu' && id === 'guidance')).slice(0, BUILD_LIMITS.passive + slotBonus).map(id => [id, PASSIVES[id].max])) : {};
     const baseBombCap = Math.min(5, 3 + Math.max(0, (selectedPassives.bombcap || 0) - 1));
     const maxHp = this.calculateMaxHp(craft, pilot.id, selectedPassives.armor || 0);
     const bombBonus = pilot.id === 'rambo' ? 1 : 0;
@@ -150,6 +151,7 @@ export class Game {
     this.particles = [];
     this.effects = [];
     this.floaters = [];
+    this.kungfuFreezeTimer = 0;
     this.runFrames = 0;
     this.stageFrames = 0;
     this.damageTotal = 0;
@@ -161,10 +163,10 @@ export class Game {
       x: this.w / 2, y: this.h - 92, targetX: this.w / 2, targetY: this.h - 92,
       radius: 15 * (pilot.id === 'gemini' ? 1.2 : 1), hitRadius: pilot.id === 'gambler' ? 2 : 5 * (pilot.id === 'gemini' ? 1.2 : 1), scale: pilot.id === 'gemini' ? 1.2 : 1,
       craftId, craft, pilotId: pilot.id, pilot, hp: maxHp, maxHp,
-      bombs: isTest ? maxBombs : 2 + bombBonus, maxBombs, shield: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
+      bombs: isTest ? maxBombs : 2 + bombBonus, maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
       shadowCooldown: 360, shadowTimer: 0, grazeBonus: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
-      build: { primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots: BUILD_LIMITS.secondary + slotBonus, passiveSlots: BUILD_LIMITS.passive + slotBonus, overdrive: 0, revision: 0 },
+      build: { primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots: BUILD_LIMITS.secondary + slotBonus, passiveSlots: BUILD_LIMITS.passive + slotBonus, overdrive: 0, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -191,6 +193,14 @@ export class Game {
     if (pilotId === 'reaper') maxHp = Math.max(STAT_SCALE, maxHp - 2 * STAT_SCALE);
     if (pilotId === 'gambler') maxHp = Math.max(STAT_SCALE, Math.floor(maxHp / 2));
     return maxHp;
+  }
+
+  secondaryCatalog(player = this.player) {
+    return player?.build.secondarySet === 'kungfu' ? KUNGFU_SECONDARIES : SECONDARIES;
+  }
+
+  playerMinY(player = this.player) {
+    return this.h * (player?.pilotId === 'kungfu' ? .14 : .28);
   }
 
   restart() {
@@ -329,11 +339,15 @@ export class Game {
     this.updatePlayer(false);
     this.updateSecondaries();
     this.updatePlayerBullets();
-    this.updateEnemies();
-    this.updateEnemyBullets();
+    const enemiesFrozen = this.kungfuFreezeTimer > 0;
+    if (enemiesFrozen) this.kungfuFreezeTimer -= 1;
+    else {
+      this.updateEnemies();
+      this.updateEnemyBullets();
+    }
     this.updateXpOrbs();
     this.updateEffects();
-    this.updateDirector();
+    if (!enemiesFrozen) this.updateDirector();
     this.updateHud();
   }
 
@@ -457,7 +471,7 @@ export class Game {
       if (dx || dy) {
         const length = Math.hypot(dx, dy) || 1;
         player.targetX = clamp(player.x + dx / length * speed, 22, this.w - 22);
-        player.targetY = clamp(player.y + dy / length * speed, this.h * .28, this.h - 30);
+        player.targetY = clamp(player.y + dy / length * speed, this.playerMinY(player), this.h - 30);
       }
     }
     const easing = transitionOnly ? .08 : this.pointer.active ? .32 : .7;
@@ -481,6 +495,10 @@ export class Game {
     player.fireCooldown = Math.max(0, player.fireCooldown - 1);
     player.bombLock = Math.max(0, player.bombLock - 1);
     player.inputLock = Math.max(0, player.inputLock - 1);
+    if (player.kungfuShieldTimer > 0) {
+      player.kungfuShieldTimer -= 1;
+      if (player.kungfuShieldTimer <= 0) player.kungfuShield = 0;
+    }
     if (transitionOnly) return;
     if (player.inputLock > 0) return;
     const shouldFire = this.touchSeen || this.keys.has('Space') || (this.pointer.active && !this.touchSeen);
@@ -575,7 +593,10 @@ export class Game {
 
   updateSecondaries() {
     const p = this.player;
-    if (p.pilotId === 'kungfu') return;
+    if (p.pilotId === 'kungfu') {
+      this.updateKungfuSecondaries();
+      return;
+    }
     if (p.build.fusions?.lanceOrbit) {
       const count = 3 + this.projectileBonus();
       for (let index = 0; index < count; index += 1) {
@@ -656,6 +677,55 @@ export class Game {
       } else if (id === 'interceptor') {
         this.addEffect({ type: 'interceptorPulse', x: p.x, y: p.y, timer: 18, maxTimer: 18, count: Math.min(6, 1 + level) + this.projectileBonus(), range: 245 });
         this.setSecondaryCooldown(id, Math.max(100, 160 - level * 12));
+      }
+    }
+  }
+
+  updateKungfuSecondaries() {
+    const p = this.player;
+    for (const [id, rank] of Object.entries(p.build.secondaries)) {
+      if (id === 'ironMountain') continue;
+      p.secondaryCooldowns[id] = (p.secondaryCooldowns[id] || 0) - 1;
+      if (p.secondaryCooldowns[id] > 0) continue;
+      if (id === 'kiai') {
+        this.enemyBullets = [];
+        this.kungfuFreezeTimer = Math.max(this.kungfuFreezeTimer, [0, 18, 42, 72][rank]);
+        this.addEffect({ type: 'kiai', x: p.x, y: p.y, life: 24, maxLife: 24 });
+        this.setSecondaryCooldown(id, [0, 720, 660, 600][rank]);
+      } else if (id === 'jointStrike') {
+        const areaScale = 1 + upgradePower(p.build.passives.payload || 0) * .08;
+        const radius = [0, 50, 62, 74][rank] * areaScale;
+        const slowFactor = [1, .8, .7, .6][rank];
+        for (const enemy of this.enemies) {
+          if (!enemy.alive || distanceSq(p, enemy) > (radius + enemy.radius) ** 2) continue;
+          this.damageEnemy(enemy, this.rollDamage([0, 2, 2.8, 3.7][rank]), true);
+          enemy.kungfuSlowTimer = 90;
+          enemy.kungfuSlowFactor = Math.min(enemy.kungfuSlowFactor || 1, slowFactor);
+        }
+        this.addEffect({ type: 'jointStrike', x: p.x, y: p.y, radius, life: 18, maxLife: 18 });
+        this.setSecondaryCooldown(id, [0, 60, 50, 40][rank]);
+      } else if (id === 'pushHands') {
+        const areaScale = 1 + upgradePower(p.build.passives.payload || 0) * .08;
+        const range = [0, 72, 98, 125][rank] * areaScale;
+        const width = [0, 82, 102, 122][rank] * areaScale;
+        for (const enemy of this.enemies) {
+          if (!enemy.alive || enemy.y > p.y + enemy.radius || enemy.y < p.y - range - enemy.radius || Math.abs(enemy.x - p.x) > width / 2 + enemy.radius) continue;
+          this.damageEnemy(enemy, this.rollDamage([0, 1.6, 2.3, 3.3][rank]), true);
+        }
+        this.addEffect({ type: 'pushHands', x: p.x, y: p.y, range, width, life: 12, maxLife: 12 });
+        this.setSecondaryCooldown(id, [0, 22, 18, 14][rank]);
+      } else if (id === 'ironBell') {
+        p.kungfuShield = 1;
+        p.kungfuShieldTimer = [0, 120, 180, 240][rank];
+        this.addEffect({ type: 'ironBell', x: p.x, y: p.y, life: 28, maxLife: 28 });
+        this.setSecondaryCooldown(id, [0, 900, 780, 660][rank]);
+      } else if (id === 'afterimage') {
+        const targets = this.nearestEnemies(p, rank, [0, 170, 210, 250][rank] ** 2);
+        for (const enemy of targets) {
+          this.damageEnemy(enemy, this.rollDamage([0, 2.4, 3.2, 4.2][rank]), true);
+          this.addEffect({ type: 'afterimage', x: enemy.x, y: enemy.y, craftId: p.craftId, life: 22, maxLife: 22 });
+        }
+        this.setSecondaryCooldown(id, 60);
       }
     }
   }
@@ -755,12 +825,16 @@ export class Game {
     enemy.freezeTimer = Math.max(0, (enemy.freezeTimer || 0) - 1);
     enemy.acidTimer = Math.max(0, (enemy.acidTimer || 0) - 1);
     enemy.kungfuHitCooldown = Math.max(0, (enemy.kungfuHitCooldown || 0) - 1);
+    enemy.kungfuSlowTimer = Math.max(0, (enemy.kungfuSlowTimer || 0) - 1);
+    enemy.kungfuAttackLock = Math.max(0, (enemy.kungfuAttackLock || 0) - 1);
+    enemy.ironMountainCooldown = Math.max(0, (enemy.ironMountainCooldown || 0) - 1);
     if (enemy.burnTimer > 0 && this.frame % 15 === 0) this.damageEnemy(enemy, enemy.burnDamage || .1, false);
     if (!enemy.alive) return 0;
     if (enemy.chillTimer <= 0 && enemy.freezeTimer <= 0) enemy.chillStacks = 0;
     const heavy = isLargeEnemyType(enemy.type);
     if (enemy.freezeTimer > 0) return heavy ? .82 : .18;
     if (enemy.chillTimer > 0) return heavy ? .88 : .62;
+    if (enemy.kungfuSlowTimer > 0) return heavy ? 1 - (1 - (enemy.kungfuSlowFactor || 1)) * .5 : (enemy.kungfuSlowFactor || 1);
     return 1;
   }
 
@@ -783,14 +857,27 @@ export class Game {
         else if (enemy.formation === 5) enemy.x = clamp(enemy.originX + (enemy.index % 2 ? -1 : 1) * enemy.age * .62, 20, this.w - 20);
         else enemy.x = enemy.originX + Math.sin(enemy.age / 27 + enemy.index) * 18;
         enemy.y += enemy.speed * motionScale;
-        enemy.cooldown -= motionScale;
-        if (enemy.y > 30 && enemy.cooldown <= 0) { this.enemyShoot(enemy); enemy.cooldown = this.enemyCooldown(enemy); }
+        if (!(enemy.kungfuAttackLock > 0)) {
+          enemy.cooldown -= motionScale;
+          if (enemy.y > 30 && enemy.cooldown <= 0) { this.enemyShoot(enemy); enemy.cooldown = this.enemyCooldown(enemy); }
+        }
         if (enemy.y > this.h + 55) { enemy.alive = false; this.enemies.splice(i, 1); continue; }
       }
       const kungfu = this.player.pilotId === 'kungfu';
-      const rr = enemy.radius + (kungfu ? this.player.radius : this.player.hitRadius);
+      const fistPower = kungfu ? upgradePower(this.player.build.primaryLevel) : 0;
+      const rr = enemy.radius + (kungfu ? this.player.radius + fistPower * 1.2 : this.player.hitRadius);
       if (distanceSq(enemy, this.player) < rr * rr) {
-        if (kungfu && (enemy.kungfuHitCooldown || 0) <= 0) { this.damageEnemy(enemy, 2.2, true); enemy.kungfuHitCooldown = 4; }
+        if (kungfu && (enemy.kungfuHitCooldown || 0) <= 0) {
+          const ironMountain = this.player.build.secondaries.ironMountain || 0;
+          this.damageEnemy(enemy, this.rollDamage((1.7 + fistPower * .5) * [1, 1.3, 1.55, 1.85][ironMountain]), true);
+          if (ironMountain && (enemy.ironMountainCooldown || 0) <= 0) {
+            enemy.kungfuAttackLock = [0, 48, 60, 90][ironMountain];
+            enemy.ironMountainCooldown = 300;
+            this.addEffect({ type: 'ironMountain', x: enemy.x, y: enemy.y, life: 20, maxLife: 20 });
+          }
+          const overclock = upgradePower(this.player.build.passives.overclock || 0);
+          enemy.kungfuHitCooldown = Math.max(2, 4 - Math.floor(overclock / 2));
+        }
         else if (!kungfu && this.player.invincible <= 0) this.hitPlayer();
       }
     }
@@ -810,10 +897,12 @@ export class Game {
       enemy.x = enemy.orbitCenterX + Math.sin(enemy.orbitAge / 42) * 118;
       enemy.y = 145 + Math.sin(enemy.orbitAge / 31) * 12;
     }
-    enemy.cooldown -= motionScale;
-    if (enemy.y >= 80 && enemy.cooldown <= 0) {
-      this.midbossAttack(enemy);
-      enemy.cooldown = Math.max(52, 98 / STAGES[this.stageIndex].fireRate);
+    if (!(enemy.kungfuAttackLock > 0)) {
+      enemy.cooldown -= motionScale;
+      if (enemy.y >= 80 && enemy.cooldown <= 0) {
+        this.midbossAttack(enemy);
+        enemy.cooldown = Math.max(52, 98 / STAGES[this.stageIndex].fireRate);
+      }
     }
   }
 
@@ -901,10 +990,12 @@ export class Game {
       this.announce(`PHASE ${phase + 1}`, BOSSES[boss.bossId].phases[phase].toUpperCase(), 950);
       this.spawnBurst(boss.x, boss.y, 24, boss.color);
     }
-    boss.cooldown -= motionScale;
-    if (boss.y >= 105 && boss.cooldown <= 0) {
-      this.bossAttack(boss);
-      boss.cooldown = Math.max(24, (90 - phase * 14 - this.stageIndex * 5) / STAGES[this.stageIndex].fireRate);
+    if (!(boss.kungfuAttackLock > 0)) {
+      boss.cooldown -= motionScale;
+      if (boss.y >= 105 && boss.cooldown <= 0) {
+        this.bossAttack(boss);
+        boss.cooldown = Math.max(24, (90 - phase * 14 - this.stageIndex * 5) / STAGES[this.stageIndex].fireRate);
+      }
     }
   }
 
@@ -1217,7 +1308,10 @@ export class Game {
     if (choice.id === 'overdrive-boost') p.build.overdrive = (p.build.overdrive || 0) + 1;
     else if (choice.category === 'fusion') p.build.fusions[choice.id] = true;
     else if (choice.id === 'primary') p.build.primaryLevel = Math.min(WORLD.maxUpgradeRank, p.build.primaryLevel + 1);
-    else if (choice.category === 'secondary') p.build.secondaries[choice.id] = Math.min(SECONDARIES[choice.id].max, (p.build.secondaries[choice.id] || 0) + 1);
+    else if (choice.category === 'secondary') {
+      const item = this.secondaryCatalog(p)[choice.id];
+      p.build.secondaries[choice.id] = Math.min(item.max, (p.build.secondaries[choice.id] || 0) + 1);
+    }
     else if (choice.category === 'passive') {
       p.build.passives[choice.id] = Math.min(PASSIVES[choice.id].max, (p.build.passives[choice.id] || 0) + 1);
       if (choice.id === 'armor') { const previous = p.maxHp; p.maxHp = this.calculateMaxHp(p.craft, p.pilotId, p.build.passives.armor); p.hp = Math.min(p.maxHp, p.hp + Math.max(0, p.maxHp - previous)); }
@@ -1351,6 +1445,17 @@ export class Game {
       this.announce('SHIELD BREAK', 'PHASE WINDOW ACTIVE', 800);
       this.sound('hit'); this.updateHud(); return;
     }
+    if (this.player.kungfuShield > 0) {
+      const flux = upgradePower(this.player.build.passives.flux || 0);
+      this.player.kungfuShield = 0;
+      this.player.kungfuShieldTimer = 0;
+      this.player.invincible = 90 + flux * 18;
+      this.enemyBullets = this.enemyBullets.filter(b => distanceSq(b, this.player) > 90 ** 2);
+      this.addEffect({ type: 'ironBellBreak', x: this.player.x, y: this.player.y, life: 24, maxLife: 24 });
+      this.spawnBurst(this.player.x, this.player.y, 24, '#facc15');
+      this.announce('GOLDEN BELL', 'MARTIAL GUARD BROKEN', 800);
+      this.sound('hit'); this.updateHud(); return;
+    }
     this.player.hp -= STAT_SCALE;
     const armor = upgradePower(this.player.build.passives.armor || 0);
     this.player.invincible = 95 + armor * 15;
@@ -1388,14 +1493,15 @@ export class Game {
     if (!this.player) return;
     const p = this.player;
     const list = (items, catalog) => Object.entries(items).map(([id, rank]) => { const item = catalog[id]; return item ? `${item.name} ${rank >= item.max ? 'MAX' : `Lv.${rank}`}` : id; }).join('　/　') || '尚未取得';
-    const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${p.craft.mastery}` : '';
+    const kungfu = p.build.secondarySet === 'kungfu';
+    const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${kungfu ? '宗師境界' : p.craft.mastery}` : '';
     const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * 10}%` : '';
     const modeLabel = { normal: '一般模式', endless: `無限模式 · 循環 ${this.endlessCycle + 1}`, test: '測試模式' }[this.runMode] || '一般模式';
     const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
     this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
-    this.dom['pause-primary'].textContent = `${p.craft.name} · ${p.craft.primary.toUpperCase()} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}${mastery}${overdrive}`;
+    this.dom['pause-primary'].textContent = `${kungfu ? '基本拳法 · 近身撞擊' : `${p.craft.name} · ${p.craft.primary.toUpperCase()}`} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}${mastery}${overdrive}`;
     const fusions = Object.keys(p.build.fusions || {}).map(id => FUSIONS[id].name).join('　/　');
-    this.dom['pause-secondary'].textContent = `${list(p.build.secondaries, SECONDARIES)}${fusions ? `　/　合成：${fusions}` : ''}`;
+    this.dom['pause-secondary'].textContent = `${list(p.build.secondaries, this.secondaryCatalog(p))}${fusions ? `　/　合成：${fusions}` : ''}`;
     this.dom['pause-passive'].textContent = list(p.build.passives, PASSIVES);
     const controls = this.dom['pause-test-controls'];
     controls.classList[this.runMode !== 'test' ? 'add' : 'remove']('hidden');
@@ -1524,9 +1630,11 @@ export class Game {
       const token = (icon, badge, name, level = badge) => `<span class="skill-token" title="${name} ${level}" aria-label="${name}${level}"><i aria-hidden="true">${skillIconMarkup(icon)}</i><b>${badge}</b></span>`;
       const rankBadge = level => level >= WORLD.maxUpgradeRank ? 'MAX' : level;
       const primaryBadge = rankBadge(p?.build.primaryLevel || 0);
-      this.dom['primary-build'].innerHTML = p ? token(PRIMARY_ICON, primaryBadge, `${p.craft.name}主武器`, p.build.primaryLevel) : '—';
+      const kungfu = p?.build.secondarySet === 'kungfu';
+      const secondaryCatalog = this.secondaryCatalog(p);
+      this.dom['primary-build'].innerHTML = p ? token(kungfu ? 'assets/icons/basic-fist.svg' : PRIMARY_ICON, primaryBadge, kungfu ? '基本拳法' : `${p.craft.name}主武器`, p.build.primaryLevel) : '—';
       const fusionTokens = p ? Object.keys(p.build.fusions || {}).map(id => token(FUSIONS[id].icon, 'F', FUSIONS[id].name, 'FUSION')).join('') : '';
-      this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(SECONDARIES[id].icon, rankBadge(level), SECONDARIES[id].name, level)).join('') + fusionTokens || '—' : '—';
+      this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(secondaryCatalog[id].icon, rankBadge(level), secondaryCatalog[id].name, level)).join('') + fusionTokens || '—' : '—';
       this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, rankBadge(level), PASSIVES[id].name, level)).join('') || '—' : '—';
       this.hudBuildRevision = buildRevision;
     }
@@ -1560,6 +1668,7 @@ export class Game {
     ctx.strokeStyle='#dffcff';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#c9fbff';ctx.fillRect(-4,-17,8,15);ctx.fillStyle=this.frame%6<3?'#ffd166':'#ff5e32';ctx.fillRect(-9,20,5,13);ctx.fillRect(4,20,5,13);ctx.restore();
     ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,p.hitRadius,0,TAU);ctx.fill();
     if(p.shield>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.fillStyle='rgba(192,132,252,.08)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,31+Math.sin(this.frame/10)*2,0,TAU);ctx.fill();ctx.stroke();}
+    if(p.kungfuShield>0){ctx.strokeStyle='rgba(250,204,21,.95)';ctx.fillStyle='rgba(250,204,21,.09)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(p.x,p.y,36+Math.sin(this.frame/7)*3,0,TAU);ctx.fill();ctx.stroke();}
     if(p.shadowTimer>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(p.x,p.y,34+Math.sin(this.frame/5)*4,0,TAU);ctx.stroke();}
     if(p.invincible>0){ctx.strokeStyle='rgba(66,232,255,.65)';ctx.beginPath();ctx.arc(p.x,p.y,27+Math.sin(this.frame/8)*3,0,TAU);ctx.stroke();}
     if(p.pilotId==='shadow'){const seconds=Math.max(0,Math.ceil((p.shadowTimer>0?p.shadowTimer:p.shadowCooldown)/60));ctx.fillStyle=p.shadowTimer>0?'#c084fc':'#dffcff';ctx.font='900 14px monospace';ctx.textAlign='center';ctx.fillText(String(seconds),p.x,p.y-43);}
@@ -1641,6 +1750,8 @@ export class Game {
       else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
       if(e.type==='midboss'&&!e.orbiting){ctx.strokeStyle='rgba(66,232,255,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,e.radius+9+Math.sin(this.frame/7)*2,0,TAU);ctx.stroke();}
       if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0||e.acidTimer>0){ctx.globalAlpha=e.acidTimer>0?clamp(.35+e.acidTimer/600,.35,.82):.72;ctx.strokeStyle=e.acidTimer>0?'#a3e635':e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+      if(e.kungfuSlowTimer>0){ctx.strokeStyle='rgba(52,211,153,.8)';ctx.lineWidth=3;ctx.setLineDash([4,4]);ctx.beginPath();ctx.arc(0,0,e.radius+9,0,TAU);ctx.stroke();ctx.setLineDash([]);}
+      if(e.kungfuAttackLock>0){ctx.strokeStyle='rgba(251,146,60,.95)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-9,-9);ctx.lineTo(9,9);ctx.moveTo(9,-9);ctx.lineTo(-9,9);ctx.stroke();}
       if(e.statusFlash>0){ctx.globalAlpha=e.statusFlash/14;ctx.strokeStyle=e.statusFlashColor||'#fff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,e.radius+8,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       if(e.hitFlash>0){ctx.globalAlpha=e.hitFlash/8;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+4,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       ctx.restore();
@@ -1677,6 +1788,12 @@ export class Game {
       else if(e.type==='prismSatellite'){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle);ctx.fillStyle='#f0abfc';ctx.shadowColor='#f0abfc';ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(7,0);ctx.lineTo(0,9);ctx.lineTo(-7,0);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(240,171,252,.5)';ctx.beginPath();ctx.arc(0,0,15,0,TAU);ctx.stroke();ctx.restore();}
       else if(e.type==='lanceOrbit'){ctx.save();ctx.strokeStyle='rgba(125,245,255,.92)';ctx.shadowColor='#42e8ff';ctx.shadowBlur=16;ctx.lineWidth=9;ctx.beginPath();ctx.moveTo(e.x,0);ctx.lineTo(e.x,e.y);ctx.stroke();ctx.fillStyle='#dffcff';ctx.beginPath();ctx.arc(e.x,e.y,7,0,TAU);ctx.fill();ctx.restore();}
       else if(e.type==='interceptorPulse'){const progress=1-e.timer/e.maxTimer;ctx.strokeStyle=`rgba(52,211,153,${.3+progress*.65})`;ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.arc(e.x,e.y,24+progress*e.range,0,TAU);ctx.stroke();ctx.setLineDash([]);for(let n=0;n<6;n+=1){const a=this.frame*.13+n/6*TAU;ctx.fillStyle='#34d399';ctx.fillRect(e.x+Math.cos(a)*(28+progress*18)-2,e.y+Math.sin(a)*(18+progress*12)-2,4,4);}}
+      else if(e.type==='kiai'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#fb7185';ctx.lineWidth=6-3*t;for(let n=0;n<3;n+=1){ctx.beginPath();ctx.arc(e.x,e.y,24+t*(this.w*.8)+n*18,0,TAU);ctx.stroke();}ctx.restore();}
+      else if(e.type==='jointStrike'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#34d399';ctx.lineWidth=7-4*t;ctx.beginPath();ctx.arc(e.x,e.y,e.radius*(.65+t*.5),0,TAU);ctx.stroke();for(let n=0;n<4;n+=1){const a=n/4*TAU+Math.PI/4;ctx.beginPath();ctx.moveTo(e.x+Math.cos(a)*18,e.y+Math.sin(a)*18);ctx.lineTo(e.x+Math.cos(a)*e.radius,e.y+Math.sin(a)*e.radius);ctx.stroke();}ctx.restore();}
+      else if(e.type==='pushHands'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=(1-t)*.75;ctx.fillStyle='#38bdf8';ctx.fillRect(e.x-e.width/2,e.y-e.range,e.width,e.range);ctx.strokeStyle='#e0f2fe';ctx.lineWidth=4;for(let n=0;n<3;n+=1){const y=e.y-e.range*(.35+n*.25)-t*14;ctx.beginPath();ctx.moveTo(e.x-e.width/2,y);ctx.lineTo(e.x+e.width/2,y);ctx.stroke();}ctx.restore();}
+      else if(e.type==='ironBell'||e.type==='ironBellBreak'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#facc15';ctx.lineWidth=6-3*t;ctx.beginPath();ctx.arc(e.x,e.y,22+t*74,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-16,e.y+8);ctx.quadraticCurveTo(e.x,e.y-26,e.x+16,e.y+8);ctx.stroke();ctx.restore();}
+      else if(e.type==='afterimage'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.globalAlpha=(1-t)*.42;ctx.fillStyle='#c084fc';ctx.beginPath();ctx.moveTo(0,-28);ctx.lineTo(-13,7);ctx.lineTo(-29,15);ctx.lineTo(-12,20);ctx.lineTo(0,12);ctx.lineTo(12,20);ctx.lineTo(29,15);ctx.lineTo(13,7);ctx.closePath();ctx.fill();ctx.strokeStyle='#f3e8ff';ctx.lineWidth=2;ctx.stroke();ctx.restore();}
+      else if(e.type==='ironMountain'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(t*.5);ctx.globalAlpha=1-t;ctx.strokeStyle='#fb923c';ctx.lineWidth=6-3*t;for(let n=0;n<8;n+=1){const a=n/8*TAU;ctx.beginPath();ctx.moveTo(Math.cos(a)*12,Math.sin(a)*12);ctx.lineTo(Math.cos(a)*(30+t*35),Math.sin(a)*(30+t*35));ctx.stroke();}ctx.restore();}
 
       else if(e.type==='bombard'){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
       else if(e.type==='gravity'){ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,12+Math.sin(this.frame*.18)*5,0,TAU);ctx.stroke();}
@@ -1690,7 +1807,7 @@ export class Game {
   drawParticles(ctx) { for(const p of this.particles){ctx.globalAlpha=clamp(p.life/p.maxLife,0,1);ctx.fillStyle=p.color;ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);}ctx.globalAlpha=1; }
 
   debugState() {
-    return { mode:this.mode, frame:this.frame, score:this.score, stage:this.stageIndex+1, wave:this.waveIndex+1, enemies:this.enemies.filter(e=>e.alive).length, boss:this.enemies.find(e=>e.type==='boss'&&e.alive)?.bossId||null, enemyBullets:this.enemyBullets.length, playerBullets:this.playerBullets.length, xpOrbs:this.xpOrbs.length, level:this.player?.level||0, hp:this.player?.hp||0, bombs:this.player?.bombs||0, shield:this.player?.shield||0, primaryLevel:this.player?.build.primaryLevel||0, overdrive:this.player?.build.overdrive||0, secondaries:this.player?{...this.player.build.secondaries}:{}, passives:this.player?{...this.player.build.passives}:{} };
+    return { mode:this.mode, frame:this.frame, score:this.score, stage:this.stageIndex+1, wave:this.waveIndex+1, enemies:this.enemies.filter(e=>e.alive).length, boss:this.enemies.find(e=>e.type==='boss'&&e.alive)?.bossId||null, enemyBullets:this.enemyBullets.length, playerBullets:this.playerBullets.length, xpOrbs:this.xpOrbs.length, level:this.player?.level||0, hp:this.player?.hp||0, bombs:this.player?.bombs||0, shield:this.player?.shield||0, kungfuShield:this.player?.kungfuShield||0, kungfuFreezeTimer:this.kungfuFreezeTimer||0, primaryLevel:this.player?.build.primaryLevel||0, overdrive:this.player?.build.overdrive||0, secondaries:this.player?{...this.player.build.secondaries}:{}, passives:this.player?{...this.player.build.passives}:{} };
   }
   debugForceBoss(){if(!this.player)return false;this.enemies=[];this.enemyBullets=[];this.waveIndex=STAGES[this.stageIndex].waves-1;this.mode='playing';this.spawnBoss();return true;}
   debugForceStage(stage){if(!this.player)return false;this.startStage(clamp(Number(stage)-1,0,STAGES.length-1));return true;}

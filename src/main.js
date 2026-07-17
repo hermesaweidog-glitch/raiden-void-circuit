@@ -1,4 +1,4 @@
-import { AIRCRAFT, BUILD_LIMITS, PASSIVES, PILOTS, SECONDARIES } from './config.js';
+import { AIRCRAFT, BUILD_LIMITS, KUNGFU_SECONDARIES, PASSIVES, PILOTS, SECONDARIES } from './config.js';
 import { Game } from './game.js';
 
 const canvas = document.querySelector('#game');
@@ -35,8 +35,20 @@ pilotSelect.innerHTML = Object.values(PILOTS).map(pilot => `
 const testChips = (catalog, name) => Object.values(catalog).map(item => `
   <label><input type="checkbox" name="${name}" value="${item.id}"><span>${item.name}</span></label>
 `).join('');
-document.querySelector('#test-secondaries').innerHTML = testChips(SECONDARIES, 'test-secondary');
-document.querySelector('#test-passives').innerHTML = testChips(PASSIVES, 'test-passive');
+const renderSecondaryOptions = () => {
+  const holder = document.querySelector('#test-secondaries');
+  const selected = new Set([...holder.querySelectorAll('input:checked')].map(input => input.value));
+  const catalog = selectedPilot === 'kungfu' ? KUNGFU_SECONDARIES : SECONDARIES;
+  holder.innerHTML = testChips(catalog, 'test-secondary');
+  for (const input of holder.querySelectorAll('input')) input.checked = selected.has(input.value);
+};
+const renderPassiveOptions = () => {
+  const holder = document.querySelector('#test-passives');
+  const selected = new Set([...holder.querySelectorAll('input:checked')].map(input => input.value));
+  const catalog = selectedPilot === 'kungfu' ? Object.fromEntries(Object.entries(PASSIVES).filter(([id]) => id !== 'guidance')) : PASSIVES;
+  holder.innerHTML = testChips(catalog, 'test-passive');
+  for (const input of holder.querySelectorAll('input')) input.checked = selected.has(input.value);
+};
 
 const syncTestLimits = () => {
   const bonus = selectedPilot === 'joker' ? 1 : 0;
@@ -51,6 +63,9 @@ const syncTestLimits = () => {
 };
 document.querySelector('#test-secondaries').addEventListener('change', syncTestLimits);
 document.querySelector('#test-passives').addEventListener('change', syncTestLimits);
+renderSecondaryOptions();
+renderPassiveOptions();
+syncTestLimits();
 
 const selectCard = (container, attribute, value) => {
   for (const button of container.querySelectorAll(`[${attribute}]`)) button.classList.toggle('selected', button.getAttribute(attribute) === value);
@@ -79,6 +94,8 @@ for (const button of aircraftSelect.querySelectorAll('[data-craft]')) button.add
 for (const button of pilotSelect.querySelectorAll('[data-pilot]')) button.addEventListener('click', () => {
   selectedPilot = button.dataset.pilot;
   selectCard(pilotSelect, 'data-pilot', selectedPilot);
+  renderSecondaryOptions();
+  renderPassiveOptions();
   syncTestLimits();
 });
 

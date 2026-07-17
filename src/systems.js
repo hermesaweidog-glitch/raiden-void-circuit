@@ -1,4 +1,4 @@
-import { BUILD_LIMITS, FUSIONS, SECONDARIES, PASSIVES, PRIMARY_ICON, STAT_SCALE } from './config.js';
+import { BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, SECONDARIES, PASSIVES, PRIMARY_ICON, STAT_SCALE } from './config.js';
 
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const distanceSq = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
@@ -22,11 +22,15 @@ export function seededShuffle(items, random = Math.random) {
 
 export function makeUpgradePool(build) {
   const pool = [];
+  const kungfu = build.secondarySet === 'kungfu';
+  const secondaryCatalog = kungfu ? KUNGFU_SECONDARIES : SECONDARIES;
   if ((build.primaryLevel || 1) < 3) {
-    pool.push({ id: 'primary', category: 'primary', icon: PRIMARY_ICON, name: '主武器強化', description: '提升主武器火力與彈道。' });
+    pool.push(kungfu
+      ? { id: 'primary', category: 'primary', icon: 'assets/icons/basic-fist.svg', name: '基本拳法', description: '提升基礎撞擊傷害與碰撞範圍。' }
+      : { id: 'primary', category: 'primary', icon: PRIMARY_ICON, name: '主武器強化', description: '提升主武器火力與彈道。' });
   }
   const secondaries = build.secondaries || {};
-  for (const item of Object.values(SECONDARIES)) {
+  for (const item of Object.values(secondaryCatalog)) {
     const level = secondaries[item.id] || 0;
     if (level >= item.max) continue;
     if (level > 0 || Object.keys(secondaries).length < (build.secondarySlots || BUILD_LIMITS.secondary)) {
@@ -44,7 +48,7 @@ export function makeUpgradePool(build) {
     }
   }
   const fusions = build.fusions || {};
-  for (const fusion of Object.values(FUSIONS)) {
+  for (const fusion of kungfu ? [] : Object.values(FUSIONS)) {
     if (!fusions[fusion.id] && fusion.requires.every(id => secondaries[id] >= SECONDARIES[id].max)) pool.push(fusion);
   }
   if (isBuildMaxed(build)) {
@@ -56,12 +60,14 @@ export function makeUpgradePool(build) {
 export function isBuildMaxed(build) {
   const secondaries = build.secondaries || {};
   const passives = build.passives || {};
+  const kungfu = build.secondarySet === 'kungfu';
+  const secondaryCatalog = kungfu ? KUNGFU_SECONDARIES : SECONDARIES;
   return (build.primaryLevel || 1) >= 3
     && Object.keys(secondaries).length >= (build.secondarySlots || BUILD_LIMITS.secondary)
-    && Object.entries(secondaries).every(([id, rank]) => SECONDARIES[id] && rank >= SECONDARIES[id].max)
+    && Object.entries(secondaries).every(([id, rank]) => secondaryCatalog[id] && rank >= secondaryCatalog[id].max)
     && Object.keys(passives).length >= (build.passiveSlots || BUILD_LIMITS.passive)
     && Object.entries(passives).every(([id, rank]) => PASSIVES[id] && rank >= PASSIVES[id].max)
-    && Object.values(FUSIONS).every(fusion => fusion.requires.some(id => (secondaries[id] || 0) < SECONDARIES[id].max) || build.fusions?.[fusion.id]);
+    && (kungfu || Object.values(FUSIONS).every(fusion => fusion.requires.some(id => (secondaries[id] || 0) < SECONDARIES[id].max) || build.fusions?.[fusion.id]));
 }
 
 export function makeUpgradeChoices(build, random = Math.random) {

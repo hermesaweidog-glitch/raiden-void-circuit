@@ -44,6 +44,15 @@ export const SECONDARIES = {
   interceptor: { id: 'interceptor', icon: 'assets/icons/interceptor.webp', name: '攔截蜂群', max: 3, color: '#34d399', description: '蓄能後派出蜂群，定期清除鄰近敵彈。' },
 };
 
+export const KUNGFU_SECONDARIES = {
+  kiai: { id: 'kiai', icon: 'assets/icons/kiai.svg', name: '大喝爆音', max: 3, color: '#fde68a', description: '消滅全場敵彈；敵方行動暫停 0.3／0.7／1.2 秒。' },
+  jointStrike: { id: 'jointStrike', icon: 'assets/icons/joint-strike.svg', name: '關節打擊', max: 3, color: '#fb7185', description: '極短距離環形攻擊，使目標速度下降 20%／30%／40%。' },
+  pushHands: { id: 'pushHands', icon: 'assets/icons/push-hands.svg', name: '推手', max: 3, color: '#67e8f9', description: '持續向前打出極短距離的橫向掌風。' },
+  ironBell: { id: 'ironBell', icon: 'assets/icons/iron-bell.svg', name: '金鐘罩', max: 3, color: '#facc15', description: '週期性恢復一層有時限、可抵擋一次攻擊的護罩。' },
+  afterimage: { id: 'afterimage', icon: 'assets/icons/afterimage.svg', name: '殘影', max: 3, color: '#c084fc', description: '每秒在中距離內 1／2／3 名敵人身上留下撞擊殘影。' },
+  ironMountain: { id: 'ironMountain', icon: 'assets/icons/iron-mountain.svg', name: '鐵山靠', max: 3, color: '#fb923c', description: '提高撞擊傷害；每 5 秒可使目標停止攻擊 0.8／1／1.5 秒。' },
+};
+
 export const PASSIVES = {
   magnet: { id: 'magnet', icon: 'assets/icons/magnet.webp', name: '磁力核心', max: 3, description: '增加經驗與場地道具的吸附範圍及速度。' },
   overclock: { id: 'overclock', icon: 'assets/icons/overclock.webp', name: '超頻模組', max: 3, description: '提高射速。' },

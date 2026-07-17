@@ -91,6 +91,24 @@ test('maxed skill pairs expose each fusion exactly once before overdrive', () =>
   assert.ok(pool.some(item => item.id === 'lanceOrbit'));
 });
 
+test('kungfu builds offer basic fist ranks and only six martial secondary techniques', () => {
+  const build = {
+    primaryLevel: 1,
+    secondarySet: 'kungfu',
+    secondaries: {},
+    passives: {},
+    secondarySlots: 3,
+    passiveSlots: 6,
+  };
+  const pool = makeUpgradePool(build);
+  const primary = pool.find(item => item.id === 'primary');
+  const techniques = pool.filter(item => item.category === 'secondary');
+
+  assert.equal(primary.name, '基本拳法');
+  assert.deepEqual(new Set(techniques.map(item => item.id)), new Set(['kiai', 'jointStrike', 'pushHands', 'ironBell', 'afterimage', 'ironMountain']));
+  assert.ok(!pool.some(item => ['homing', 'guidance', 'seekerOrbit', 'lanceOrbit'].includes(item.id)));
+});
+
 test('homing missile never reacquires after target death', () => {
   const missile = { targetId: 7, guidanceActive: true, vx: 0, vy: -5, turn: 0.1 };
   const enemies = [{ id: 8, x: 120, y: 80, alive: true }];

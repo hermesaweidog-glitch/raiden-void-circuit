@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=12"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=13"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -43,6 +43,12 @@ test('title flow exposes normal, endless, and configurable test deployments', ()
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
   for (const label of ['一般模式', '無限模式', '測試模式']) assert.match(main, new RegExp(label));
+});
+
+test('kungfu pilot swaps the test loadout to its dedicated martial catalog', () => {
+  assert.match(main, /KUNGFU_SECONDARIES/);
+  assert.match(main, /selectedPilot === 'kungfu'/);
+  assert.match(main, /renderSecondaryOptions/);
 });
 
 test('HUD exposes three live DPS windows', () => {
