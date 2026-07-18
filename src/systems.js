@@ -145,7 +145,10 @@ export function xpForLevel(level) {
 }
 
 export function xpValueForStage(baseValue, stageIndex) {
-  return Math.max(STAT_SCALE, Math.round(baseValue * (1 + Math.max(0, stageIndex) * .35) * STAT_SCALE));
+  const index = Math.max(0, stageIndex);
+  const campaignGrowth = Math.min(index, 4) * .35;
+  const endlessGrowth = Math.max(0, index - 4) * .15;
+  return Math.max(STAT_SCALE, Math.round(baseValue * (1 + campaignGrowth + endlessGrowth) * STAT_SCALE));
 }
 
 export function splitXpValue(total) {

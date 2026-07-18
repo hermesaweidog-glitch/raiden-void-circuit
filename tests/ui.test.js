@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=21"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=22"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);

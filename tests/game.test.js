@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FUSIONS, STAGES, WORLD } from '../src/config.js';
 import { Game } from '../src/game.js';
+import { xpValueForStage } from '../src/systems.js';
 
 class FakeClassList {
   constructor() { this.values = new Set(['hidden']); }
@@ -492,6 +493,10 @@ test('passive fusions render in the passive strip instead of the secondary strip
   game.updatePausePanel();
   assert.doesNotMatch(game.dom['pause-secondary'].textContent, /朗基努斯之槍|自殺突擊隊|幸運星/);
   assert.match(game.dom['pause-passive'].textContent, /朗基努斯之槍/);
+
+  game.endRun(false);
+  assert.match(game.dom['run-summary'].innerHTML, /SECONDARY　2\/3/, 'the end screen counts the weapon fusion as an occupied secondary slot');
+  assert.match(game.dom['run-summary'].innerHTML, /PASSIVE　4\/6/, 'the end screen counts passive fusions as occupied passive slots');
 });
 
 test('seeker orbit launches max-rank orange missiles from every satellite', () => {
@@ -1107,18 +1112,86 @@ test('test mode starts with selected craft, pilot, build, stage, and immortality
   assert.deepEqual(game.testFlags, { playerInvincible: true, enemiesImmortal: true, startAtBoss: false });
 });
 
-test('endless mode loops from sector five to sector one and raises its cycle', () => {
+test('endless mode shifts sectors seamlessly on boss kills without a stage-clear pause', () => {
   const { game } = makeGame();
   game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
   game.chooseUpgrade(0);
-  game.startStage(4);
-  game.mode = 'stageClear';
-  game.transitionTimer = 0;
-  game.transitionDeadline = 0;
-  game.update();
-  assert.equal(game.mode, 'stageIntro');
-  assert.equal(game.stageIndex, 0);
+  game.mode = 'playing';
+  game.stageIndex = 4;
+  const boss = { id: 800, type: 'boss', bossId: 'raijin', x: 240, y: 118, radius: 52, hp: 0, maxHp: 1000, alive: true, orbiting: true, score: 100, xp: 65, color: '#fff' };
+  game.enemies = [boss];
+
+  game.killEnemy(boss);
+
+  assert.equal(game.endlessCycle, 1, 'clearing sector five raises the cycle');
+  assert.equal(game.stageIndex, 0, 'the run loops back to sector one');
+  assert.notEqual(game.mode, 'stageClear', 'endless must never enter the stage-clear transition');
+  assert.equal(game.player.pendingLevels === 0 && game.mode === 'playing' || game.mode === 'levelup', true, 'boss reward upgrade still fires');
+
+  game.mode = 'playing';
+  game.stageIndex = 2;
+  const midBoss = { id: 801, type: 'boss', bossId: 'seraph', x: 240, y: 118, radius: 52, hp: 0, maxHp: 1000, alive: true, orbiting: true, score: 100, xp: 65, color: '#fff' };
+  game.enemies = [midBoss];
+  game.killEnemy(midBoss);
+  assert.equal(game.stageIndex, 3, 'mid-run sectors advance in order');
   assert.equal(game.endlessCycle, 1);
+});
+
+test('endless director spawns waves on a fixed timer and tracks depth as one km per wave', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.endlessWaveTimer = 0;
+
+  game.updateDirector();
+  assert.equal(game.endlessWave, 1, 'first wave spawns when the timer expires');
+  assert.equal(game.endlessDepth, 1, 'depth advances one km per wave');
+  assert.equal(game.endlessWaveTimer, 300, 'the next wave is scheduled on a fixed five-second timer');
+  assert.ok(game.enemies.length > 0, 'the wave actually spawned');
+
+  const alive = game.enemies.filter(enemy => enemy.alive).length;
+  game.updateDirector();
+  assert.equal(game.endlessWave, 1, 'no spawn while the timer is still counting down');
+  game.endlessWaveTimer = 0;
+  game.updateDirector();
+  assert.equal(game.endlessWave, 2, 'waves keep coming even while earlier enemies are alive');
+  assert.ok(game.enemies.filter(enemy => enemy.alive).length >= alive, 'new enemies joined the field');
+});
+
+test('endless enemy damage grows three per cycle and caps at thirty', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  assert.equal(game.endlessDamage(5), 5, 'cycle zero keeps base damage');
+  game.endlessCycle = 1;
+  assert.equal(game.endlessDamage(5), 8);
+  assert.equal(game.endlessDamage(10), 13);
+  game.endlessCycle = 9;
+  assert.equal(game.endlessDamage(5), 30, 'small hits cap at thirty');
+  assert.equal(game.endlessDamage(10), 30, 'large hits cap at thirty');
+  game.endlessCycle = 20;
+  assert.equal(game.endlessDamage(10), 30, 'the cap never rises');
+
+  game.runMode = 'normal';
+  game.endlessCycle = 5;
+  assert.equal(game.endlessDamage(10), 10, 'normal mode is unaffected');
+});
+
+test('endless xp keeps sector-five value into cycle two with a gentler growth curve', () => {
+  const sectorFive = xpValueForStage(5, 4);
+  const sectorSix = xpValueForStage(5, 5);
+  assert.ok(sectorSix >= sectorFive, 'cycle two must not reset the xp value');
+  const campaignStep = xpValueForStage(5, 4) - xpValueForStage(5, 3);
+  const endlessStep = xpValueForStage(5, 6) - xpValueForStage(5, 5);
+  assert.ok(endlessStep < campaignStep, 'the endless curve grows more slowly than the campaign curve');
+
+  const { game } = makeGame();
+  game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.endlessCycle = 1;
+  game.stageIndex = 0;
+  assert.equal(game.xpStageIndex(), 5, 'cycle two sector one reads as the sixth sector for xp');
 });
 
 test('gemini adds primary and secondary projectiles and makes the craft twenty percent larger', () => {
@@ -1387,7 +1460,7 @@ test('focused payload boosts kungfu area damage by thirty percent and reach by f
     game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', secondaries: ['pushHands'], passives });
     game.player.x = 240;
     game.player.y = 500;
-    const target = { id: 590, type: 'scout', x: 240, y: 430, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+    const target = { id: 590, type: 'scout', x: 240, y: 400, radius: 10, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
     game.enemies = [target];
     game.player.secondaryCooldowns.pushHands = 0;
     const originalRandom = Math.random;
@@ -1768,6 +1841,10 @@ test('soul taker executes only primary targets and its overclock caps at five pe
     game.damageEnemy(boss, 1, false, 'primary');
     assert.equal(boss.alive, true, 'soul taker must never execute a boss');
     assert.ok(boss.hp > 9000, 'the boss only takes regular damage');
+    const midboss = { id: 703, type: 'midboss', x: 0, y: 145, radius: 34, hp: 10000, maxHp: 10000, alive: true, orbiting: true, score: 0, xp: 0, color: '#fff' };
+    game.damageEnemy(midboss, 1, false, 'primary');
+    assert.equal(midboss.alive, true, 'soul taker must never execute a midboss');
+    assert.ok(midboss.hp > 9000, 'the midboss only takes regular damage');
   } finally {
     Math.random = originalRandom;
   }

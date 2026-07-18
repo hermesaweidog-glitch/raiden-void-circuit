@@ -125,6 +125,9 @@ export class Game {
     const pilot = PILOTS[options.pilotId] || PILOTS.imperial;
     this.runMode = ['normal', 'endless', 'test'].includes(options.runMode) ? options.runMode : 'normal';
     this.endlessCycle = 0;
+    this.endlessWave = 0;
+    this.endlessDepth = 0;
+    this.endlessWaveTimer = 0;
     this.testFlags = {
       playerInvincible: this.runMode === 'test' && Boolean(options.playerInvincible),
       enemiesImmortal: this.runMode === 'test' && Boolean(options.enemiesImmortal),
@@ -208,6 +211,15 @@ export class Game {
 
   resourceMultiplier(player = this.player) {
     return 1 + (player?.build.battlefieldCleanup || 0) / 100;
+  }
+
+  endlessDamage(base) {
+    if (this.runMode !== 'endless') return base;
+    return Math.min(30, base + this.endlessCycle * 3);
+  }
+
+  xpStageIndex() {
+    return this.stageIndex + (this.runMode === 'endless' ? this.endlessCycle * STAGES.length : 0);
   }
 
   repairAmount(units = 2, player = this.player) {
@@ -324,7 +336,7 @@ export class Game {
     }
     if (this.mode === 'stageIntro') {
       this.updatePlayer(true);
-      if (this.transitionElapsed()) { this.mode = 'playing'; if (!this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive)) this.spawnNextWave(); }
+      if (this.transitionElapsed()) { this.mode = 'playing'; if (this.runMode !== 'endless' && !this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive)) this.spawnNextWave(); }
       return;
     }
     if (this.mode === 'bossWarning') {
@@ -370,6 +382,10 @@ export class Game {
   updateRouteProgress() {
     const stage = STAGES[this.stageIndex];
     if (!stage || this.mode === 'stageIntro') return;
+    if (this.runMode === 'endless') {
+      this.routeProgress = clamp((this.waveIndex + 1) / (stage.waves + 1), 0, 1);
+      return;
+    }
     if (this.mode === 'stageClear') {
       this.routeProgress = Math.min(1, this.routeProgress + .025);
       return;
@@ -388,7 +404,9 @@ export class Game {
   }
 
   updateDirector() {
-    if (this.mode !== 'playing' || this.enemies.some(enemy => enemy.alive)) return;
+    if (this.mode !== 'playing') return;
+    if (this.runMode === 'endless') { this.updateEndlessDirector(); return; }
+    if (this.enemies.some(enemy => enemy.alive)) return;
     if (this.waveCooldown > 0) { this.waveCooldown -= 1; return; }
     const stage = STAGES[this.stageIndex];
     if (this.waveIndex + 1 < stage.waves) this.spawnNextWave();
@@ -400,6 +418,21 @@ export class Game {
       this.announce('WARNING', `${BOSSES[stage.boss].name} APPROACHING`, 2400);
       this.sound('warning');
     }
+  }
+
+  updateEndlessDirector() {
+    this.endlessWaveTimer -= 1;
+    if (this.endlessWaveTimer > 0) return;
+    const stage = STAGES[this.stageIndex];
+    const bossAlive = this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
+    if (!bossAlive && this.waveIndex + 1 >= stage.waves) {
+      this.spawnBoss();
+    } else {
+      this.spawnNextWave();
+    }
+    this.endlessWave += 1;
+    this.endlessDepth = this.endlessWave;
+    this.endlessWaveTimer = 300;
   }
 
   spawnNextWave() {
@@ -802,7 +835,7 @@ export class Game {
         const range = 125 * areaScale;
         const width = 122 * areaScale;
         const inPushArea = object => object.y + (object.radius || 0) >= p.y - range
-          && object.y - (object.radius || 0) <= p.y
+          && object.y - (object.radius || 0) <= p.y - range / 2
           && Math.abs(object.x - p.x) <= width / 2 + (object.radius || 0);
         this.enemyBullets = this.enemyBullets.filter(bullet => !inPushArea(bullet));
         for (const enemy of this.enemies) {
@@ -814,7 +847,7 @@ export class Game {
             this.addEffect({ type: 'ironMountain', x: enemy.x, y: enemy.y, life: 20, maxLife: 20 });
           }
         }
-        this.addEffect({ type: 'pushHands', x: p.x, y: p.y, range, width, color: '#facc15', strokeColor: '#fef3c7', life: 14, maxLife: 14 });
+        this.addEffect({ type: 'pushHands', x: p.x, y: p.y - range / 2, range: range / 2, width, color: '#facc15', strokeColor: '#fef3c7', life: 14, maxLife: 14 });
         this.setSecondaryCooldown('taijiMaster', 14);
       }
     }
@@ -867,10 +900,10 @@ export class Game {
         const range = [0, 72, 98, 125][rank] * areaScale;
         const width = [0, 82, 102, 122][rank] * areaScale;
         for (const enemy of this.enemies) {
-          if (!enemy.alive || enemy.y > p.y + enemy.radius || enemy.y < p.y - range - enemy.radius || Math.abs(enemy.x - p.x) > width / 2 + enemy.radius) continue;
+          if (!enemy.alive || enemy.y > p.y - range / 2 + enemy.radius || enemy.y < p.y - range - enemy.radius || Math.abs(enemy.x - p.x) > width / 2 + enemy.radius) continue;
           this.damageEnemy(enemy, this.rollDamage([0, 1.6, 2.3, 3.3][rank] * damageScale), true);
         }
-        this.addEffect({ type: 'pushHands', x: p.x, y: p.y, range, width, life: 12, maxLife: 12 });
+        this.addEffect({ type: 'pushHands', x: p.x, y: p.y - range / 2, range: range / 2, width, life: 12, maxLife: 12 });
         this.setSecondaryCooldown(id, [0, 22, 18, 14][rank]);
       } else if (id === 'ironBell') {
         p.kungfuShield = 1;
@@ -1052,7 +1085,7 @@ export class Game {
           const overclock = upgradePower(this.player.build.passives.overclock || 0);
           enemy.kungfuHitCooldown = Math.max(2, 4 - Math.floor(overclock / 2));
         }
-        else if (!kungfu && this.player.invincible <= 0) this.hitPlayer(enemyDamage(enemy.type));
+        else if (!kungfu && this.player.invincible <= 0) this.hitPlayer(this.endlessDamage(enemyDamage(enemy.type)));
       }
     }
   }
@@ -1114,7 +1147,7 @@ export class Game {
 
   addEnemyBullet(x, y, vx, vy, radius = 5, color = '#ff6b6b', life = 360, entryGrace = 0, damage = 5) {
     if (this.enemyBullets.length >= WORLD.maxEnemyBullets) return false;
-    this.enemyBullets.push({ x, y, vx, vy, radius, color, life, entryGrace, damage });
+    this.enemyBullets.push({ x, y, vx, vy, radius, color, life, entryGrace, damage: this.endlessDamage(damage) });
     return true;
   }
 
@@ -1260,7 +1293,7 @@ export class Game {
     const overdrive = this.player?.build?.overdrive || 0;
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
     const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
-    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && Math.random() < (this.player.build.soulTaker || 1) / 100 + this.luckyChanceBonus();
+    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && enemy.type !== 'midboss' && Math.random() < (this.player.build.soulTaker || 1) / 100 + this.luckyChanceBonus();
     const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * .1) * pilotMultiplier * acidMultiplier;
     const immortal = Boolean(this.testFlags?.enemiesImmortal);
     this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
@@ -1307,9 +1340,19 @@ export class Game {
     this.spawnBurst(enemy.x, enemy.y, enemy.type === 'boss' ? 56 : enemy.type === 'midboss' ? 34 : enemy.type === 'elite' ? 28 : 12, enemy.color);
     this.sound(enemy.type === 'boss' ? 'bossDown' : 'boom');
     if (enemy.type === 'boss') {
-      this.completeStage();
-      this.player.pendingLevels += 1;
-      this.showUpgrade();
+      if (this.runMode === 'endless') {
+        if (this.stageIndex >= STAGES.length - 1) { this.endlessCycle += 1; this.stageIndex = 0; }
+        else this.stageIndex += 1;
+        this.waveIndex = -1;
+        const nextStage = STAGES[this.stageIndex];
+        this.announce(`SECTOR SHIFT — ${nextStage.name}`, nextStage.subtitle, 1600);
+        this.player.pendingLevels += 1;
+        this.showUpgrade();
+      } else {
+        this.completeStage();
+        this.player.pendingLevels += 1;
+        this.showUpgrade();
+      }
     } else {
       this.dropXp(enemy.x, enemy.y, enemy.xp);
       this.maybeDropSupply(enemy);
@@ -1391,7 +1434,7 @@ export class Game {
   }
 
   dropXp(x, y, value) {
-    const values = splitXpValue(xpValueForStage(value, this.stageIndex));
+    const values = splitXpValue(xpValueForStage(value, this.xpStageIndex()));
     for (const orbValue of values) {
       if (this.xpOrbs.length >= WORLD.maxXp) {
         const orb = choose(this.xpOrbs);
@@ -1736,7 +1779,11 @@ export class Game {
     const minutes = Math.floor(elapsedSeconds / 60);
     const seconds = (elapsedSeconds % 60).toFixed(1).padStart(4, '0');
     const dps = value => value.toFixed(1);
-    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>STAGE　${this.stageIndex + 1}/5<br>LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length}/${this.player.build.passiveSlots}`;
+    const fusionIds = Object.keys(this.player.build.fusions || {});
+    const secondaryFusionCount = fusionIds.filter(id => FUSIONS[id]?.kind !== 'passive').length;
+    const passiveFusionCount = fusionIds.filter(id => FUSIONS[id]?.kind === 'passive').length;
+    const depthLine = this.runMode === 'endless' ? `DEPTH　${Math.max(0, this.endlessDepth || 0)} km<br>` : `STAGE　${this.stageIndex + 1}/5<br>`;
+    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
     this.dom['end-overlay'].classList.remove('hidden');
     this.dom['pause-fab'].classList.add('hidden');
     this.sound(victory ? 'victory' : 'gameover');
@@ -1872,7 +1919,7 @@ export class Game {
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
     setText('bomb-count', p?.bombs ?? 0);
     setStyle('xp-bar', 'width', p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%');
-    setText('route-label', p ? `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT');
+    setText('route-label', p ? this.runMode === 'endless' ? `DEPTH ${this.endlessDepth || 0} km · ${stage.name}` : `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT');
     setText('route-status', routeStatus);
     setStyle('route-fill', 'width', `${progress * 100}%`);
     setStyle('midboss-node', 'left', `${midbossProgress(stage) * 100}%`);
@@ -2069,7 +2116,7 @@ export class Game {
       else if(e.type==='kungfuDodge'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#e0f2fe';ctx.lineWidth=3;for(let n=-1;n<=1;n+=1){ctx.beginPath();ctx.moveTo(e.x-16+n*12-t*28,e.y+20);ctx.quadraticCurveTo(e.x+n*12,e.y-24,e.x+16+n*12+t*28,e.y-4);ctx.stroke();}ctx.restore();}
 
       else if(e.type==='bombard'){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
-      else if(e.type==='gravity'){const inner=12+Math.sin(this.frame*.18)*5;if(e.blackHole){ctx.save();ctx.fillStyle='rgba(163,230,53,.14)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='rgba(163,230,53,.55)';ctx.lineWidth=1.5;ctx.setLineDash([6,7]);ctx.beginPath();ctx.arc(e.x,e.y,e.radius*.82,this.frame*.03,this.frame*.03+TAU);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.fill();ctx.strokeStyle='#a3e635';ctx.lineWidth=2.5;ctx.stroke();for(let n=0;n<3;n+=1){const a=this.frame*.09+n/3*TAU;ctx.strokeStyle='rgba(217,249,157,.7)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,inner+6,a,a+1.4);ctx.stroke();}ctx.restore();}else{ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.stroke();}}
+      else if(e.type==='gravity'){const inner=12+Math.sin(this.frame*.18)*5;if(e.blackHole){ctx.save();const halo=ctx.createRadialGradient(e.x,e.y,inner,e.x,e.y,e.radius);halo.addColorStop(0,'rgba(163,230,53,.5)');halo.addColorStop(.55,'rgba(101,163,13,.28)');halo.addColorStop(1,'rgba(63,98,18,.05)');ctx.fillStyle=halo;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='rgba(163,230,53,.85)';ctx.lineWidth=2;ctx.setLineDash([6,7]);ctx.beginPath();ctx.arc(e.x,e.y,e.radius*.82,this.frame*.03,this.frame*.03+TAU);ctx.stroke();ctx.setLineDash([]);ctx.strokeStyle='rgba(217,249,157,.5)';ctx.lineWidth=1.5;ctx.setLineDash([3,9]);ctx.beginPath();ctx.arc(e.x,e.y,e.radius*.55,-this.frame*.05,-this.frame*.05+TAU);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.fill();ctx.shadowColor='#a3e635';ctx.shadowBlur=14;ctx.strokeStyle='#bef264';ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.stroke();ctx.shadowBlur=0;for(let n=0;n<3;n+=1){const a=this.frame*.09+n/3*TAU;ctx.strokeStyle='rgba(217,249,157,.9)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(e.x,e.y,inner+6,a,a+1.4);ctx.stroke();}for(let n=0;n<5;n+=1){const a=this.frame*.06+n/5*TAU;const dist=e.radius*(.9-((this.frame*.011+n*.2)%.62));ctx.fillStyle='#a3e635';ctx.globalAlpha=.75;ctx.fillRect(e.x+Math.cos(a)*dist-1.5,e.y+Math.sin(a)*dist-1.5,3,3);}ctx.globalAlpha=1;ctx.restore();}else{ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.stroke();}}
       else if(e.type==='clusterLock'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(t*2.4);ctx.globalAlpha=1-t;ctx.strokeStyle='#f0abfc';ctx.lineWidth=2.5;const r=18-t*8;for(let n=0;n<4;n+=1){const a=n/4*TAU;ctx.beginPath();ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);ctx.lineTo(Math.cos(a)*(r-6),Math.sin(a)*(r-6));ctx.stroke();}ctx.strokeStyle='rgba(240,171,252,.5)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,r,0,TAU);ctx.stroke();ctx.restore();}
       else if(e.type==='clusterFlash'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.globalAlpha=1-t;ctx.shadowColor='#f0abfc';ctx.shadowBlur=18;for(let n=0;n<6;n+=1){const a=n/6*TAU+t*1.2;ctx.strokeStyle=n%2?'#fff':'#f0abfc';ctx.lineWidth=3-t*2;ctx.beginPath();ctx.moveTo(Math.cos(a)*4,Math.sin(a)*4);ctx.lineTo(Math.cos(a)*(14+t*26),Math.sin(a)*(14+t*26));ctx.stroke();}ctx.restore();}
       else if(e.type==='hammer'){const t=1-e.life/e.maxLife;const radius=8+(e.maxRadius-8)*t;ctx.save();ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#facc15';ctx.lineWidth=2;for(let n=0;n<4;n+=1){const a=n/4*TAU+Math.PI/4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
