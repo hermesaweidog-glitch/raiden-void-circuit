@@ -82,7 +82,7 @@ export const FUSIONS = {
 };
 
 export const STAGES = [
-  { id: 1, name: 'NEON OUTSKIRTS', subtitle: '霓虹外環', theme: ['#031525', '#062d3a'], enemySpeed: 0.85, bulletSpeed: 0.90, bulletCount: 0.65, fireRate: 0.58, enemyHp: 1.00, bossHp: 1.00, waves: 8, midbossWave: 4, boss: 'manta' },
+  { id: 1, name: 'NEON OUTSKIRTS', subtitle: '霓虹外環', theme: ['#031525', '#062d3a'], enemySpeed: 0.80, bulletSpeed: 0.85, bulletCount: 0.55, fireRate: 0.50, enemyHp: 0.70, bossHp: 0.70, waves: 8, midbossWave: 4, boss: 'manta' },
   { id: 2, name: 'ORBITAL FOUNDRY', subtitle: '軌道鑄造廠', theme: ['#1b102a', '#42153f'], enemySpeed: 0.95, bulletSpeed: 1.00, bulletCount: 0.82, fireRate: 0.72, enemyHp: 1.25, bossHp: 1.45, waves: 9, midbossWave: 4, boss: 'carrier' },
   { id: 3, name: 'CRYSTAL TEMPEST', subtitle: '水晶風暴', theme: ['#071a35', '#123f63'], enemySpeed: 1.08, bulletSpeed: 1.12, bulletCount: 1.00, fireRate: 0.90, enemyHp: 1.55, bossHp: 2.00, waves: 10, midbossWave: 5, boss: 'seraph' },
   { id: 4, name: 'SOLAR CITADEL', subtitle: '日冕要塞', theme: ['#2a0c07', '#6c2510'], enemySpeed: 1.22, bulletSpeed: 1.25, bulletCount: 1.22, fireRate: 1.10, enemyHp: 1.90, bossHp: 2.70, waves: 11, midbossWave: 5, boss: 'leviathan' },

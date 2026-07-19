@@ -1416,6 +1416,7 @@ export class Game {
   collectOre(value, x, y) {
     this.runOre += value;
     this.addEffect({ type: 'floatingText', x, y: y - 14, text: `+${value} ◆`, color: '#67e8f9', life: 40, maxLife: 40 });
+    this.updateHud();
   }
 
   bankOre(clearBonus = 0) {

@@ -110,6 +110,7 @@ const showModeSelect = () => {
   loadoutSelect.classList.add('hidden');
   hangarOverlay.classList.add('hidden');
   document.querySelector('.title-meta-bar').classList.remove('hidden');
+  document.querySelector('#hangar-button').classList.remove('hidden');
   document.querySelector('#title-overlay').classList.remove('setup-open');
   refreshOreBalance();
 };
@@ -119,6 +120,7 @@ const showLoadout = mode => {
   document.querySelector('#setup-mode-title').textContent = MODES.find(item => item.id === mode)?.name || '一般模式';
   modeSelect.classList.add('hidden');
   document.querySelector('.title-meta-bar').classList.add('hidden');
+  document.querySelector('#hangar-button').classList.add('hidden');
   loadoutSelect.classList.remove('hidden');
   craftStep.classList.remove('hidden');
   pilotStep.classList.add('hidden');
@@ -153,19 +155,21 @@ const renderHangar = () => {
   for (const button of upgradeHolder.querySelectorAll('[data-upgrade]')) button.addEventListener('click', () => {
     if (purchaseUpgrade(game.meta, button.dataset.upgrade)) { saveMetaState(game.meta); renderHangar(); refreshOreBalance(); }
   });
-  const unlockHolder = document.querySelector('#hangar-unlocks');
-  unlockHolder.innerHTML = Object.values(META_UNLOCKS).map(def => {
-    const owned = game.meta.unlocks.includes(def.id);
-    const affordable = !owned && game.meta.ore >= def.cost;
-    const label = def.kind === 'craft' ? '機體' : '駕駛';
-    return `<button class="hangar-item${owned ? ' maxed' : affordable ? '' : ' unaffordable'}" data-unlock="${def.id}" ${owned || !affordable ? 'disabled' : ''}>
-      <strong>${def.name}</strong><small>${label}解鎖</small>
+  const renderUnlockList = (holder, kind) => {
+    holder.innerHTML = Object.values(META_UNLOCKS).filter(def => def.kind === kind).map(def => {
+      const owned = game.meta.unlocks.includes(def.id);
+      const affordable = !owned && game.meta.ore >= def.cost;
+      return `<button class="hangar-item${owned ? ' maxed' : affordable ? '' : ' unaffordable'}" data-unlock="${def.id}" ${owned || !affordable ? 'disabled' : ''}>
+      <strong>${def.name}</strong><small>${kind === 'craft' ? '機體' : '駕駛員'}解鎖</small>
       <b>${owned ? '已解鎖' : `◆ ${def.cost}`}</b>
     </button>`;
-  }).join('');
-  for (const button of unlockHolder.querySelectorAll('[data-unlock]')) button.addEventListener('click', () => {
-    if (purchaseUnlock(game.meta, button.dataset.unlock)) { saveMetaState(game.meta); renderHangar(); refreshOreBalance(); }
-  });
+    }).join('');
+    for (const button of holder.querySelectorAll('[data-unlock]')) button.addEventListener('click', () => {
+      if (purchaseUnlock(game.meta, button.dataset.unlock)) { saveMetaState(game.meta); renderHangar(); refreshOreBalance(); }
+    });
+  };
+  renderUnlockList(document.querySelector('#hangar-unlock-crafts'), 'craft');
+  renderUnlockList(document.querySelector('#hangar-unlock-pilots'), 'pilot');
 };
 
 document.querySelector('#hangar-button').addEventListener('click', () => {

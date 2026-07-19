@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=23"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=24"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -71,7 +71,7 @@ test('mobile build strip reserves enough compact space for all six passive icons
 });
 
 test('title page exposes the upgrade hangar, ore balance, and max mode toggle', () => {
-  for (const id of ['hangar-button', 'hangar-overlay', 'hangar-upgrades', 'hangar-unlocks', 'hangar-ore', 'meta-ore-balance', 'max-mode']) {
+  for (const id of ['hangar-button', 'hangar-overlay', 'hangar-upgrades', 'hangar-unlock-crafts', 'hangar-unlock-pilots', 'hangar-ore', 'meta-ore-balance', 'max-mode']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
   assert.match(main, /META_UPGRADES/);
@@ -79,6 +79,12 @@ test('title page exposes the upgrade hangar, ore balance, and max mode toggle', 
   assert.match(main, /purchaseUnlock/);
   assert.match(css, /\.hangar-overlay/);
   assert.match(css, /\.hangar-item/);
+  const metaBarIndex = html.indexOf('title-meta-bar');
+  const hangarButtonIndex = html.indexOf('hangar-button');
+  const modeSelectIndex = html.indexOf('id="mode-select"');
+  assert.ok(metaBarIndex < modeSelectIndex, 'ore wallet and max mode sit above the mode list');
+  assert.ok(hangarButtonIndex < modeSelectIndex, 'the upgrade entry sits above the mode list');
+  assert.match(html, /class="mode-card hangar-button"/, 'the upgrade entry shares the mode-card width');
 });
 
 test('aircraft and pilot selection are split into two dedicated enlarged steps', () => {

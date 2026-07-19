@@ -67,6 +67,13 @@ test('difficulty rises discretely across all five stages', () => {
   }
 });
 
+test('stage one is a gentle onboarding sector tuned to 0.7 hp', () => {
+  assert.equal(STAGES[0].enemyHp, .7);
+  assert.equal(STAGES[0].bossHp, .7);
+  assert.ok(STAGES[0].bulletCount <= .55, 'stage one bullet density stays low');
+  assert.ok(STAGES[0].fireRate <= .5, 'stage one fire rate stays low');
+});
+
 test('every boss has at least three phases and a unique title', () => {
   const titles = new Set();
   const sprites = new Set();

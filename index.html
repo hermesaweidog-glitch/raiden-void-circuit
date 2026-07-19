@@ -49,14 +49,13 @@
         <div class="title-lockup">
           <p class="eyebrow">TACTICAL ROGUELITE STRIKE</p>
           <h1>VOID<br><span>CIRCUIT</span></h1>
-          <p>選擇作戰模式，配置本次出擊</p>
         </div>
-        <div id="mode-select" class="setup-step" aria-label="選擇遊戲模式"></div>
         <div class="title-meta-bar">
-          <b id="meta-ore-balance">◆ 0</b>
-          <button id="hangar-button" class="primary-button hangar-button">升級清單</button>
-          <label class="max-mode-flag"><input id="max-mode" type="checkbox"> MAX模式（測試用）</label>
+          <div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
+          <label class="max-mode-flag"><input id="max-mode" type="checkbox"> MAX模式</label>
         </div>
+        <button id="hangar-button" class="mode-card hangar-button"><small>HANGAR</small><b>UPGRADE</b><span>消耗源晶礦強化機體、解鎖新機體與駕駛員。</span></button>
+        <div id="mode-select" class="setup-step" aria-label="選擇遊戲模式"></div>
         <div id="loadout-select" class="setup-step hidden" aria-label="配置本次出擊">
           <div class="setup-heading"><button id="setup-back" class="text-button">← 模式</button><b id="setup-mode-title">一般模式</b></div>
           <div id="craft-step">
@@ -125,9 +124,12 @@
       <section id="hangar-overlay" class="overlay hangar-overlay hidden" aria-label="升級清單">
         <div class="setup-heading"><button id="hangar-back" class="text-button">← 返回</button><b>UPGRADE HANGAR · 升級機庫</b></div>
         <b id="hangar-ore" class="hangar-ore">◆ 0</b>
+        <small class="setup-label">UPGRADES · 機體強化</small>
         <div id="hangar-upgrades" class="hangar-list"></div>
-        <small class="setup-label">UNLOCKS · 解鎖</small>
-        <div id="hangar-unlocks" class="hangar-list"></div>
+        <small class="setup-label">AIRCRAFT · 解鎖機體</small>
+        <div id="hangar-unlock-crafts" class="hangar-list"></div>
+        <small class="setup-label">PILOTS · 解鎖駕駛員</small>
+        <div id="hangar-unlock-pilots" class="hangar-list"></div>
       </section>
 
       <div id="announcement" class="announcement hidden"></div>
@@ -141,6 +143,6 @@
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js?v=23"></script>
+  <script type="module" src="./src/main.js?v=24"></script>
 </body>
 </html>
