@@ -1,5 +1,6 @@
 import { AIRCRAFT, BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, SECONDARIES, PASSIVES, PILOTS, PRIMARY_ICON, STAT_SCALE, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
+import { loadMetaState, maxedMetaState, metaFromUpgrades, ORE_BASE_VALUE, ORE_CLEAR_BONUS, oreDropFor, saveMetaState } from './meta.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -27,7 +28,7 @@ export class Game {
       'score', 'stage', 'level', 'hp', 'bombs', 'xp-bar', 'title-overlay', 'upgrade-overlay',
       'upgrade-options', 'upgrade-kicker', 'upgrade-title', 'end-overlay', 'end-kicker', 'end-title', 'run-summary', 'announcement',
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
-      'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node',
+      'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node', 'ore', 'lives',
       'pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive',
       'pause-pilot', 'pause-fab', 'pause-test-controls', 'pause-player-invincible', 'pause-enemies-immortal', 'dps-1s', 'dps-10s', 'dps-total',
     ].map(id => [id, document.getElementById(id)]));
@@ -37,6 +38,13 @@ export class Game {
     this.worldScroll = 0;
     this.score = 0;
     this.best = Number(readStorage('void-circuit-best', '0'));
+    this.meta = loadMetaState();
+    this.metaCombat = metaFromUpgrades(this.meta.upgrades);
+    this.maxMode = false;
+    this.runOre = 0;
+    this.oreBossBonus = 0;
+    this.oreBanked = false;
+    this.runLives = 0;
     this.stageIndex = 0;
     this.waveIndex = -1;
     this.waveCooldown = 0;
@@ -124,6 +132,13 @@ export class Game {
     const craftId = craft.id;
     const pilot = PILOTS[options.pilotId] || PILOTS.imperial;
     this.runMode = ['normal', 'endless', 'test'].includes(options.runMode) ? options.runMode : 'normal';
+    this.maxMode = Boolean(options.maxMode);
+    const metaState = this.maxMode ? maxedMetaState() : this.meta;
+    this.metaCombat = metaFromUpgrades(metaState.upgrades);
+    this.runOre = 0;
+    this.oreBossBonus = 0;
+    this.oreBanked = false;
+    this.runLives = this.metaCombat.lives;
     this.endlessCycle = 0;
     this.endlessWave = 0;
     this.endlessDepth = 0;
@@ -132,13 +147,16 @@ export class Game {
       playerInvincible: this.runMode === 'test' && Boolean(options.playerInvincible),
       enemiesImmortal: this.runMode === 'test' && Boolean(options.enemiesImmortal),
       startAtBoss: this.runMode === 'test' && Boolean(options.startAtBoss),
+      endless: this.runMode === 'test' && Boolean(options.endless),
     };
     const isTest = this.runMode === 'test';
     const slotBonus = pilot.id === 'joker' ? 1 : 0;
+    const secondarySlots = this.metaCombat.secondarySlots + slotBonus;
+    const passiveSlots = this.metaCombat.passiveSlots + slotBonus + (craft.passiveSlotBonus || 0);
     const secondaryCatalog = pilot.id === 'kungfu' ? KUNGFU_SECONDARIES : SECONDARIES;
-    const selectedSecondaries = isTest ? Object.fromEntries([...new Set(options.secondaries || [])].filter(id => secondaryCatalog[id]).slice(0, BUILD_LIMITS.secondary + slotBonus).map(id => [id, secondaryCatalog[id].max])) : {};
-    const selectedPassives = isTest ? Object.fromEntries([...new Set(options.passives || [])].filter(id => PASSIVES[id] && !(pilot.id === 'kungfu' && id === 'guidance')).slice(0, BUILD_LIMITS.passive + slotBonus).map(id => [id, PASSIVES[id].max])) : {};
-    const baseBombCap = Math.min(5, 3 + Math.max(0, (selectedPassives.bombcap || 0) - 1));
+    const selectedSecondaries = isTest ? Object.fromEntries([...new Set(options.secondaries || [])].filter(id => secondaryCatalog[id]).slice(0, secondarySlots).map(id => [id, secondaryCatalog[id].max])) : {};
+    const selectedPassives = isTest ? Object.fromEntries([...new Set(options.passives || [])].filter(id => PASSIVES[id] && !(pilot.id === 'kungfu' && id === 'guidance')).slice(0, passiveSlots).map(id => [id, PASSIVES[id].max])) : {};
+    const baseBombCap = Math.min(5, 3 + Math.max(0, (selectedPassives.bombcap || 0) - 1)) + (craft.bombCapBonus || 0);
     const maxHp = this.calculateMaxHp(craft, pilot.id, selectedPassives.armor || 0);
     const bombBonus = pilot.id === 'rambo' ? 1 : 0;
     const maxBombs = baseBombCap + bombBonus;
@@ -168,10 +186,10 @@ export class Game {
       x: this.w / 2, y: this.h - 92, targetX: this.w / 2, targetY: this.h - 92,
       radius: 15 * (pilot.id === 'gemini' ? 1.2 : 1), hitRadius: pilot.id === 'gambler' ? 2 : 5 * (pilot.id === 'gemini' ? 1.2 : 1), scale: pilot.id === 'gemini' ? 1.2 : 1,
       craftId, craft, pilotId: pilot.id, pilot, hp: maxHp, maxHp,
-      bombs: isTest ? maxBombs : 2 + bombBonus, maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
+      bombs: isTest ? maxBombs : Math.min(maxBombs, this.metaCombat.bombs + bombBonus + (craft.bombCapBonus || 0)), maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
       shadowCooldown: 360, shadowTimer: 0, grazeBonus: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
-      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots: BUILD_LIMITS.secondary + slotBonus, passiveSlots: BUILD_LIMITS.passive + slotBonus, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, revision: 0 },
+      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -194,7 +212,8 @@ export class Game {
 
   calculateMaxHp(craft, pilotId, armorRank = 0) {
     const healthFactor = pilotId === 'kungfu' ? 2 : 1;
-    let maxHp = (craft.hp + Math.ceil(upgradePower(armorRank) / 2)) * STAT_SCALE * healthFactor;
+    const base = (this.metaCombat?.baseHp ?? 25) + (craft.hpBonus || 0);
+    let maxHp = (base + Math.ceil(upgradePower(armorRank) / 2) * STAT_SCALE / 2) * healthFactor;
     if (pilotId === 'rambo') maxHp += STAT_SCALE;
     if (pilotId === 'reaper') maxHp = Math.max(STAT_SCALE, maxHp - 2 * STAT_SCALE);
     if (pilotId === 'gambler') maxHp = Math.max(STAT_SCALE, Math.floor(maxHp / 2));
@@ -213,13 +232,17 @@ export class Game {
     return 1 + (player?.build.battlefieldCleanup || 0) / 100;
   }
 
+  isEndless() {
+    return this.runMode === 'endless' || Boolean(this.testFlags?.endless);
+  }
+
   endlessDamage(base) {
-    if (this.runMode !== 'endless') return base;
+    if (!this.isEndless()) return base;
     return Math.min(30, base + this.endlessCycle * 3);
   }
 
   xpStageIndex() {
-    return this.stageIndex + (this.runMode === 'endless' ? this.endlessCycle * STAGES.length : 0);
+    return this.stageIndex + (this.isEndless() ? this.endlessCycle * STAGES.length : 0);
   }
 
   repairAmount(units = 2, player = this.player) {
@@ -336,7 +359,7 @@ export class Game {
     }
     if (this.mode === 'stageIntro') {
       this.updatePlayer(true);
-      if (this.transitionElapsed()) { this.mode = 'playing'; if (this.runMode !== 'endless' && !this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive)) this.spawnNextWave(); }
+      if (this.transitionElapsed()) { this.mode = 'playing'; if (!this.isEndless() && !this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive)) this.spawnNextWave(); }
       return;
     }
     if (this.mode === 'bossWarning') {
@@ -352,7 +375,7 @@ export class Game {
       this.updateXpOrbs();
       this.updateEffects();
       if (this.transitionElapsed()) {
-        if (this.stageIndex >= STAGES.length - 1 && this.runMode === 'endless') {
+        if (this.stageIndex >= STAGES.length - 1 && this.isEndless()) {
           this.endlessCycle += 1;
           this.startStage(0);
         } else if (this.stageIndex >= STAGES.length - 1) this.endRun(true);
@@ -382,7 +405,7 @@ export class Game {
   updateRouteProgress() {
     const stage = STAGES[this.stageIndex];
     if (!stage || this.mode === 'stageIntro') return;
-    if (this.runMode === 'endless') {
+    if (this.isEndless()) {
       this.routeProgress = clamp((this.waveIndex + 1) / (stage.waves + 1), 0, 1);
       return;
     }
@@ -405,7 +428,7 @@ export class Game {
 
   updateDirector() {
     if (this.mode !== 'playing') return;
-    if (this.runMode === 'endless') { this.updateEndlessDirector(); return; }
+    if (this.isEndless()) { this.updateEndlessDirector(); return; }
     if (this.enemies.some(enemy => enemy.alive)) return;
     if (this.waveCooldown > 0) { this.waveCooldown -= 1; return; }
     const stage = STAGES[this.stageIndex];
@@ -427,12 +450,26 @@ export class Game {
     const bossAlive = this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     if (!bossAlive && this.waveIndex + 1 >= stage.waves) {
       this.spawnBoss();
+      if (this.endlessCycle >= 2) this.spawnEnemy('midboss', this.w / 3, -110, 1 + this.endlessCycle * .1, 7, 0);
+      if (this.endlessCycle >= 6) this.spawnEndlessEscortBoss();
     } else {
       this.spawnNextWave();
+      if (this.endlessCycle >= 4 && this.waveIndex + 1 === stage.midbossWave) this.spawnEnemy('midboss', this.w * .75, -130, 1 + this.endlessCycle * .1, 7, 1);
     }
     this.endlessWave += 1;
     this.endlessDepth = this.endlessWave;
     this.endlessWaveTimer = 300;
+  }
+
+  spawnEndlessEscortBoss() {
+    const stage = STAGES[(this.stageIndex + 2) % STAGES.length];
+    const data = BOSSES[stage.boss];
+    const hp = data.baseHp * stage.bossHp * (1 + this.endlessCycle * .35) * .6 * STAT_SCALE;
+    this.enemies.push({
+      id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 4, y: -85,
+      radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 130,
+      age: 0, phase: 0, hitFlash: 0, score: 5000 * stage.id, xp: 40 + stage.id * 10, pressure: 1, arriving: true, escort: true,
+    });
   }
 
   spawnNextWave() {
@@ -527,6 +564,10 @@ export class Game {
       if (player.shadowTimer > 0) {
         player.shadowTimer -= 1;
         player.invincible = Math.max(player.invincible, 2);
+        const clearRadius = 70;
+        const before = this.enemyBullets.length;
+        this.enemyBullets = this.enemyBullets.filter(bullet => distanceSq(bullet, player) > clearRadius ** 2);
+        if (before > this.enemyBullets.length && this.frame % 6 === 0) this.addEffect({ type: 'ring', x: player.x, y: player.y, radius: 12, maxRadius: clearRadius, life: 12, maxLife: 12, color: '#c084fc' });
       } else {
         player.shadowCooldown -= 1;
         if (player.shadowCooldown <= 0) {
@@ -951,6 +992,7 @@ export class Game {
       let removed = false;
       for (const enemy of this.enemies) {
         if (!enemy.alive || bullet.hitIds?.has(enemy.id)) continue;
+        if (enemy.y + enemy.radius < 0) continue;
         const rr = bullet.radius + enemy.radius;
         if (distanceSq(bullet, enemy) > rr * rr) continue;
         bullet.hitIds ||= new Set(); bullet.hitIds.add(enemy.id);
@@ -1288,13 +1330,15 @@ export class Game {
 
   damageEnemy(enemy, damage, particles = true, source = null) {
     if (!enemy.alive) return;
+    if (enemy.y + enemy.radius < 0) return;
     if (enemy.type === 'midboss' && !enemy.orbiting) return;
     if (enemy.type === 'boss' && enemy.arriving) return;
     const overdrive = this.player?.build?.overdrive || 0;
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
     const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
+    const metaMultiplier = (this.metaCombat?.attackMultiplier ?? 1) * (source !== 'primary' && this.player?.craft?.secondaryBoost ? 1 + this.player.craft.secondaryBoost : 1);
     const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && enemy.type !== 'midboss' && Math.random() < (this.player.build.soulTaker || 1) / 100 + this.luckyChanceBonus();
-    const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * .1) * pilotMultiplier * acidMultiplier;
+    const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * .1) * pilotMultiplier * acidMultiplier * metaMultiplier;
     const immortal = Boolean(this.testFlags?.enemiesImmortal);
     this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
     enemy.hp = immortal ? Math.max(1, enemy.hp - adjustedDamage) : enemy.hp - adjustedDamage;
@@ -1337,10 +1381,12 @@ export class Game {
     }
     enemy.alive = false;
     this.score += enemy.score;
+    this.dropOre(enemy);
     this.spawnBurst(enemy.x, enemy.y, enemy.type === 'boss' ? 56 : enemy.type === 'midboss' ? 34 : enemy.type === 'elite' ? 28 : 12, enemy.color);
     this.sound(enemy.type === 'boss' ? 'bossDown' : 'boom');
-    if (enemy.type === 'boss') {
-      if (this.runMode === 'endless') {
+    if (enemy.type === 'boss' && !enemy.escort) {
+      this.oreBossBonus += 2;
+      if (this.isEndless()) {
         if (this.stageIndex >= STAGES.length - 1) { this.endlessCycle += 1; this.stageIndex = 0; }
         else this.stageIndex += 1;
         this.waveIndex = -1;
@@ -1359,9 +1405,34 @@ export class Game {
     }
   }
 
+  dropOre(enemy, random = Math.random) {
+    const base = ORE_BASE_VALUE + (this.metaCombat?.oreBonus ?? 0) + this.oreBossBonus;
+    const value = oreDropFor(enemy.type, base, random);
+    if (!value) return false;
+    if (enemy.type === 'boss' || enemy.type === 'midboss') { this.collectOre(value, enemy.x, enemy.y); return true; }
+    return this.addEffect({ type: 'ore', x: enemy.x, y: enemy.y, value, life: 900, radius: 7, vy: .5 });
+  }
+
+  collectOre(value, x, y) {
+    this.runOre += value;
+    this.addEffect({ type: 'floatingText', x, y: y - 14, text: `+${value} ◆`, color: '#67e8f9', life: 40, maxLife: 40 });
+  }
+
+  bankOre(clearBonus = 0) {
+    if (this.oreBanked) return 0;
+    this.oreBanked = true;
+    const total = this.runOre + clearBonus;
+    if (this.maxMode || this.runMode === 'test' || total <= 0) return total;
+    this.meta.ore += total;
+    saveMetaState(this.meta);
+    return total;
+  }
+
   beginFinale(enemy) {
     enemy.alive = false;
     this.score += enemy.score;
+    this.dropOre(enemy);
+    this.oreBossBonus += 2;
     this.mode = 'finale';
     this.enemyBullets = [];
     this.playerBullets = [];
@@ -1458,7 +1529,6 @@ export class Game {
       const d2 = dx * dx + dy * dy;
       if (!orb.attracting) {
         orb.y += this.worldScrollSpeed();
-        if (orb.y >= this.h - 150) orb.attracting = true;
       }
       if (d2 < range * range || orb.attracting || this.mode === 'stageClear') {
         orb.attracting = true;
@@ -1476,7 +1546,7 @@ export class Game {
   grantXp(amount, defer = false) {
     if (!this.player) return;
     const harvester = upgradePower(this.passiveRank('harvester'));
-    this.player.xp += Math.max(1, Math.round(amount * (1 + harvester * .08) * this.resourceMultiplier()));
+    this.player.xp += Math.max(1, Math.round(amount * (1 + harvester * .08) * this.resourceMultiplier() * (this.metaCombat?.xpMultiplier ?? 1)));
     while (this.player.level < WORLD.maxLevel && this.player.xp >= this.player.xpNeed) {
       this.player.xp -= this.player.xpNeed;
       this.player.level += 1;
@@ -1567,7 +1637,7 @@ export class Game {
     else if (choice.category === 'passive') {
       p.build.passives[choice.id] = Math.min(PASSIVES[choice.id].max, (p.build.passives[choice.id] || 0) + 1);
       if (choice.id === 'armor') { const previous = p.maxHp; p.maxHp = this.calculateMaxHp(p.craft, p.pilotId, p.build.passives.armor); p.hp = Math.min(p.maxHp, p.hp + Math.max(0, p.maxHp - previous)); }
-      if (choice.id === 'bombcap') { const previous = p.maxBombs; p.maxBombs = Math.min(5, 3 + Math.max(0, p.build.passives.bombcap - 1)); p.bombs = Math.min(p.maxBombs, p.bombs + Math.max(0, p.maxBombs - previous)); }
+      if (choice.id === 'bombcap') { const previous = p.maxBombs; p.maxBombs = Math.min(5, 3 + Math.max(0, p.build.passives.bombcap - 1)) + (p.craft.bombCapBonus || 0) + (p.pilotId === 'rambo' ? 1 : 0); p.bombs = Math.min(p.maxBombs, p.bombs + Math.max(0, p.maxBombs - previous)); }
     } else if (choice.id === 'repair') p.hp = Math.min(p.maxHp, p.hp + this.repairAmount());
     else if (choice.id === 'bomb') p.bombs = Math.min(p.maxBombs, p.bombs + 1);
     else this.score += 2500;
@@ -1586,6 +1656,7 @@ export class Game {
       p.inputLock = 18;
       this.pointer.active = false;
       this.keys.clear();
+      p.invincible = Math.max(p.invincible, 45);
     }
     this.dom['upgrade-overlay'].classList.add('hidden');
     this.mode = this.upgradeReturnMode || 'playing';
@@ -1656,7 +1727,7 @@ export class Game {
         const magnet = upgradePower(this.passiveRank('magnet'));
         const dx = this.player.x - effect.x; const dy = this.player.y - effect.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 < (42 + magnet * 30) ** 2 || this.mode === 'stageClear' || effect.y >= this.h - 150) {
+        if (d2 < (42 + magnet * 30) ** 2 || this.mode === 'stageClear') {
           effect.attracting = true;
           const distance = Math.max(1, Math.sqrt(d2));
           const speed = Math.min(9 + magnet, Math.max(2.4 + magnet * .4, distance * .14));
@@ -1678,6 +1749,22 @@ export class Game {
           this.effects.splice(i, 1); this.sound('level'); this.updateHud();
         }
         else if (effect.life <= 0 || (!effect.attracting && effect.y > this.h + 30)) this.effects.splice(i, 1);
+      } else if (effect.type === 'ore') {
+        effect.life -= 1;
+        const magnet = upgradePower(this.passiveRank('magnet'));
+        const dx = this.player.x - effect.x; const dy = this.player.y - effect.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < (42 + magnet * 30) ** 2 || this.mode === 'stageClear') {
+          effect.attracting = true;
+          const distance = Math.max(1, Math.sqrt(d2));
+          const speed = Math.min(9 + magnet, Math.max(2.4 + magnet * .4, distance * .14));
+          effect.x += dx / distance * speed;
+          effect.y += dy / distance * speed;
+        } else effect.y += effect.vy || .5;
+        if (distanceSq(effect, this.player) < 30 ** 2) {
+          this.collectOre(effect.value, effect.x, effect.y);
+          this.effects.splice(i, 1); this.sound('xp'); this.updateHud();
+        } else if (effect.life <= 0 || (!effect.attracting && effect.y > this.h + 30)) this.effects.splice(i, 1);
       } else if (effect.type === 'floatingText') { effect.y -= .55; effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
       else { effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
     }
@@ -1758,7 +1845,23 @@ export class Game {
     }
     this.spawnBurst(this.player.x, this.player.y, 40, '#ff3158');
     this.sound('hit'); navigator.vibrate?.([25, 30, 25]);
-    if (this.player.hp <= 0) this.endRun(false);
+    if (this.player.hp <= 0) {
+      if (this.runLives > 0) this.respawnPlayer();
+      else this.endRun(false);
+    }
+    this.updateHud();
+  }
+
+  respawnPlayer() {
+    this.runLives -= 1;
+    const p = this.player;
+    p.hp = p.maxHp;
+    p.x = this.w / 2; p.targetX = this.w / 2;
+    p.y = this.h + 64; p.targetY = this.h - 92;
+    p.invincible = 210;
+    p.shield = 0; p.kungfuShield = 0; p.kungfuShieldTimer = 0;
+    this.detonateBomb();
+    this.announce('BACKUP AIRFRAME', `REMAINING LIVES ${this.runLives}`, 1600);
     this.updateHud();
   }
 
@@ -1782,8 +1885,11 @@ export class Game {
     const fusionIds = Object.keys(this.player.build.fusions || {});
     const secondaryFusionCount = fusionIds.filter(id => FUSIONS[id]?.kind !== 'passive').length;
     const passiveFusionCount = fusionIds.filter(id => FUSIONS[id]?.kind === 'passive').length;
-    const depthLine = this.runMode === 'endless' ? `DEPTH　${Math.max(0, this.endlessDepth || 0)} km<br>` : `STAGE　${this.stageIndex + 1}/5<br>`;
-    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
+    const depthLine = this.isEndless() ? `DEPTH　${Math.max(0, this.endlessDepth || 0)} km<br>` : `STAGE　${this.stageIndex + 1}/5<br>`;
+    const clearBonus = victory && this.runMode === 'normal' ? ORE_CLEAR_BONUS : 0;
+    const banked = this.bankOre(clearBonus);
+    const oreLine = `ORE　◆ ${this.runOre}${clearBonus ? `　CLEAR BONUS　◆ ${clearBonus}` : ''}${this.maxMode || this.runMode === 'test' ? '（未入帳）' : banked > 0 ? `　→ 總計 ◆ ${this.meta.ore}` : ''}<br>`;
+    this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}${oreLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
     this.dom['end-overlay'].classList.remove('hidden');
     this.dom['pause-fab'].classList.add('hidden');
     this.sound(victory ? 'victory' : 'gameover');
@@ -1904,12 +2010,14 @@ export class Game {
       else if (routeMode === 'stageClear') routeStatus = 'CLEAR';
       else routeStatus = 'HOSTILES';
     }
-    const setText = (id, value) => { const next = String(value); if (this.dom[id].textContent !== next) this.dom[id].textContent = next; };
-    const setStyle = (id, property, value) => { if (this.dom[id].style[property] !== value) this.dom[id].style[property] = value; };
-    const setClass = (id, name, active) => { if (this.dom[id].classList.contains(name) !== active) this.dom[id].classList[active ? 'add' : 'remove'](name); };
+    const setText = (id, value) => { const el = this.dom[id]; if (!el) return; const next = String(value); if (el.textContent !== next) el.textContent = next; };
+    const setStyle = (id, property, value) => { const el = this.dom[id]; if (el && el.style[property] !== value) el.style[property] = value; };
+    const setClass = (id, name, active) => { const el = this.dom[id]; if (el && el.classList.contains(name) !== active) el.classList[active ? 'add' : 'remove'](name); };
     setText('score', String(this.score).padStart(7, '0'));
-    setText('stage', p ? `${this.runMode === 'endless' ? `∞${this.endlessCycle + 1}·` : ''}S${String(stage.id).padStart(2, '0')}` : '—');
+    setText('stage', p ? `${this.isEndless() ? `∞${this.endlessCycle + 1}·` : ''}S${String(stage.id).padStart(2, '0')}` : '—');
     setText('level', p ? String(p.level).padStart(2, '0') : '—');
+    setText('ore', p ? `◆${this.runOre}` : '—');
+    setText('lives', p ? '▲'.repeat(1 + this.runLives) : '—');
     setText('dps-1s', this.dps ? this.dps.one.toFixed(1) : '0.0');
     setText('dps-10s', this.dps ? this.dps.ten.toFixed(1) : '0.0');
     setText('dps-total', this.dps ? this.dps.total.toFixed(1) : '0.0');
@@ -1919,7 +2027,7 @@ export class Game {
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
     setText('bomb-count', p?.bombs ?? 0);
     setStyle('xp-bar', 'width', p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%');
-    setText('route-label', p ? this.runMode === 'endless' ? `DEPTH ${this.endlessDepth || 0} km · ${stage.name}` : `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT');
+    setText('route-label', p ? this.isEndless() ? `DEPTH ${this.endlessDepth || 0} km · ${stage.name}` : `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT');
     setText('route-status', routeStatus);
     setStyle('route-fill', 'width', `${progress * 100}%`);
     setStyle('midboss-node', 'left', `${midbossProgress(stage) * 100}%`);
@@ -2123,6 +2231,7 @@ export class Game {
       else if(e.type==='shadowRetaliation'){const t=1-e.life/e.maxLife;const radius=12+(e.maxRadius-12)*(1-(1-t)**3);ctx.save();ctx.globalAlpha=1-t;ctx.fillStyle='rgba(34,8,56,.3)';ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#6b21a8';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,radius*.72,0,TAU);ctx.stroke();for(let n=0;n<4;n+=1){const a=n/4*TAU+t*1.8;ctx.beginPath();ctx.moveTo(e.x+Math.cos(a)*radius*.2,e.y+Math.sin(a)*radius*.2);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
       else if(e.type==='ring'){const t=1-e.life/e.maxLife;e.radius+=(e.maxRadius-e.radius)*.12;ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=4;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       else if(e.type==='supply'){const style=this.supplyStyle(e.supply);const color=style.color;const radius=e.radius||16;ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.4;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,radius+5+Math.sin(this.frame*.16)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.shadowColor=color;ctx.shadowBlur=12;ctx.fillStyle=color;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#07111d';ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(style.label,e.x,e.y+1);ctx.restore();}
+      else if(e.type==='ore'){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(this.frame*.04);ctx.shadowColor='#67e8f9';ctx.shadowBlur=10;ctx.fillStyle='#0e7490';ctx.beginPath();ctx.moveTo(0,-e.radius);ctx.lineTo(e.radius*.85,0);ctx.lineTo(0,e.radius);ctx.lineTo(-e.radius*.85,0);ctx.closePath();ctx.fill();ctx.strokeStyle='#67e8f9';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#cffafe';ctx.fillRect(-1.5,-e.radius*.5,3,e.radius);ctx.restore();}
       else if(e.type==='floatingText'){ctx.save();ctx.globalAlpha=clamp(e.life/e.maxLife,0,1);ctx.fillStyle=e.color||'#fff';ctx.font='900 18px monospace';ctx.textAlign='center';ctx.fillText(e.text,e.x,e.y);ctx.restore();}
     }
   }

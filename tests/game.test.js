@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { FUSIONS, STAGES, WORLD } from '../src/config.js';
 import { Game } from '../src/game.js';
 import { xpValueForStage } from '../src/systems.js';
+import { maxedMetaState, META_STORAGE_KEY } from '../src/meta.js';
 
 class FakeClassList {
   constructor() { this.values = new Set(['hidden']); }
@@ -34,7 +35,9 @@ function makeGame() {
     addEventListener() {},
   };
   globalThis.window = { addEventListener() {} };
-  globalThis.localStorage = { getItem: () => null, setItem() {} };
+  // Tests run against the fully-upgraded meta baseline: firepower ×1.0 and xp ×1.0
+  // exactly match the pre-meta tuning the assertions below were written for.
+  globalThis.localStorage = { getItem: key => key === META_STORAGE_KEY ? JSON.stringify(maxedMetaState()) : null, setItem() {} };
   globalThis.matchMedia = () => ({ matches: false });
   globalThis.requestAnimationFrame = () => 0;
   Object.defineProperty(globalThis, 'navigator', { value: { vibrate() {} }, configurable: true });
@@ -173,8 +176,30 @@ test('midboss is invulnerable until reaching its combat station', () => {
   game.damageEnemy(midboss, 50, false);
   assert.equal(midboss.hp, hp);
   midboss.orbiting = true;
+  midboss.y = 145;
   game.damageEnemy(midboss, 50, false);
   assert.ok(midboss.hp < hp);
+});
+
+test('enemies above the screen top cannot be hit by player fire', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const entering = { id: 460, type: 'scout', x: 240, y: -30, radius: 14, hp: 100, maxHp: 100, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [entering];
+
+  game.damageEnemy(entering, 50, false);
+  assert.equal(entering.hp, 100, 'off-screen enemies take no direct damage');
+
+  game.playerBullets = [{ id: 1, x: 240, y: -30, vx: 0, vy: -10, radius: 6, damage: 5, life: 60, pierce: 0 }];
+  game.updatePlayerBullets();
+  assert.equal(entering.hp, 100, 'bullets pass through enemies above the screen');
+  assert.equal(game.playerBullets.length, 1, 'the bullet is not consumed by an off-screen enemy');
+
+  entering.y = 40;
+  game.damageEnemy(entering, 5, false);
+  assert.ok(entering.hp < 100, 'the same enemy is damageable once its sprite enters the field');
 });
 
 test('midboss borrows a distinct opening weapon from each sector boss', () => {
@@ -664,13 +689,13 @@ test('ordinary encounters hide wave numbering and use at least six formations', 
   assert.ok(formations.size >= 6);
 });
 
-test('XP follows the scrolling map and auto-attracts before leaving the playfield', () => {
+test('XP follows the scrolling map and drifts off the bottom when not collected', () => {
   const { game } = makeGame();
   game.start('falcon');
   game.chooseUpgrade(0);
   game.mode = 'playing';
   game.player.x = 240;
-  game.player.y = 720;
+  game.player.y = 100;
   game.dropXp(40, 60, 5);
   const orb = game.xpOrbs[0];
   const origin = { x: orb.x, y: orb.y };
@@ -683,7 +708,7 @@ test('XP follows the scrolling map and auto-attracts before leaving the playfiel
 
   orb.y = game.h - 110;
   game.updateXpOrbs();
-  assert.equal(orb.attracting, true);
+  assert.equal(Boolean(orb.attracting), false, 'orbs no longer auto-attract near the bottom — missed pickups are lost');
 });
 
 test('world scrolling pauses with gameplay instead of drifting behind frozen pickups', () => {
@@ -1107,9 +1132,9 @@ test('test mode starts with selected craft, pilot, build, stage, and immortality
   assert.deepEqual(game.player.build.secondaries, { rail: 3, gravity: 3 });
   assert.deepEqual(game.player.build.passives, { magnet: 3 });
   assert.equal(game.player.pilot.id, 'rambo');
-  assert.equal(game.player.maxHp, (game.player.craft.hp + 1) * 10);
+  assert.equal(game.player.maxHp, 50 + 10, 'max fuel tank 50 plus the rambo bonus');
   assert.equal(game.player.maxBombs, 4);
-  assert.deepEqual(game.testFlags, { playerInvincible: true, enemiesImmortal: true, startAtBoss: false });
+  assert.deepEqual(game.testFlags, { playerInvincible: true, enemiesImmortal: true, startAtBoss: false, endless: false });
 });
 
 test('endless mode shifts sectors seamlessly on boss kills without a stage-clear pause', () => {
@@ -1767,13 +1792,13 @@ test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', 
   } finally {
     Math.random = reaperRandom;
   }
-  assert.equal(setup.game.player.maxHp, setup.game.player.craft.hp * 10 - 20);
+  assert.equal(setup.game.player.maxHp, 60 - 20, 'reaper pays two hearts off the falcon 60 HP baseline');
   assert.equal(reaperTarget.hp, 850);
 
   setup = makeGame();
   setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu', passives: ['armor'] });
   setup.game.mode = 'playing';
-  assert.equal(setup.game.player.maxHp, (setup.game.player.craft.hp + 3) * 20);
+  assert.equal(setup.game.player.maxHp, (60 + 15) * 2, 'kungfu doubles the falcon baseline plus armor');
   setup.game.firePrimary();
   setup.game.updateSecondaries();
   assert.equal(setup.game.playerBullets.length, 0);
@@ -1791,7 +1816,7 @@ test('joker, reaper, kungfu, and gambler implement their distinct pilot rules', 
   setup.game.player.y = 650;
   setup.game.player.invincible = 0;
   assert.equal(setup.game.player.hitRadius, 2);
-  assert.equal(setup.game.player.maxHp, Math.floor(setup.game.player.craft.hp * 10 / 2));
+  assert.equal(setup.game.player.maxHp, Math.floor(60 / 2), 'gambler halves the falcon 60 HP baseline');
   setup.game.enemyBullets = [{ x: setup.game.player.x + 33, y: setup.game.player.y + 15, vx: 0, vy: 0, radius: 5, life: 30 }];
   setup.game.updateEnemyBullets();
   assert.equal(setup.game.player.grazeBonus, .01);
@@ -1986,4 +2011,244 @@ test('returning from pause to the title resets the active run', () => {
   assert.equal(game.mode, 'title');
   assert.equal(game.player, null);
   assert.equal(game.dom['title-overlay'].classList.contains('hidden'), false);
+});
+
+// --- Meta progression & ore economy ---------------------------------------
+
+test('fresh meta state halves firepower, sets 25 base hp, and starts with no lives or slot bonuses', async () => {
+  const meta = await import('../src/meta.js');
+  const fresh = meta.metaFromUpgrades(meta.defaultMetaState().upgrades);
+  assert.equal(fresh.attackMultiplier, .5);
+  assert.equal(fresh.baseHp, 25);
+  assert.equal(fresh.lives, 0);
+  assert.equal(fresh.bombs, 2);
+  assert.equal(fresh.secondarySlots, 2);
+  assert.equal(fresh.passiveSlots, 4);
+  assert.ok(Math.abs(fresh.xpMultiplier - .7) < 1e-9);
+
+  const maxed = meta.metaFromUpgrades(meta.maxedMetaState().upgrades);
+  assert.equal(maxed.attackMultiplier, 1);
+  assert.equal(maxed.baseHp, 50);
+  assert.equal(maxed.lives, 1);
+  assert.equal(maxed.bombs, 3);
+  assert.equal(maxed.secondarySlots, 3);
+  assert.equal(maxed.passiveSlots, 6);
+  assert.ok(Math.abs(maxed.xpMultiplier - 1) < 1e-9);
+});
+
+test('meta purchases spend ore, respect caps, and unlocks are one-time', async () => {
+  const meta = await import('../src/meta.js');
+  const state = meta.defaultMetaState();
+  state.ore = 350;
+  assert.equal(meta.purchaseUpgrade(state, 'firepower'), true, 'first firepower rank costs 100');
+  assert.equal(state.ore, 250);
+  assert.equal(state.upgrades.firepower, 1);
+  assert.equal(meta.purchaseUpgrade(state, 'firepower'), true, 'second rank costs 200');
+  assert.equal(state.ore, 50);
+  assert.equal(meta.purchaseUpgrade(state, 'firepower'), false, 'cannot afford rank three');
+
+  state.ore = 600;
+  assert.equal(meta.purchaseUnlock(state, 'rambo'), true);
+  assert.equal(state.ore, 100);
+  assert.equal(meta.purchaseUnlock(state, 'rambo'), false, 'already owned');
+  assert.equal(meta.isPilotUnlocked(state, 'rambo'), true);
+  assert.equal(meta.isPilotUnlocked(state, 'gambler'), false);
+  assert.equal(meta.isCraftUnlocked(state, 'falcon'), true, 'falcon is free');
+
+  const capped = meta.maxedMetaState();
+  capped.ore = 99999;
+  assert.equal(meta.purchaseUpgrade(capped, 'firepower'), false, 'maxed rank cannot be bought again');
+});
+
+test('ore drops follow the 0.3 rate for small enemies and guaranteed multiplied drops for large ones', async () => {
+  const meta = await import('../src/meta.js');
+  assert.equal(meta.oreDropFor('scout', 10, () => .29), 10, 'roll under 0.3 drops the base value');
+  assert.equal(meta.oreDropFor('scout', 10, () => .31), 0, 'roll over 0.3 drops nothing');
+  assert.equal(meta.oreDropFor('elite', 10, () => .99), 10, 'large enemies always drop');
+  assert.equal(meta.oreDropFor('midboss', 10, () => .99), 50, 'midboss pays five times base');
+  assert.equal(meta.oreDropFor('boss', 12, () => .99), 120, 'boss pays ten times the current base');
+});
+
+test('killing enemies drops ore pickups, bosses raise the base, and the run banks once on game over', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const originalRandom = Math.random;
+  try {
+    Math.random = () => .1;
+    const scout = { id: 601, type: 'scout', x: 100, y: 300, radius: 14, hp: 0, maxHp: 10, alive: true, score: 100, xp: 5, color: '#fff' };
+    game.enemies = [scout];
+    game.killEnemy(scout);
+    const ore = game.effects.find(effect => effect.type === 'ore');
+    assert.ok(ore, 'small enemies drop an ore pickup on the field');
+    assert.equal(ore.value, 20, 'base 10 plus maxed oreGain 10');
+
+    game.collectOre(ore.value, ore.x, ore.y);
+    assert.equal(game.runOre, 20);
+
+    game.mode = 'playing';
+    const boss = { id: 602, type: 'boss', bossId: 'manta', x: 240, y: 118, radius: 52, hp: 0, maxHp: 100, alive: true, orbiting: true, score: 1000, xp: 65, color: '#fff' };
+    game.enemies = [boss];
+    game.killEnemy(boss);
+    assert.equal(game.runOre, 20 + 200, 'boss ore is collected instantly at ten times base');
+    assert.equal(game.oreBossBonus, 2, 'each boss kill raises the drop base by two');
+  } finally {
+    Math.random = originalRandom;
+  }
+
+  const banked = game.bankOre(0);
+  assert.equal(banked, 220);
+  assert.equal(game.bankOre(0), 0, 'banking is idempotent per run');
+});
+
+test('max mode and test mode runs never bank ore into the meta wallet', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial', maxMode: true });
+  game.chooseUpgrade(0);
+  game.runOre = 500;
+  const before = game.meta.ore;
+  game.bankOre(0);
+  assert.equal(game.meta.ore, before, 'max mode ore stays out of the wallet');
+
+  const testSetup = makeGame();
+  testSetup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  testSetup.game.runOre = 500;
+  const beforeTest = testSetup.game.meta.ore;
+  testSetup.game.bankOre(0);
+  assert.equal(testSetup.game.meta.ore, beforeTest, 'test mode ore is never banked');
+});
+
+test('spare lives respawn the craft from the bottom with a free bomb blast instead of ending the run', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.runLives = 1;
+  game.player.invincible = 0;
+  game.player.hp = 1;
+  game.enemyBullets = [{ x: 10, y: 10, vx: 0, vy: 1, radius: 4, life: 100, damage: 5 }];
+  const scout = { id: 640, type: 'scout', x: 200, y: 200, originX: 200, formation: 0, index: 0, speed: 0, cooldown: 999, age: 0, radius: 14, hp: 10, maxHp: 10, alive: true, score: 10, xp: 2, color: '#fff' };
+  game.enemies = [scout];
+
+  game.hitPlayer(5);
+
+  assert.notEqual(game.mode, 'gameover', 'the run continues on a spare life');
+  assert.equal(game.runLives, 0);
+  assert.equal(game.player.hp, game.player.maxHp, 'respawn restores full hp');
+  assert.ok(game.player.y > game.h, 'the craft re-enters from below the screen');
+  assert.ok(game.player.invincible >= 210, 'respawn grants a long invulnerability window');
+  assert.equal(game.enemyBullets.length, 0, 'the respawn bomb clears enemy bullets');
+
+  game.player.invincible = 0;
+  game.player.hp = 1;
+  game.hitPlayer(5);
+  assert.equal(game.mode, 'gameover', 'no lives left ends the run');
+});
+
+test('shadow phase continuously clears bullets in a small radius while invulnerable', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'shadow' });
+  game.mode = 'playing';
+  game.player.x = 240;
+  game.player.y = 500;
+  game.player.targetX = 240;
+  game.player.targetY = 500;
+  game.player.shadowTimer = 60;
+  game.enemyBullets = [
+    { x: 240, y: 460, vx: 0, vy: 1, radius: 4, life: 100 },
+    { x: 240, y: 200, vx: 0, vy: 1, radius: 4, life: 100 },
+  ];
+
+  game.updatePlayer(false);
+
+  assert.equal(game.enemyBullets.length, 1, 'bullets inside the shadow radius are erased');
+  assert.equal(game.enemyBullets[0].y, 200, 'distant bullets survive');
+});
+
+test('closing the upgrade menu grants a short invulnerability window', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
+  game.player.invincible = 0;
+  game.player.pendingLevels = 1;
+  game.upgradeReturnMode = 'playing';
+  game.mode = 'levelup';
+  game.currentChoices = [{ id: 'repair', category: 'supply', icon: '✚', name: '緊急維修', description: '' }];
+  game.chooseUpgrade(0);
+  assert.ok(game.player.invincible >= 45, 'leaving the upgrade list grants grace frames');
+});
+
+test('deep endless cycles add midboss escorts and a second boss', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.stageIndex = 0;
+  game.waveIndex = STAGES[0].waves;
+  game.endlessCycle = 2;
+  game.endlessWaveTimer = 0;
+  game.enemies = [];
+  game.updateDirector();
+  assert.equal(game.enemies.filter(enemy => enemy.type === 'boss').length, 1);
+  assert.equal(game.enemies.filter(enemy => enemy.type === 'midboss').length, 1, 'cycle three bosses arrive with a midboss escort');
+
+  game.endlessCycle = 6;
+  game.waveIndex = STAGES[0].waves;
+  game.endlessWaveTimer = 0;
+  game.enemies = [];
+  game.updateDirector();
+  const bosses = game.enemies.filter(enemy => enemy.type === 'boss');
+  assert.equal(bosses.length, 2, 'cycle seven adds an escort boss');
+  assert.equal(bosses.filter(boss => boss.escort).length, 1, 'exactly one is flagged as escort');
+
+  const escort = bosses.find(boss => boss.escort);
+  escort.hp = 0;
+  escort.arriving = false;
+  escort.y = 118;
+  const stageBefore = game.stageIndex;
+  game.killEnemy(escort);
+  assert.equal(game.stageIndex, stageBefore, 'killing the escort never advances the sector');
+});
+
+test('test mode can run endless rules for waves, damage scaling, and seamless boss loops', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial', endless: true });
+  assert.equal(game.testFlags.endless, true);
+  assert.equal(game.isEndless(), true);
+  game.mode = 'playing';
+  game.endlessCycle = 1;
+  assert.equal(game.endlessDamage(5), 8, 'test-endless applies the cycle damage bonus');
+
+  game.endlessWaveTimer = 0;
+  game.updateDirector();
+  assert.equal(game.endlessWave, 1, 'the endless director drives waves in test mode');
+
+  game.stageIndex = 4;
+  const boss = { id: 720, type: 'boss', bossId: 'raijin', x: 240, y: 118, radius: 52, hp: 0, maxHp: 100, alive: true, orbiting: true, score: 100, xp: 65, color: '#fff' };
+  game.enemies = [boss];
+  game.killEnemy(boss);
+  assert.equal(game.stageIndex, 0, 'test-endless loops sectors seamlessly');
+  assert.equal(game.endlessCycle, 2);
+});
+
+test('lancer boosts secondary damage by ten percent while wasp gains bombs and a passive slot', () => {
+  const lancerSetup = makeGame();
+  lancerSetup.game.start({ runMode: 'test', craftId: 'lancer', pilotId: 'imperial' });
+  lancerSetup.game.mode = 'playing';
+  const lancerTarget = { id: 801, type: 'scout', x: 0, y: 100, radius: 8, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  lancerSetup.game.damageEnemy(lancerTarget, 10, false, 'secondary');
+  assert.equal(1000 - lancerTarget.hp, 110, 'lancer secondary damage is boosted ten percent');
+
+  const lancerPrimaryTarget = { id: 802, type: 'scout', x: 0, y: 100, radius: 8, hp: 1000, maxHp: 1000, alive: true, score: 0, xp: 0, color: '#fff' };
+  lancerSetup.game.damageEnemy(lancerPrimaryTarget, 10, false, 'primary');
+  assert.equal(1000 - lancerPrimaryTarget.hp, 100, 'primary fire is not boosted');
+
+  const waspSetup = makeGame();
+  waspSetup.game.start({ runMode: 'test', craftId: 'wasp', pilotId: 'imperial' });
+  assert.equal(waspSetup.game.player.maxBombs, 4, 'wasp carries one extra bomb');
+  assert.equal(waspSetup.game.player.build.passiveSlots, 7, 'wasp adds one passive slot to the maxed six');
+
+  const falconSetup = makeGame();
+  falconSetup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  assert.equal(falconSetup.game.player.maxHp, 60, 'falcon flies with 50 base plus its 10 armor bonus');
 });

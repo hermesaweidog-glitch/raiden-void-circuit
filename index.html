@@ -22,8 +22,9 @@
     <section class="hud" aria-label="遊戲狀態">
       <div><small>SCORE</small><b id="score">0000000</b></div>
       <div><small>SECTOR</small><b id="stage">—</b></div>
-      <div><small>LEVEL</small><b id="level">01</b></div>
+      <div><small>ORE</small><b id="ore">0</b></div>
       <div><small>HP</small><b id="hp">●●●●</b></div>
+      <div><small>LIVES</small><b id="lives">—</b></div>
       <div><small>BOMB</small><b id="bombs">◆◆</b></div>
     </section>
     <section id="route-progress" class="route-progress" aria-label="戰區進度">
@@ -51,31 +52,42 @@
           <p>選擇作戰模式，配置本次出擊</p>
         </div>
         <div id="mode-select" class="setup-step" aria-label="選擇遊戲模式"></div>
+        <div class="title-meta-bar">
+          <b id="meta-ore-balance">◆ 0</b>
+          <button id="hangar-button" class="primary-button hangar-button">升級清單</button>
+          <label class="max-mode-flag"><input id="max-mode" type="checkbox"> MAX模式（測試用）</label>
+        </div>
         <div id="loadout-select" class="setup-step hidden" aria-label="配置本次出擊">
           <div class="setup-heading"><button id="setup-back" class="text-button">← 模式</button><b id="setup-mode-title">一般模式</b></div>
-          <small class="setup-label">SELECT AIRCRAFT · 選擇機體</small>
-          <div id="aircraft-select" class="aircraft-grid" aria-label="選擇戰機"></div>
-          <small class="setup-label">SELECT PILOT · 選擇駕駛</small>
-          <div id="pilot-select" class="pilot-grid" aria-label="選擇駕駛"></div>
-          <div id="test-options" class="test-options hidden">
-            <label class="stage-select">起始關卡
-              <select id="test-stage">
-                <option value="1">S01 · 霓虹外環</option>
-                <option value="2">S02 · 軌道鑄造廠</option>
-                <option value="3">S03 · 水晶風暴</option>
-                <option value="4">S04 · 日冕要塞</option>
-                <option value="5">S05 · 虛空王座</option>
-              </select>
-            </label>
-            <label class="boss-start-flag"><input id="test-start-boss" type="checkbox"> 直接從 Boss 開始</label>
-            <fieldset><legend>滿級副武器 <span id="test-secondary-count">0 / 3</span></legend><div id="test-secondaries" class="test-chip-grid"></div></fieldset>
-            <fieldset><legend>滿級被動 <span id="test-passive-count">0 / 6</span></legend><div id="test-passives" class="test-chip-grid"></div></fieldset>
-            <div class="test-flags">
-              <label><input id="test-player-invincible" type="checkbox"> 自身無敵</label>
-              <label><input id="test-enemies-immortal" type="checkbox"> 敵人不死</label>
-            </div>
+          <div id="craft-step">
+            <small class="setup-label">SELECT AIRCRAFT · 選擇機體</small>
+            <div id="aircraft-select" class="aircraft-grid" aria-label="選擇戰機"></div>
+            <button id="craft-next" class="primary-button deploy-button">選擇駕駛 →</button>
           </div>
-          <button id="deploy-button" class="primary-button deploy-button">開始出擊</button>
+          <div id="pilot-step" class="hidden">
+            <div class="setup-heading"><button id="pilot-back" class="text-button">← 機體</button><b>SELECT PILOT · 選擇駕駛</b></div>
+            <div id="pilot-select" class="pilot-grid" aria-label="選擇駕駛"></div>
+            <div id="test-options" class="test-options hidden">
+              <label class="stage-select">起始關卡
+                <select id="test-stage">
+                  <option value="1">S01 · 霓虹外環</option>
+                  <option value="2">S02 · 軌道鑄造廠</option>
+                  <option value="3">S03 · 水晶風暴</option>
+                  <option value="4">S04 · 日冕要塞</option>
+                  <option value="5">S05 · 虛空王座</option>
+                </select>
+              </label>
+              <label class="boss-start-flag"><input id="test-start-boss" type="checkbox"> 直接從 Boss 開始</label>
+              <label class="boss-start-flag"><input id="test-endless" type="checkbox"> 無限模式規則</label>
+              <fieldset><legend>滿級副武器 <span id="test-secondary-count">0 / 3</span></legend><div id="test-secondaries" class="test-chip-grid"></div></fieldset>
+              <fieldset><legend>滿級被動 <span id="test-passive-count">0 / 6</span></legend><div id="test-passives" class="test-chip-grid"></div></fieldset>
+              <div class="test-flags">
+                <label><input id="test-player-invincible" type="checkbox"> 自身無敵</label>
+                <label><input id="test-enemies-immortal" type="checkbox"> 敵人不死</label>
+              </div>
+            </div>
+            <button id="deploy-button" class="primary-button deploy-button">開始出擊</button>
+          </div>
         </div>
         <p class="start-help">桌面：WASD / 方向鍵移動，Space 射擊，X/B/Shift 炸彈，P 暫停<br>手機：拖曳移動、自動射擊，右下 BOMB</p>
       </section>
@@ -110,6 +122,14 @@
         <button id="retry-button" class="primary-button">重新出擊</button>
       </section>
 
+      <section id="hangar-overlay" class="overlay hangar-overlay hidden" aria-label="升級清單">
+        <div class="setup-heading"><button id="hangar-back" class="text-button">← 返回</button><b>UPGRADE HANGAR · 升級機庫</b></div>
+        <b id="hangar-ore" class="hangar-ore">◆ 0</b>
+        <div id="hangar-upgrades" class="hangar-list"></div>
+        <small class="setup-label">UNLOCKS · 解鎖</small>
+        <div id="hangar-unlocks" class="hangar-list"></div>
+      </section>
+
       <div id="announcement" class="announcement hidden"></div>
       <button id="pause-fab" class="pause-fab hidden" aria-label="暫停並查看駕駛與裝備">Ⅱ</button>
       <button id="bomb-button" class="bomb-button hidden" aria-label="使用炸彈">BOMB<span id="bomb-count">2</span></button>
@@ -121,6 +141,6 @@
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js?v=22"></script>
+  <script type="module" src="./src/main.js?v=23"></script>
 </body>
 </html>

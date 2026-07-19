@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=22"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=23"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -68,4 +68,35 @@ test('mobile build strip reserves enough compact space for all six passive icons
   assert.match(css, /@media \(max-width:420px\)\{\.build-strip\{grid-template-columns:74px 88px minmax\(0,1fr\)/);
   assert.match(css, /@media \(max-width:420px\)[\s\S]*\.build-strip>div>span\{[^}]*flex-wrap:wrap[^}]*overflow:visible/);
   assert.doesNotMatch(css, /@media \(max-width:390px\)[^}]*\.build-strip>div:last-child\{display:none/);
+});
+
+test('title page exposes the upgrade hangar, ore balance, and max mode toggle', () => {
+  for (const id of ['hangar-button', 'hangar-overlay', 'hangar-upgrades', 'hangar-unlocks', 'hangar-ore', 'meta-ore-balance', 'max-mode']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(main, /META_UPGRADES/);
+  assert.match(main, /purchaseUpgrade/);
+  assert.match(main, /purchaseUnlock/);
+  assert.match(css, /\.hangar-overlay/);
+  assert.match(css, /\.hangar-item/);
+});
+
+test('aircraft and pilot selection are split into two dedicated enlarged steps', () => {
+  for (const id of ['craft-step', 'pilot-step', 'craft-next', 'pilot-back']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(css, /\.aircraft-grid\{[^}]*grid-template-columns:1fr/);
+  assert.match(css, /\.pilot-card i\{[^}]*flex:0 0 52px/);
+  assert.match(css, /\.aircraft-card\.locked,\.pilot-card\.locked/);
+});
+
+test('HUD shows run ore and remaining lives', () => {
+  for (const id of ['ore', 'lives']) assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  assert.match(html, /<small>ORE<\/small>/);
+  assert.match(html, /<small>LIVES<\/small>/);
+});
+
+test('test options include the endless rules toggle', () => {
+  assert.match(html, /id=["']test-endless["']/);
+  assert.match(main, /test-endless/);
 });
