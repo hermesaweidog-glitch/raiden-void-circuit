@@ -23,7 +23,7 @@ export const AIRCRAFT = {
 
 export const PILOTS = {
   imperial: { id: 'imperial', name: '帝國兵', icon: '◇', art: 'assets/pilots/imperial.webp', subtitle: '戰場清理', ability: '所有資源效率可透過超頻每次 +1%，無上限。' },
-  rambo: { id: 'rambo', name: '藍波', icon: '✚', art: 'assets/pilots/rambo.webp', subtitle: '生存專家', ability: '生命與炸彈上限增加1階段；擊倒 BOSS 補滿炸彈，炸彈對大型目標傷害 +50%。' },
+  rambo: { id: 'rambo', name: '藍波', icon: '✚', art: 'assets/pilots/rambo.webp', subtitle: '生存專家', ability: '生命與炸彈上限增加1階段；擊倒 BOSS 恢復 2 顆炸彈，炸彈對大型目標傷害 +50%。' },
   gemini: { id: 'gemini', name: '雙子星', icon: 'Ⅱ', art: 'assets/pilots/gemini.webp', subtitle: '雙重火控', ability: '機體放大 20%；主武器與副武器每次發射數量 +1。' },
   shadow: { id: 'shadow', name: '陰影', icon: '◐', art: 'assets/pilots/shadow.webp', subtitle: '相位潛行', ability: '每 6 秒潛入陰影 2 秒；受傷後獲得 2 秒無敵，並以主武器 2 秒 DPS 對周圍造成相位反擊。' },
   joker: { id: 'joker', name: '小丑', icon: '♢', art: 'assets/pilots/joker.webp', subtitle: '混沌選牌', ability: '副武器與被動技能裝備上限各 +1；自動選擇升級項目，並有 20% 機率額外再獲得一次升級項目。' },
@@ -90,11 +90,11 @@ export const STAGES = [
 ];
 
 export const BOSSES = {
-  manta: { id: 'manta', name: 'IRON MANTA', title: '鋼鐵魟王', baseHp: 420, color: '#ff3158', accent: '#ffb4c2', sprite: 'manta-wings', phases: ['fan', 'cross', 'laser'] },
-  carrier: { id: 'carrier', name: 'SIEGE CARRIER', title: '攻城航母', baseHp: 480, color: '#f97316', accent: '#ffd0a8', sprite: 'carrier-deck', phases: ['turrets', 'mines', 'summon'] },
-  seraph: { id: 'seraph', name: 'MIRROR SERAPH', title: '鏡像熾天使', baseHp: 530, color: '#38bdf8', accent: '#dffcff', sprite: 'crystal-wings', phases: ['mirror', 'spiral', 'lance'] },
-  leviathan: { id: 'leviathan', name: 'SOLAR LEVIATHAN', title: '太陽巨獸', baseHp: 600, color: '#facc15', accent: '#fff3a3', sprite: 'solar-horns', phases: ['orbits', 'flares', 'nova'] },
-  raijin: { id: 'raijin', name: 'VOID RAIJIN', title: '虛空雷神', baseHp: 700, color: '#c084fc', accent: '#f0d0ff', sprite: 'thunder-crown', phases: ['gates', 'storm', 'judgement'] },
+  manta: { id: 'manta', name: 'IRON MANTA', title: '鋼鐵魟王', baseHp: 630, color: '#ff3158', accent: '#ffb4c2', sprite: 'manta-wings', phases: ['fan', 'cross', 'laser'] },
+  carrier: { id: 'carrier', name: 'SIEGE CARRIER', title: '攻城航母', baseHp: 720, color: '#f97316', accent: '#ffd0a8', sprite: 'carrier-deck', phases: ['turrets', 'mines', 'summon'] },
+  seraph: { id: 'seraph', name: 'MIRROR SERAPH', title: '鏡像熾天使', baseHp: 800, color: '#38bdf8', accent: '#dffcff', sprite: 'crystal-wings', phases: ['mirror', 'spiral', 'lance'] },
+  leviathan: { id: 'leviathan', name: 'SOLAR LEVIATHAN', title: '太陽巨獸', baseHp: 900, color: '#facc15', accent: '#fff3a3', sprite: 'solar-horns', phases: ['orbits', 'flares', 'nova'] },
+  raijin: { id: 'raijin', name: 'VOID RAIJIN', title: '虛空雷神', baseHp: 1050, color: '#c084fc', accent: '#f0d0ff', sprite: 'thunder-crown', phases: ['gates', 'storm', 'judgement'] },
 };
 
 export const ENEMY_TYPES = {

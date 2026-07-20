@@ -52,19 +52,22 @@
         </div>
         <div class="title-meta-bar">
           <div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
-          <label class="max-mode-flag"><input id="max-mode" type="checkbox"> MAX模式</label>
+          <div class="meta-bar-actions">
+            <label class="max-mode-flag"><input id="max-mode" type="checkbox"> MAX模式</label>
+            <button id="reset-meta" class="reset-meta-button" aria-label="重置升級與源晶礦">重置進度</button>
+          </div>
         </div>
         <button id="hangar-button" class="mode-card hangar-button"><small>HANGAR</small><b>UPGRADE</b><span>消耗源晶礦強化機體、解鎖新機體與駕駛員。</span></button>
         <div id="mode-select" class="setup-step" aria-label="選擇遊戲模式"></div>
         <div id="loadout-select" class="setup-step hidden" aria-label="配置本次出擊">
-          <div class="setup-heading"><button id="setup-back" class="text-button">← 模式</button><b id="setup-mode-title">一般模式</b></div>
+          <div class="setup-heading"><button id="setup-back" class="back-square" aria-label="返回模式選擇">←</button><b id="setup-mode-title">一般模式</b></div>
           <div id="craft-step">
             <small class="setup-label">SELECT AIRCRAFT · 選擇機體</small>
             <div id="aircraft-select" class="aircraft-grid" aria-label="選擇戰機"></div>
             <button id="craft-next" class="primary-button deploy-button">選擇駕駛 →</button>
           </div>
           <div id="pilot-step" class="hidden">
-            <div class="setup-heading"><button id="pilot-back" class="text-button">← 機體</button><b>SELECT PILOT · 選擇駕駛</b></div>
+            <div class="setup-heading"><button id="pilot-back" class="back-square" aria-label="返回機體選擇">←</button><b>SELECT PILOT · 選擇駕駛</b></div>
             <div id="pilot-select" class="pilot-grid" aria-label="選擇駕駛"></div>
             <div id="test-options" class="test-options hidden">
               <label class="stage-select">起始關卡
@@ -121,8 +124,17 @@
         <button id="retry-button" class="primary-button">重新出擊</button>
       </section>
 
+      <section id="clear-overlay" class="overlay clear-overlay hidden" aria-label="通關獎勵">
+        <div class="clear-dialog">
+          <small>MISSION COMPLETE</small>
+          <h2>一般模式通關！</h2>
+          <div id="clear-body" class="clear-body"></div>
+          <button id="clear-confirm" class="primary-button">確認</button>
+        </div>
+      </section>
+
       <section id="hangar-overlay" class="overlay hangar-overlay hidden" aria-label="升級清單">
-        <div class="setup-heading"><button id="hangar-back" class="text-button">← 返回</button><b>UPGRADE HANGAR · 升級機庫</b></div>
+        <div class="setup-heading"><button id="hangar-back" class="back-square" aria-label="返回主畫面">←</button><b>UPGRADE HANGAR · 升級機庫</b></div>
         <b id="hangar-ore" class="hangar-ore">◆ 0</b>
         <small class="setup-label">UPGRADES · 機體強化</small>
         <div id="hangar-upgrades" class="hangar-list"></div>
@@ -143,6 +155,6 @@
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js?v=24"></script>
+  <script type="module" src="./src/main.js?v=25"></script>
 </body>
 </html>

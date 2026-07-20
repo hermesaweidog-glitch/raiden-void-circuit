@@ -10,6 +10,7 @@ export const META_UPGRADES = {
   passiveSlot: { id: 'passiveSlot', name: '被動元件槽', icon: '▤', max: 2, costs: [4000, 20000], describe: rank => `被動槽 ${4 + rank}` },
   oreGain: { id: 'oreGain', name: '採礦強化', icon: '◆', max: 10, costs: [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000], describe: rank => `源晶礦基數 +${rank}` },
   xpGain: { id: 'xpGain', name: '經驗增幅', icon: '✦', max: 3, costs: [500, 2000, 5000], describe: rank => `經驗加成 +${rank * 10}%` },
+  overdriveBoost: { id: 'overdriveBoost', name: '超頻強化', icon: 'assets/icons/overdrive.webp', max: 5, costs: [2000, 5000, 10000, 18000, 30000], describe: rank => `超頻火力每次 +${5 + rank}%` },
 };
 
 export const META_UNLOCKS = {
@@ -32,6 +33,7 @@ export function defaultMetaState() {
     ore: 0,
     upgrades: Object.fromEntries(Object.keys(META_UPGRADES).map(id => [id, 0])),
     unlocks: [],
+    cleared: false,
   };
 }
 
@@ -40,6 +42,7 @@ export function maxedMetaState() {
     ore: 0,
     upgrades: Object.fromEntries(Object.entries(META_UPGRADES).map(([id, def]) => [id, def.max])),
     unlocks: Object.keys(META_UNLOCKS),
+    cleared: true,
   };
 }
 
@@ -53,6 +56,7 @@ export function normalizeMetaState(raw) {
     base.upgrades[id] = Number.isFinite(rank) ? Math.max(0, Math.min(def.max, Math.floor(rank))) : 0;
   }
   base.unlocks = Array.isArray(raw.unlocks) ? [...new Set(raw.unlocks.filter(id => META_UNLOCKS[id]))] : [];
+  base.cleared = Boolean(raw.cleared);
   return base;
 }
 
@@ -131,6 +135,7 @@ export function metaFromUpgrades(upgrades) {
     passiveSlots: 4 + (upgrades.passiveSlot ?? 0),
     oreBonus: upgrades.oreGain ?? 0,
     xpMultiplier: metaXpMultiplier(upgrades.xpGain ?? 0),
+    overdriveStep: 5 + (upgrades.overdriveBoost ?? 0),
   };
 }
 

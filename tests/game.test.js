@@ -562,6 +562,11 @@ test('end screen remains actionable when browser storage rejects a new high scor
 
     assert.doesNotThrow(() => game.endRun(victory));
     assert.equal(game.mode, victory ? 'victory' : 'gameover');
+    if (victory) {
+      // Normal-mode victories surface the clear-bonus dialog first; confirming reveals the summary.
+      assert.equal(game.dom['clear-overlay'].classList.contains('hidden'), false);
+      game.dom['clear-confirm'].onclick();
+    }
     assert.equal(game.dom['end-overlay'].classList.contains('hidden'), false);
   }
 });
@@ -1237,7 +1242,7 @@ test('gemini adds primary and secondary projectiles and makes the craft twenty p
   assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'rail').length, 2);
 });
 
-test('gemini lancer fires two thick beams and gemini wasp opens with three missiles', () => {
+test('gemini lancer fires two thick beams and gemini wasp fires a second main shell', () => {
   const { game } = makeGame();
   game.start({ runMode: 'normal', craftId: 'lancer', pilotId: 'gemini' });
   game.chooseUpgrade(0);
@@ -1253,7 +1258,10 @@ test('gemini lancer fires two thick beams and gemini wasp opens with three missi
   game.player.fireCooldown = 0;
   game.playerBullets = [];
   game.firePrimary();
-  assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'cannon').length, 3);
+  const shells = game.playerBullets.filter(bullet => bullet.kind === 'cannon');
+  assert.equal(shells.length, 2, 'gemini adds one extra main shell instead of side shots');
+  const mainDamage = 5.2 + 1 * 1.45;
+  assert.ok(shells.every(shell => Math.abs(shell.damage - mainDamage) < 1e-9), 'both shells carry full centre-shell damage');
 });
 
 test('shadow periodically enters a two-second invulnerable phase', () => {
@@ -1922,14 +1930,20 @@ test('battlefield cleanup scales XP and both repair sources with one resource mu
   assert.equal(game.player.build.battlefieldCleanup, 51);
 });
 
-test('rambo supply chain refills bombs after bosses and bombs deal fifty percent more to large targets', () => {
+test('rambo supply chain restores two bombs after bosses and bombs deal fifty percent more to large targets', () => {
   const { game } = makeGame();
   game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'rambo' });
   game.mode = 'playing';
   game.player.bombs = 0;
   const defeatedBoss = { id: 701, type: 'boss', x: 240, y: 100, radius: 52, hp: 0, maxHp: 10000, alive: true, score: 0, xp: 0, color: '#fff' };
   game.killEnemy(defeatedBoss);
-  assert.equal(game.player.bombs, game.player.maxBombs);
+  assert.equal(game.player.bombs, 2, 'boss kills restore two bombs instead of a full refill');
+
+  game.mode = 'playing';
+  game.player.bombs = game.player.maxBombs - 1;
+  const secondBoss = { ...defeatedBoss, id: 703, alive: true };
+  game.killEnemy(secondBoss);
+  assert.equal(game.player.bombs, game.player.maxBombs, 'restore is capped at the bomb limit');
 
   game.mode = 'playing';
   game.player.bombs = 1;
@@ -2025,6 +2039,7 @@ test('fresh meta state halves firepower, sets 25 base hp, and starts with no liv
   assert.equal(fresh.secondarySlots, 2);
   assert.equal(fresh.passiveSlots, 4);
   assert.ok(Math.abs(fresh.xpMultiplier - .7) < 1e-9);
+  assert.equal(fresh.overdriveStep, 5, 'fresh overdrive grants 5% per pick');
 
   const maxed = meta.metaFromUpgrades(meta.maxedMetaState().upgrades);
   assert.equal(maxed.attackMultiplier, 1);
@@ -2034,6 +2049,40 @@ test('fresh meta state halves firepower, sets 25 base hp, and starts with no liv
   assert.equal(maxed.secondarySlots, 3);
   assert.equal(maxed.passiveSlots, 6);
   assert.ok(Math.abs(maxed.xpMultiplier - 1) < 1e-9);
+  assert.equal(maxed.overdriveStep, 10, 'maxed overdrive boost reaches 10% per pick');
+});
+
+test('normal-mode clears flag the meta state so endless mode can unlock', async () => {
+  const meta = await import('../src/meta.js');
+  assert.equal(meta.defaultMetaState().cleared, false);
+  assert.equal(meta.maxedMetaState().cleared, true);
+  assert.equal(meta.normalizeMetaState({ cleared: true }).cleared, true);
+  assert.equal(meta.normalizeMetaState({}).cleared, false);
+
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.meta.cleared = false;
+  game.endRun(true);
+  assert.equal(game.meta.cleared, true, 'a normal-mode victory marks the profile as cleared');
+  assert.equal(game.dom['clear-overlay'].classList.contains('hidden'), false, 'clear dialog appears above the summary');
+  assert.match(game.dom['clear-body'].innerHTML, /無限模式已解鎖/, 'first clear highlights the endless unlock');
+});
+
+test('black holes drag enemy bullets inward and erase them at the core', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  game.mode = 'playing';
+  game.effects = [{ type: 'gravity', blackHole: true, x: 240, y: 300, radius: 90, timer: 300, damage: .45, pulse: 0 }];
+  game.enemies = [];
+  const farBullet = { x: 240, y: 380, vx: 0, vy: 0, radius: 4, life: 100, damage: 5 };
+  const coreBullet = { x: 244, y: 302, vx: 0, vy: 0, radius: 4, life: 100, damage: 5 };
+  game.enemyBullets = [farBullet, coreBullet];
+
+  game.updateEffects();
+
+  assert.equal(game.enemyBullets.length, 1, 'bullets at the core are destroyed');
+  assert.ok(game.enemyBullets[0].y < 380, 'surviving bullets are pulled toward the singularity');
 });
 
 test('meta purchases spend ore, respect caps, and unlocks are one-time', async () => {

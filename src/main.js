@@ -20,13 +20,21 @@ const isMaxMode = () => document.querySelector('#max-mode').checked;
 
 const MODES = [
   { id: 'normal', name: '一般模式', tag: 'CAMPAIGN', description: '五個戰區，逐步建立裝備並完成任務。' },
-  { id: 'endless', name: '無限模式', tag: 'ENDLESS', description: '通過第五戰區後循環，敵人逐輪強化。' },
+  { id: 'endless', name: '無限模式', tag: 'ENDLESS', description: '通過第五戰區後循環，敵人逐輪強化。', requiresClear: true },
   { id: 'test', name: '測試模式', tag: 'LAB', description: '自訂機體、駕駛、滿級武器、關卡與不死條件。' },
 ];
 
-modeSelect.innerHTML = `<small class="setup-label">SELECT MODE · 選擇遊戲模式</small><div class="mode-grid">${MODES.map(mode => `
-  <button class="mode-card" data-run-mode="${mode.id}"><small>${mode.tag}</small><b>${mode.name}</b><span>${mode.description}</span></button>
-`).join('')}</div>`;
+const isEndlessUnlocked = () => game.meta.cleared || isMaxMode();
+
+const renderModeSelect = () => {
+  modeSelect.innerHTML = `<small class="setup-label">SELECT MODE · 選擇遊戲模式</small><div class="mode-grid">${MODES.map(mode => {
+    const locked = mode.requiresClear && !isEndlessUnlocked();
+    return `
+  <button class="mode-card${locked ? ' locked' : ''}" data-run-mode="${mode.id}" ${locked ? 'disabled' : ''}><small>${mode.tag}</small><b>${mode.name}</b><span>${locked ? '🔒 首次通關一般模式後解鎖。' : mode.description}</span></button>
+`;
+  }).join('')}</div>`;
+  for (const button of modeSelect.querySelectorAll('[data-run-mode]')) button.addEventListener('click', () => showLoadout(button.dataset.runMode));
+};
 
 const renderAircraft = () => {
   const meta = isMaxMode() ? { unlocks: Object.keys(META_UNLOCKS) } : game.meta;
@@ -106,6 +114,7 @@ const refreshOreBalance = () => {
 
 const showModeSelect = () => {
   game.meta = loadMetaState();
+  renderModeSelect();
   modeSelect.classList.remove('hidden');
   loadoutSelect.classList.add('hidden');
   hangarOverlay.classList.add('hidden');
@@ -177,9 +186,34 @@ document.querySelector('#hangar-button').addEventListener('click', () => {
   renderHangar();
 });
 document.querySelector('#hangar-back').addEventListener('click', () => hangarOverlay.classList.add('hidden'));
-document.querySelector('#max-mode').addEventListener('change', () => { renderAircraft(); });
+document.querySelector('#max-mode').addEventListener('change', () => { renderModeSelect(); renderAircraft(); });
 
-for (const button of modeSelect.querySelectorAll('[data-run-mode]')) button.addEventListener('click', () => showLoadout(button.dataset.runMode));
+// Reset meta progress: two-step confirmation on the same button.
+const resetButton = document.querySelector('#reset-meta');
+let resetArmed = false;
+let resetTimer = 0;
+resetButton.addEventListener('click', () => {
+  if (!resetArmed) {
+    resetArmed = true;
+    resetButton.textContent = '確認重置？';
+    resetButton.classList.add('confirming');
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(() => {
+      resetArmed = false;
+      resetButton.textContent = '重置進度';
+      resetButton.classList.remove('confirming');
+    }, 4000);
+    return;
+  }
+  clearTimeout(resetTimer);
+  resetArmed = false;
+  resetButton.textContent = '重置進度';
+  resetButton.classList.remove('confirming');
+  try { localStorage.removeItem('void-circuit-meta'); } catch { /* storage unavailable */ }
+  game.meta = loadMetaState();
+  showModeSelect();
+});
+
 document.querySelector('#craft-next').addEventListener('click', showPilotStep);
 document.querySelector('#pilot-back').addEventListener('click', () => {
   pilotStep.classList.add('hidden');
@@ -205,6 +239,7 @@ document.querySelector('#deploy-button').addEventListener('click', () => {
   });
 });
 game.onShowTitle = showModeSelect;
+renderModeSelect();
 refreshOreBalance();
 
 document.querySelector('#bomb-button').addEventListener('pointerdown', event => {

@@ -28,7 +28,7 @@ export class Game {
       'score', 'stage', 'level', 'hp', 'bombs', 'xp-bar', 'title-overlay', 'upgrade-overlay',
       'upgrade-options', 'upgrade-kicker', 'upgrade-title', 'end-overlay', 'end-kicker', 'end-title', 'run-summary', 'announcement',
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
-      'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node', 'ore', 'lives',
+      'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node', 'ore', 'lives', 'clear-overlay', 'clear-body', 'clear-confirm',
       'pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive',
       'pause-pilot', 'pause-fab', 'pause-test-controls', 'pause-player-invincible', 'pause-enemies-immortal', 'dps-1s', 'dps-10s', 'dps-total',
     ].map(id => [id, document.getElementById(id)]));
@@ -189,7 +189,7 @@ export class Game {
       bombs: isTest ? maxBombs : Math.min(maxBombs, this.metaCombat.bombs + bombBonus + (craft.bombCapBonus || 0)), maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
       shadowCooldown: 360, shadowTimer: 0, grazeBonus: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
-      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, revision: 0 },
+      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, overdriveStep: this.metaCombat?.overdriveStep ?? 10, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -617,14 +617,13 @@ export class Game {
     if (player.craft.primary === 'vulcan') {
       const cooldown = Math.max(4, Math.round((11 - level) / rate));
       const count = 1 + Math.floor(level / 2) * 2 + projectileBonus;
-      baseDps = (.9 + level * .13) * count * 60 / cooldown;
+      baseDps = this.vulcanPelletDamage(level) * count * 60 / cooldown;
     } else if (player.craft.primary === 'laser') {
       baseDps = (.22 + level * .055) * (1 + projectileBonus) * 60;
     } else {
       const cooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
-      let volleyDamage = 4.2 + level * 1.15;
-      if (level >= 3 || projectileBonus) volleyDamage += (1.8 + level * .3) * 2;
-      if (level >= 3 && projectileBonus) volleyDamage += 1.8 + level * .3;
+      let volleyDamage = (5.2 + level * 1.45) * (1 + projectileBonus);
+      if (level >= 3) volleyDamage += (1.8 + level * .3) * 2;
       baseDps = volleyDamage * 60 / cooldown;
     }
     const critical = upgradePower(player === this.player ? this.passiveRank('critical') : player.build.passives.critical || 0);
@@ -632,6 +631,12 @@ export class Game {
     const supportRank = player === this.player ? this.passiveRank('support') : player.build.passives.support || 0;
     const expectedSupport = 1 + [0, .02, .03, .04][supportRank] * ([1, 1.5, 2, 3][supportRank] - 1);
     return baseDps * expectedCritical * expectedSupport;
+  }
+
+  // Vulcan lv1 keeps its original per-pellet damage; higher ranks grow slower
+  // so the pellet-count scaling no longer dominates the other primaries.
+  vulcanPelletDamage(level) {
+    return level <= 1 ? .9 + level * .13 : 1.03 + (level - 1) * .07;
   }
 
   firePrimary() {
@@ -658,7 +663,7 @@ export class Game {
       const count = 1 + Math.floor(level / 2) * 2 + this.projectileBonus();
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
-        add(offset * 1.6, -10.8 + Math.abs(offset) * .22, { damage: .9 + level * .13, radius: 3.2, ox: offset * 5, color: '#ff4267' });
+        add(offset * 1.6, -10.8 + Math.abs(offset) * .22, { damage: this.vulcanPelletDamage(level), radius: 3.2, ox: offset * 5, color: '#ff4267' });
       }
     } else if (p.craft.primary === 'laser') {
       p.fireCooldown = 0;
@@ -666,7 +671,7 @@ export class Game {
       for (let slot = 0; slot < beamCount; slot += 1) {
         const offsetX = (slot - (beamCount - 1) / 2) * 38;
         const beamData = {
-          x: p.x + offsetX, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: 4 + level * level * .48,
+          x: p.x + offsetX, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: (4 + level * level * .48) * 1.5,
           damage: .22 + level * .055, life: 2, color: '#7df5ff', kind: 'beam', beamSlot: slot, offsetX, primary: true,
           maxTargets: Infinity, statuses, statusPowers,
         };
@@ -677,9 +682,12 @@ export class Game {
     } else {
       p.fireCooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
       const hammer = primaryMaxed ? { thunderHammer: true, hammerRadius: (78 + level * 4) * 1.5, hammerDamage: (6 + level * 1.6) * .5 } : {};
-      add(0, -8.9, { damage: 4.2 + level * 1.15, radius: 6.2, splash: 34 + level * 5, kind: 'cannon', color: '#ffd166', ...hammer });
-      if (level >= 3 || this.projectileBonus()) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, kind: 'cannon', color: '#fb923c', ...hammer }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, kind: 'cannon', color: '#fb923c', ...hammer }); }
-      if (level >= 3 && this.projectileBonus()) add(.65, -8.6, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 7, kind: 'cannon', color: '#fb923c', ...hammer });
+      const mainShells = 1 + this.projectileBonus();
+      for (let i = 0; i < mainShells; i += 1) {
+        const offset = mainShells > 1 ? (i - (mainShells - 1) / 2) * 1.3 : 0;
+        add(offset, -8.9, { damage: 5.2 + level * 1.45, radius: 6.2, splash: 34 + level * 5, ox: offset * 10, kind: 'cannon', color: '#ffd166', ...hammer });
+      }
+      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, kind: 'cannon', color: '#fb923c', ...hammer }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, kind: 'cannon', color: '#fb923c', ...hammer }); }
     }
     this.sound('shoot');
   }
@@ -779,9 +787,11 @@ export class Game {
         const targets = this.nearestEnemies(p, count);
         for (let index = 0; index < count && targets.length; index += 1) {
           const target = targets[index] || targets[0];
-          this.addEffect({ type: 'gravity', blackHole: true, x: target.x + (index - (count - 1) / 2) * 22, y: target.y, radius: (52 + level * 6) * 1.15, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0 });
+          this.addEffect({ type: 'gravity', blackHole: true, x: target.x + (index - (count - 1) / 2) * 22, y: target.y, radius: (52 + level * 6) * 1.15, timer: 300, damage: .45 + level * .18, pulse: 0 });
         }
-        this.setSecondaryCooldown('blackHole', Math.max(95, 190 - level * 15));
+        // Longer-lived, rarer singularity: duration 300 < cooldown 380 keeps at
+        // most one black hole on the field without projectile upgrades.
+        this.setSecondaryCooldown('blackHole', 380);
       }
     }
     for (const [id, rank] of Object.entries(p.build.secondaries)) {
@@ -1334,11 +1344,12 @@ export class Game {
     if (enemy.type === 'midboss' && !enemy.orbiting) return;
     if (enemy.type === 'boss' && enemy.arriving) return;
     const overdrive = this.player?.build?.overdrive || 0;
+    const overdriveStep = this.player?.build?.overdriveStep ?? 10;
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
     const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
     const metaMultiplier = (this.metaCombat?.attackMultiplier ?? 1) * (source !== 'primary' && this.player?.craft?.secondaryBoost ? 1 + this.player.craft.secondaryBoost : 1);
     const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && enemy.type !== 'midboss' && Math.random() < (this.player.build.soulTaker || 1) / 100 + this.luckyChanceBonus();
-    const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * .1) * pilotMultiplier * acidMultiplier * metaMultiplier;
+    const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * overdriveStep / 100) * pilotMultiplier * acidMultiplier * metaMultiplier;
     const immortal = Boolean(this.testFlags?.enemiesImmortal);
     this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
     enemy.hp = immortal ? Math.max(1, enemy.hp - adjustedDamage) : enemy.hp - adjustedDamage;
@@ -1374,7 +1385,7 @@ export class Game {
 
   killEnemy(enemy) {
     if (!enemy.alive) return;
-    if (enemy.type === 'boss' && this.player?.pilotId === 'rambo') this.player.bombs = this.player.maxBombs;
+    if (enemy.type === 'boss' && this.player?.pilotId === 'rambo') this.player.bombs = Math.min(this.player.maxBombs, this.player.bombs + 2);
     if (enemy.type === 'boss' && this.runMode === 'normal' && this.stageIndex === STAGES.length - 1) {
       this.beginFinale(enemy);
       return;
@@ -1594,7 +1605,7 @@ export class Game {
       button.className = 'upgrade-card';
       const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.category === 'overdrive' ? this.player.build.overdrive || 0 : choice.category === 'evasion' ? this.player.build.evasion || 20 : choice.category === 'soulTaker' ? this.player.build.soulTaker || 1 : choice.category === 'battlefieldCleanup' ? this.player.build.battlefieldCleanup || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
       const next = current + 1 >= WORLD.maxUpgradeRank && ['primary', 'secondary', 'passive'].includes(choice.category) ? 'MAX' : current + 1;
-      const progress = choice.category === 'overdrive' ? `火力 +${current * 10}% → +${(current + 1) * 10}%` : choice.category === 'evasion' ? `${current}% → ${Math.min(80, current + 2)}%` : choice.category === 'soulTaker' ? `${current}% → ${Math.min(5, current + .5)}%` : choice.category === 'battlefieldCleanup' ? `+${current}% → +${current + 1}%` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
+      const progress = choice.category === 'overdrive' ? `火力 +${current * (this.player.build.overdriveStep ?? 10)}% → +${(current + 1) * (this.player.build.overdriveStep ?? 10)}%` : choice.category === 'evasion' ? `${current}% → ${Math.min(80, current + 2)}%` : choice.category === 'soulTaker' ? `${current}% → ${Math.min(5, current + .5)}%` : choice.category === 'battlefieldCleanup' ? `+${current}% → +${current + 1}%` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
       button.innerHTML = `<span class="upgrade-icon" aria-hidden="true">${skillIconMarkup(choice.icon)}</span><span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · ${progress}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
       button.addEventListener('click', () => this.chooseUpgrade(index));
       holder.append(button);
@@ -1687,6 +1698,19 @@ export class Game {
           }
           enemy.x += (effect.x - enemy.x) * .035;
           enemy.y += (effect.y - enemy.y) * .02;
+        }
+        if (effect.blackHole) {
+          for (let b = this.enemyBullets.length - 1; b >= 0; b -= 1) {
+            const bullet = this.enemyBullets[b];
+            const d2 = distanceSq(effect, bullet);
+            if (d2 > effect.radius ** 2) continue;
+            bullet.x += (effect.x - bullet.x) * .16;
+            bullet.y += (effect.y - bullet.y) * .16;
+            if (distanceSq(effect, bullet) < 20 ** 2) {
+              this.spawnBurst(bullet.x, bullet.y, 1, '#a3e635');
+              this.enemyBullets.splice(b, 1);
+            }
+          }
         }
         if (effect.pulse % 12 === 0) this.areaDamage(effect.x, effect.y, effect.radius, effect.damage);
         if (effect.timer <= 0) this.effects.splice(i, 1);
@@ -1888,10 +1912,22 @@ export class Game {
     const passiveFusionCount = fusionIds.filter(id => FUSIONS[id]?.kind === 'passive').length;
     const depthLine = this.isEndless() ? `DEPTH　${Math.max(0, this.endlessDepth || 0)} km<br>` : `STAGE　${this.stageIndex + 1}/5<br>`;
     const clearBonus = victory && this.runMode === 'normal' ? ORE_CLEAR_BONUS : 0;
+    const firstClear = victory && this.runMode === 'normal' && !this.maxMode && !this.meta.cleared;
+    if (firstClear) this.meta.cleared = true;
     const banked = this.bankOre(clearBonus);
     const oreLine = `ORE　◆ ${this.runOre}${clearBonus ? `　CLEAR BONUS　◆ ${clearBonus}` : ''}${this.maxMode || this.runMode === 'test' ? '（未入帳）' : banked > 0 ? `　→ 總計 ◆ ${this.meta.ore}` : ''}<br>`;
     this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}${oreLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
-    this.dom['end-overlay'].classList.remove('hidden');
+    if (victory && this.runMode === 'normal') {
+      const skipBank = this.maxMode || this.runMode === 'test';
+      this.dom['clear-body'].innerHTML = `通關獎勵　<b>◆ ${clearBonus}</b><br>本次收集　<b>◆ ${this.runOre}</b><br>${skipBank ? '（測試／MAX 模式不入帳）' : `帳戶總計　<b>◆ ${this.meta.ore}</b>`}${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
+      this.dom['clear-overlay'].classList.remove('hidden');
+      this.dom['clear-confirm'].onclick = () => {
+        this.dom['clear-overlay'].classList.add('hidden');
+        this.dom['end-overlay'].classList.remove('hidden');
+      };
+    } else {
+      this.dom['end-overlay'].classList.remove('hidden');
+    }
     this.dom['pause-fab'].classList.add('hidden');
     this.sound(victory ? 'victory' : 'gameover');
   }
@@ -1902,7 +1938,7 @@ export class Game {
     const list = (items, catalog) => Object.entries(items).map(([id, rank]) => { const item = catalog[id]; return item ? `${item.name} ${rank >= item.max ? 'MAX' : `Lv.${rank}`}` : id; }).join('　/　') || '尚未取得';
     const kungfu = p.build.secondarySet === 'kungfu';
     const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${kungfu ? '宗師境界' : p.craft.mastery}` : '';
-    const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * 10}%` : '';
+    const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * (p.build.overdriveStep ?? 10)}%` : '';
     const modeLabel = { normal: '一般模式', endless: `無限模式 · 循環 ${this.endlessCycle + 1}`, test: '測試模式' }[this.runMode] || '一般模式';
     const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
     this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
@@ -2043,7 +2079,7 @@ export class Game {
       const primaryBadge = rankBadge(p?.build.primaryLevel || 0);
       const kungfu = p?.build.secondarySet === 'kungfu';
       const secondaryCatalog = this.secondaryCatalog(p);
-      const firepowerBonus = (p?.build.overdrive || 0) * 10;
+      const firepowerBonus = (p?.build.overdrive || 0) * (p?.build.overdriveStep ?? 10);
       const primaryName = kungfu ? '基本拳法' : `${p?.craft.name}主武器`;
       const primaryIcon = kungfu ? 'assets/icons/basic-fist.svg' : PRIMARY_ICON;
       const primaryToken = p ? token(primaryIcon, `${primaryBadge} · +${firepowerBonus}%`, `${primaryName} · 超頻火力 +${firepowerBonus}%`, p.build.primaryLevel) : '';
