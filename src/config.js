@@ -54,7 +54,7 @@ export const KUNGFU_SECONDARIES = {
 };
 
 export const PASSIVES = {
-  magnet: { id: 'magnet', icon: 'assets/icons/magnet.webp', name: '磁力核心', max: 3, description: '增加經驗與場地道具的吸附範圍及速度。' },
+  magnet: { id: 'magnet', icon: 'assets/icons/magnet.webp', name: '磁力核心', max: 3, description: '增加經驗與場地道具的吸附範圍及速度（基礎吸附已等同舊 Lv1）。' },
   overclock: { id: 'overclock', icon: 'assets/icons/overclock.webp', name: '超頻模組', max: 3, description: '提高射速。' },
   armor: { id: 'armor', icon: 'assets/icons/armor.webp', name: '反應裝甲', max: 3, description: '提升最大生命與受傷無敵時間。' },
   critical: { id: 'critical', icon: 'assets/icons/critical.webp', name: '暴擊矩陣', max: 3, description: '增加暴擊機率與傷害。' },

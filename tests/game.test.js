@@ -911,7 +911,7 @@ test('shield supplies can drop at full resources and health or bomb drops are sl
   assert.equal(game.maybeDropSupply(enemy, () => .005), true, 'scout supply chance should exceed the former 0.35% rate');
 });
 
-test('shield drops are easier to encounter but hard-capped at two per run', () => {
+test('shield drops are hard-capped at two per stage and reset on sector shift', () => {
   const { game } = makeGame();
   game.start('falcon');
   game.chooseUpgrade(0);
@@ -924,6 +924,35 @@ test('shield drops are easier to encounter but hard-capped at two per run', () =
   assert.equal(game.maybeDropSupply(enemy, () => .02), true);
   assert.equal(game.maybeDropSupply(enemy, () => 0), false);
   assert.equal(game.player.shieldsDropped, 2);
+
+  // Sector shift (endless boss clear path) resets the per-stage shield budget.
+  game.mode = 'playing';
+  game.runMode = 'endless';
+  const boss = { id: 880, type: 'boss', bossId: 'manta', x: 240, y: 118, radius: 52, hp: 0, maxHp: 100, alive: true, orbiting: true, score: 1000, xp: 65, color: '#fff', escort: false };
+  game.enemies = [boss];
+  game.killEnemy(boss);
+  assert.equal(game.player.shieldsDropped, 0, 'new sector restores shield drop budget');
+  game.player.hp = game.player.maxHp;
+  game.player.bombs = game.player.maxBombs;
+  game.player.shield = 0;
+  assert.equal(game.maybeDropSupply(enemy, () => .02), true);
+});
+
+test('gemini wasp fires two parallel forward main shells', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'wasp', pilotId: 'gemini' });
+  game.chooseUpgrade(0);
+  game.player.build.primaryLevel = 1;
+  game.mode = 'playing';
+  game.player.fireCooldown = 0;
+  game.playerBullets = [];
+  game.firePrimary();
+  const shells = game.playerBullets.filter(bullet => bullet.kind === 'cannon');
+  assert.equal(shells.length, 2, 'gemini adds one extra main shell');
+  assert.ok(shells.every(shell => Math.abs(shell.vx) < 1e-9), 'both shells fire straight forward');
+  assert.ok(Math.abs(shells[0].x - shells[1].x) > 8, 'shells are laterally separated');
+  const mainDamage = 5.2 + 1 * 1.45;
+  assert.ok(shells.every(shell => Math.abs(shell.damage - mainDamage) < 1e-9), 'both shells carry full centre-shell damage');
 });
 
 test('new passive modules alter cooldown, area damage, shield window, and XP gain', () => {
@@ -1190,18 +1219,27 @@ test('endless director spawns waves on a fixed timer and tracks depth as one km 
   assert.ok(game.enemies.filter(enemy => enemy.alive).length >= alive, 'new enemies joined the field');
 });
 
-test('endless enemy damage grows three per cycle and caps at thirty', () => {
+test('endless enemy damage grows one per sector from stage six and caps at thirty', () => {
   const { game } = makeGame();
   game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
   game.chooseUpgrade(0);
-  assert.equal(game.endlessDamage(5), 5, 'cycle zero keeps base damage');
+  game.endlessCycle = 0;
+  game.stageIndex = 0;
+  assert.equal(game.endlessDamage(5), 5, 'sectors 1-5 keep base damage');
+  game.stageIndex = 4;
+  assert.equal(game.endlessDamage(5), 5, 'sector five still base');
   game.endlessCycle = 1;
+  game.stageIndex = 0; // sector 6
+  assert.equal(game.endlessDamage(5), 6, 'sector six adds +1');
+  assert.equal(game.endlessDamage(10), 11);
+  game.stageIndex = 2; // sector 8 = +3
   assert.equal(game.endlessDamage(5), 8);
-  assert.equal(game.endlessDamage(10), 13);
-  game.endlessCycle = 9;
+  game.endlessCycle = 5;
+  game.stageIndex = 4; // sector 5*5+4 = 29 → +25
   assert.equal(game.endlessDamage(5), 30, 'small hits cap at thirty');
   assert.equal(game.endlessDamage(10), 30, 'large hits cap at thirty');
   game.endlessCycle = 20;
+  game.stageIndex = 0;
   assert.equal(game.endlessDamage(10), 30, 'the cap never rises');
 
   game.runMode = 'normal';
@@ -1261,6 +1299,7 @@ test('gemini lancer fires two thick beams and gemini wasp fires a second main sh
   game.firePrimary();
   const shells = game.playerBullets.filter(bullet => bullet.kind === 'cannon');
   assert.equal(shells.length, 2, 'gemini adds one extra main shell instead of side shots');
+  assert.ok(shells.every(shell => Math.abs(shell.vx) < 1e-9), 'parallel forward only');
   const mainDamage = 5.2 + 1 * 1.45;
   assert.ok(shells.every(shell => Math.abs(shell.damage - mainDamage) < 1e-9), 'both shells carry full centre-shell damage');
 });
@@ -2341,7 +2380,8 @@ test('test mode can run endless rules for waves, damage scaling, and seamless bo
   assert.equal(game.isEndless(), true);
   game.mode = 'playing';
   game.endlessCycle = 1;
-  assert.equal(game.endlessDamage(5), 8, 'test-endless applies the cycle damage bonus');
+  game.stageIndex = 0; // sector 6
+  assert.equal(game.endlessDamage(5), 6, 'test-endless applies per-sector damage bonus from stage six');
 
   game.endlessWaveTimer = 0;
   game.updateDirector();

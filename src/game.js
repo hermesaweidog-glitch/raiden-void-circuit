@@ -258,7 +258,10 @@ export class Game {
 
   endlessDamage(base) {
     if (!this.isEndless()) return base;
-    return Math.min(30, base + this.endlessCycle * 3);
+    // From sector 6 onward: +1 damage per sector (not per 5-sector cycle).
+    const sector = this.stageIndex + this.endlessCycle * STAGES.length; // 0-based
+    const bonus = Math.max(0, sector - 4);
+    return Math.min(30, base + bonus);
   }
 
   xpStageIndex() {
@@ -342,6 +345,7 @@ export class Game {
     this.player.targetY = this.h - 92;
     this.player.targetX = clamp(this.player.x, 24, this.w - 24);
     this.player.invincible = Math.max(this.player.invincible, 120);
+    this.player.shieldsDropped = 0;
     const stage = STAGES[this.stageIndex];
     this.announce(`STAGE ${stage.id} — ${stage.name}`, stage.subtitle, 1900);
     this.updateHud();
@@ -713,8 +717,9 @@ export class Game {
       const hammer = primaryMaxed ? { thunderHammer: true, hammerRadius: (78 + level * 4) * 1.5, hammerDamage: (6 + level * 1.6) * .5 } : {};
       const mainShells = 1 + this.projectileBonus();
       for (let i = 0; i < mainShells; i += 1) {
-        const offset = mainShells > 1 ? (i - (mainShells - 1) / 2) * 1.3 : 0;
-        add(offset, -8.9, { damage: 5.2 + level * 1.45, radius: 6.2, splash: 34 + level * 5, ox: offset * 10, kind: 'cannon', color: '#ffd166', ...hammer });
+        // Gemini (or multi-shell) fires parallel forward shots — position offset only, no sideways vx.
+        const lane = mainShells > 1 ? (i - (mainShells - 1) / 2) : 0;
+        add(0, -8.9, { damage: 5.2 + level * 1.45, radius: 6.2, splash: 34 + level * 5, ox: lane * 14, kind: 'cannon', color: '#ffd166', ...hammer });
       }
       if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, kind: 'cannon', color: '#fb923c', ...hammer }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, kind: 'cannon', color: '#fb923c', ...hammer }); }
     }
@@ -1441,6 +1446,7 @@ export class Game {
     this.sound(enemy.type === 'boss' ? 'bossDown' : 'boom');
     if (enemy.type === 'boss' && !enemy.escort) {
       this.oreBossBonus += ORE_STAGE_BONUS;
+      if (this.player) this.player.shieldsDropped = 0;
       if (this.isEndless()) {
         if (this.stageIndex >= STAGES.length - 1) { this.endlessCycle += 1; this.stageIndex = 0; }
         else this.stageIndex += 1;
@@ -1585,7 +1591,8 @@ export class Game {
   updateXpOrbs() {
     if (!this.player) return;
     const magnet = upgradePower(this.passiveRank('magnet'));
-    const range = 42 + magnet * 30;
+    // Base pull matches former magnet lv1 (72); lv3 (power 5) still reaches 192.
+    const range = 72 + magnet * 24;
     for (let i = this.xpOrbs.length - 1; i >= 0; i -= 1) {
       const orb = this.xpOrbs[i];
       const dx = this.player.x - orb.x;
@@ -1597,7 +1604,7 @@ export class Game {
       if (d2 < range * range || orb.attracting || this.mode === 'stageClear') {
         orb.attracting = true;
         const distance = Math.max(1, Math.sqrt(d2));
-        const speed = Math.min(8 + magnet, Math.max(2.1 + magnet * .35, distance * .12));
+        const speed = Math.min(9 + magnet * .8, Math.max(2.45 + magnet * .28, distance * .12));
         orb.x += dx / distance * speed;
         orb.y += dy / distance * speed;
       }
@@ -1807,10 +1814,10 @@ export class Game {
         const magnet = upgradePower(this.passiveRank('magnet'));
         const dx = this.player.x - effect.x; const dy = this.player.y - effect.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 < (42 + magnet * 30) ** 2 || this.mode === 'stageClear') {
+        if (d2 < (72 + magnet * 24) ** 2 || this.mode === 'stageClear') {
           effect.attracting = true;
           const distance = Math.max(1, Math.sqrt(d2));
-          const speed = Math.min(9 + magnet, Math.max(2.4 + magnet * .4, distance * .14));
+          const speed = Math.min(10 + magnet * .8, Math.max(2.7 + magnet * .32, distance * .14));
           effect.x += dx / distance * speed;
           effect.y += dy / distance * speed;
         } else effect.y += .65;
@@ -1834,10 +1841,10 @@ export class Game {
         const magnet = upgradePower(this.passiveRank('magnet'));
         const dx = this.player.x - effect.x; const dy = this.player.y - effect.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 < (42 + magnet * 30) ** 2 || this.mode === 'stageClear') {
+        if (d2 < (72 + magnet * 24) ** 2 || this.mode === 'stageClear') {
           effect.attracting = true;
           const distance = Math.max(1, Math.sqrt(d2));
-          const speed = Math.min(9 + magnet, Math.max(2.4 + magnet * .4, distance * .14));
+          const speed = Math.min(10 + magnet * .8, Math.max(2.7 + magnet * .32, distance * .14));
           effect.x += dx / distance * speed;
           effect.y += dy / distance * speed;
         } else effect.y += effect.vy || .5;
