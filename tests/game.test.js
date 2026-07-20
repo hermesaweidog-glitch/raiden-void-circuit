@@ -2029,6 +2029,37 @@ test('returning from pause to the title resets the active run', () => {
 
 // --- Meta progression & ore economy ---------------------------------------
 
+test('the codex records craft, pilot, secondary, passive, and fusion pickups', () => {
+  const { game } = makeGame();
+  // Codex must start from a clean profile, not the maxed test baseline.
+  game.meta = { ore: 0, upgrades: {}, unlocks: [], cleared: false, codex: [] };
+  game.start({ runMode: 'test', craftId: 'lancer', pilotId: 'rambo' });
+  assert.ok(game.meta.codex.includes('craft:lancer'), 'starting a run records the craft');
+  assert.ok(game.meta.codex.includes('pilot:rambo'), 'starting a run records the pilot');
+
+  game.mode = 'levelup';
+  game.currentChoices = [{ id: 'homing', category: 'secondary', name: '追蹤飛彈', icon: '', description: '' }];
+  game.chooseUpgrade(0);
+  assert.ok(game.meta.codex.includes('secondary:homing'), 'secondary picks are recorded');
+
+  game.mode = 'levelup';
+  game.currentChoices = [{ id: 'armor', category: 'passive', name: '反應裝甲', icon: '', description: '' }];
+  game.chooseUpgrade(0);
+  assert.ok(game.meta.codex.includes('passive:armor'), 'passive picks are recorded');
+
+  game.mode = 'levelup';
+  game.currentChoices = [{ id: 'blackHole', category: 'fusion', name: '黑洞', icon: '', description: '' }];
+  game.chooseUpgrade(0);
+  assert.ok(game.meta.codex.includes('fusion:blackHole'), 'fusion picks are recorded');
+});
+
+test('max mode never writes to the codex so it cannot fake unlocks', () => {
+  const { game } = makeGame();
+  game.meta = { ore: 0, upgrades: {}, unlocks: [], cleared: false, codex: [] };
+  game.start({ runMode: 'normal', craftId: 'wasp', pilotId: 'gemini', maxMode: true });
+  assert.equal(game.meta.codex.length, 0, 'max-mode probing leaves the codex empty');
+});
+
 test('fresh meta state halves firepower, sets 25 base hp, and starts with no lives or slot bonuses', async () => {
   const meta = await import('../src/meta.js');
   const fresh = meta.metaFromUpgrades(meta.defaultMetaState().upgrades);

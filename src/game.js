@@ -194,6 +194,8 @@ export class Game {
     };
     this.hudBuildRevision = -1;
     this.jokerBonusPick = false;
+    // Record craft + pilot in the codex (skip MAX-mode probing so it can't fake unlocks).
+    if (!this.maxMode) { this.recordCodex(`craft:${craft.id}`); this.recordCodex(`pilot:${pilot.id}`); }
     this.dom['title-overlay'].classList.add('hidden');
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
@@ -1430,6 +1432,14 @@ export class Game {
     this.updateHud();
   }
 
+  recordCodex(id) {
+    if (!this.meta) return;
+    if (!Array.isArray(this.meta.codex)) this.meta.codex = [];
+    if (this.meta.codex.includes(id)) return;
+    this.meta.codex.push(id);
+    saveMetaState(this.meta);
+  }
+
   bankOre(clearBonus = 0) {
     if (this.oreBanked) return 0;
     this.oreBanked = true;
@@ -1653,6 +1663,9 @@ export class Game {
     } else if (choice.id === 'repair') p.hp = Math.min(p.maxHp, p.hp + this.repairAmount());
     else if (choice.id === 'bomb') p.bombs = Math.min(p.maxBombs, p.bombs + 1);
     else this.score += 2500;
+    if (choice.category === 'fusion') this.recordCodex(`fusion:${choice.id}`);
+    else if (choice.category === 'secondary') this.recordCodex(`secondary:${choice.id}`);
+    else if (choice.category === 'passive') this.recordCodex(`passive:${choice.id}`);
     p.build.revision += 1;
     p.pendingLevels -= 1;
     if (p.pilotId === 'joker' && choice.category !== 'supply') {

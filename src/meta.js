@@ -34,6 +34,7 @@ export function defaultMetaState() {
     upgrades: Object.fromEntries(Object.keys(META_UPGRADES).map(id => [id, 0])),
     unlocks: [],
     cleared: false,
+    codex: [],
   };
 }
 
@@ -43,6 +44,7 @@ export function maxedMetaState() {
     upgrades: Object.fromEntries(Object.entries(META_UPGRADES).map(([id, def]) => [id, def.max])),
     unlocks: Object.keys(META_UNLOCKS),
     cleared: true,
+    codex: [],
   };
 }
 
@@ -57,6 +59,7 @@ export function normalizeMetaState(raw) {
   }
   base.unlocks = Array.isArray(raw.unlocks) ? [...new Set(raw.unlocks.filter(id => META_UNLOCKS[id]))] : [];
   base.cleared = Boolean(raw.cleared);
+  base.codex = Array.isArray(raw.codex) ? [...new Set(raw.codex.filter(id => typeof id === 'string'))] : [];
   return base;
 }
 

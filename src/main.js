@@ -1,4 +1,4 @@
-import { AIRCRAFT, BUILD_LIMITS, KUNGFU_SECONDARIES, PASSIVES, PILOTS, SECONDARIES } from './config.js';
+import { AIRCRAFT, BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, PASSIVES, PILOTS, SECONDARIES } from './config.js';
 import { Game } from './game.js';
 import { isCraftUnlocked, isPilotUnlocked, loadMetaState, META_UNLOCKS, META_UPGRADES, purchaseUnlock, purchaseUpgrade, saveMetaState, upgradeCost } from './meta.js';
 
@@ -120,6 +120,7 @@ const showModeSelect = () => {
   hangarOverlay.classList.add('hidden');
   document.querySelector('.title-meta-bar').classList.remove('hidden');
   document.querySelector('#hangar-button').classList.remove('hidden');
+  document.querySelector('#codex-button').classList.remove('hidden');
   document.querySelector('#title-overlay').classList.remove('setup-open');
   refreshOreBalance();
 };
@@ -130,6 +131,7 @@ const showLoadout = mode => {
   modeSelect.classList.add('hidden');
   document.querySelector('.title-meta-bar').classList.add('hidden');
   document.querySelector('#hangar-button').classList.add('hidden');
+  document.querySelector('#codex-button').classList.add('hidden');
   loadoutSelect.classList.remove('hidden');
   craftStep.classList.remove('hidden');
   pilotStep.classList.add('hidden');
@@ -187,6 +189,45 @@ document.querySelector('#hangar-button').addEventListener('click', () => {
 });
 document.querySelector('#hangar-back').addEventListener('click', () => hangarOverlay.classList.add('hidden'));
 document.querySelector('#max-mode').addEventListener('change', () => { renderModeSelect(); renderAircraft(); });
+
+// --- Codex / archive -------------------------------------------------------
+const codexOverlay = document.querySelector('#codex-overlay');
+const iconMarkup = icon => icon && icon.startsWith('assets/') ? `<img src="${icon}" alt="" draggable="false">` : `<span class="codex-glyph">${icon || '◆'}</span>`;
+
+const renderCodex = () => {
+  const seen = new Set(game.meta.codex || []);
+  const rows = entries => entries.map(({ key, icon, name, desc, meta }) => {
+    const owned = seen.has(key);
+    return `<div class="codex-item${owned ? '' : ' locked'}">
+      <div class="codex-icon">${owned ? iconMarkup(icon) : '<span class="codex-glyph">🔒</span>'}</div>
+      <div class="codex-text"><strong>${owned ? name : '？？？'}</strong><small>${owned ? desc : '尚未取得 · 未解鎖'}</small></div>
+      ${meta && owned ? `<span class="codex-tag">${meta}</span>` : ''}
+    </div>`;
+  }).join('');
+  const section = (label, entries) => `<small class="setup-label">${label}</small><div class="codex-grid">${rows(entries)}</div>`;
+  const crafts = Object.values(AIRCRAFT).map(c => ({ key: `craft:${c.id}`, icon: c.art, name: `${c.name} · ${c.subtitle}`, desc: c.description, meta: c.primary?.toUpperCase() }));
+  const pilots = Object.values(PILOTS).map(p => ({ key: `pilot:${p.id}`, icon: p.art, name: `${p.name} · ${p.subtitle}`, desc: p.ability }));
+  const secondaries = [...Object.values(SECONDARIES), ...Object.values(KUNGFU_SECONDARIES)].map(s => ({ key: `secondary:${s.id}`, icon: s.icon, name: s.name, desc: s.description }));
+  const passives = Object.values(PASSIVES).map(p => ({ key: `passive:${p.id}`, icon: p.icon, name: p.name, desc: p.description }));
+  const catalog = { ...SECONDARIES, ...KUNGFU_SECONDARIES, ...PASSIVES };
+  const recipeText = f => {
+    const parts = [...(f.requires || []), ...(f.consumesSecondaries || []), ...(f.requiresPassives || [])].map(id => catalog[id]?.name || id);
+    return `配方：${parts.join(' + ') || '特殊條件'}`;
+  };
+  const fusions = Object.values(FUSIONS).map(f => ({ key: `fusion:${f.id}`, icon: f.icon, name: f.name, desc: `${recipeText(f)}。${f.description}`, meta: f.set === 'kungfu' ? '功夫' : '合成' }));
+  document.querySelector('#codex-body').innerHTML = section('AIRCRAFT · 機體（主武器）', crafts)
+    + section('PILOTS · 駕駛員', pilots)
+    + section('SECONDARY · 副武器', secondaries)
+    + section('PASSIVE · 被動元件', passives)
+    + section('FUSION · 合成配方', fusions);
+};
+
+document.querySelector('#codex-button').addEventListener('click', () => {
+  game.meta = loadMetaState();
+  renderCodex();
+  codexOverlay.classList.remove('hidden');
+});
+document.querySelector('#codex-back').addEventListener('click', () => codexOverlay.classList.add('hidden'));
 
 // Reset meta progress: two-step confirmation on the same button.
 const resetButton = document.querySelector('#reset-meta');
