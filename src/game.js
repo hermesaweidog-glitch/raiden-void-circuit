@@ -1928,11 +1928,13 @@ export class Game {
     const firstClear = victory && this.runMode === 'normal' && !this.maxMode && !this.meta.cleared;
     if (firstClear) this.meta.cleared = true;
     const banked = this.bankOre(clearBonus);
-    const oreLine = `ORE　◆ ${this.runOre}${clearBonus ? `　CLEAR BONUS　◆ ${clearBonus}` : ''}${this.maxMode || this.runMode === 'test' ? '（未入帳）' : banked > 0 ? `　→ 總計 ◆ ${this.meta.ore}` : ''}<br>`;
+    const oreSuffix = this.maxMode || this.runMode === 'test' ? '（未入帳）' : banked > 0 ? `　→ 總計 ◆ ${this.meta.ore}` : '';
+    const oreExtra = clearBonus ? `　CLEAR BONUS　◆ ${clearBonus}` : '';
+    const oreLine = `<div class="summary-ore">ORE　◆ ${this.runOre}${oreExtra}${oreSuffix}</div>`;
     this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}${oreLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
     if (victory && this.runMode === 'normal') {
       const skipBank = this.maxMode || this.runMode === 'test';
-      this.dom['clear-body'].innerHTML = `通關獎勵　<b>◆ ${clearBonus}</b><br>本次收集　<b>◆ ${this.runOre}</b><br>${skipBank ? '（測試／MAX 模式不入帳）' : `帳戶總計　<b>◆ ${this.meta.ore}</b>`}${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
+      this.dom['clear-body'].innerHTML = `<div class="summary-ore">通關獎勵　◆ ${clearBonus}<br>本次收集　◆ ${this.runOre}<br>${skipBank ? '（測試／MAX 模式不入帳）' : `帳戶總計　◆ ${this.meta.ore}`}</div>${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
       this.dom['clear-overlay'].classList.remove('hidden');
       this.dom['clear-confirm'].onclick = () => {
         this.dom['clear-overlay'].classList.add('hidden');

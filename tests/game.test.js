@@ -567,6 +567,7 @@ test('end screen remains actionable when browser storage rejects a new high scor
       assert.equal(game.dom['clear-overlay'].classList.contains('hidden'), false);
       game.dom['clear-confirm'].onclick();
     }
+    assert.match(game.dom['run-summary'].innerHTML, /summary-ore/, 'settlement highlights ore with shared styling');
     assert.equal(game.dom['end-overlay'].classList.contains('hidden'), false);
   }
 });

@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=26"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=27"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -96,10 +96,26 @@ test('aircraft and pilot selection are split into two dedicated enlarged steps',
   assert.match(css, /\.aircraft-card\.locked,\.pilot-card\.locked/);
 });
 
-test('HUD shows run ore and remaining lives', () => {
+test('HUD shows run ore before sector and styles it like the title wallet', () => {
   for (const id of ['ore', 'lives']) assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   assert.match(html, /<small>ORE<\/small>/);
+  assert.match(html, /class="hud-ore"/);
   assert.match(html, /<small>LIVES<\/small>/);
+  const oreIndex = html.indexOf('<small>ORE</small>');
+  const sectorIndex = html.indexOf('<small>SECTOR</small>');
+  assert.ok(oreIndex > 0 && oreIndex < sectorIndex, 'ORE appears before SECTOR in the HUD');
+  assert.match(css, /#ore|#ore\{|hud-ore/);
+});
+
+test('title shows version and exposes archive/codex from title and pause', () => {
+  assert.match(html, /id=["']title-version["']/);
+  assert.match(html, /ver\.27/);
+  for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(main, /openCodex/);
+  assert.match(main, /fromPause/);
+  assert.match(css, /\.summary-ore/);
 });
 
 test('test options include the endless rules toggle', () => {

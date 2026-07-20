@@ -193,6 +193,7 @@ document.querySelector('#max-mode').addEventListener('change', () => { renderMod
 // --- Codex / archive -------------------------------------------------------
 const codexOverlay = document.querySelector('#codex-overlay');
 const iconMarkup = icon => icon && icon.startsWith('assets/') ? `<img src="${icon}" alt="" draggable="false">` : `<span class="codex-glyph">${icon || '◆'}</span>`;
+let codexReturnToPause = false;
 
 const renderCodex = () => {
   const seen = new Set(game.meta.codex || []);
@@ -222,12 +223,26 @@ const renderCodex = () => {
     + section('FUSION · 合成配方', fusions);
 };
 
-document.querySelector('#codex-button').addEventListener('click', () => {
+const openCodex = ({ fromPause = false } = {}) => {
   game.meta = loadMetaState();
   renderCodex();
+  codexReturnToPause = fromPause;
   codexOverlay.classList.remove('hidden');
+};
+
+const closeCodex = () => {
+  codexOverlay.classList.add('hidden');
+  const returnToPause = codexReturnToPause;
+  codexReturnToPause = false;
+  if (returnToPause && game.mode === 'paused') game.dom['pause-overlay']?.classList.remove('hidden');
+};
+
+document.querySelector('#codex-button').addEventListener('click', () => openCodex());
+document.querySelector('#pause-codex-button').addEventListener('click', () => {
+  game.dom['pause-overlay']?.classList.add('hidden');
+  openCodex({ fromPause: true });
 });
-document.querySelector('#codex-back').addEventListener('click', () => codexOverlay.classList.add('hidden'));
+document.querySelector('#codex-back').addEventListener('click', closeCodex);
 
 // Reset meta progress: two-step confirmation on the same button.
 const resetButton = document.querySelector('#reset-meta');
