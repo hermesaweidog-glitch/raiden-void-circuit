@@ -2084,7 +2084,7 @@ test('fresh meta state halves firepower, sets 25 base hp, and starts with no liv
   assert.equal(fresh.secondarySlots, 2);
   assert.equal(fresh.passiveSlots, 4);
   assert.ok(Math.abs(fresh.xpMultiplier - .7) < 1e-9);
-  assert.equal(fresh.overdriveStep, 5, 'fresh overdrive grants 5% per pick');
+  assert.equal(fresh.overdriveStep, 1, 'fresh overdrive grants 1% per pick');
 
   const maxed = meta.metaFromUpgrades(meta.maxedMetaState().upgrades);
   assert.equal(maxed.attackMultiplier, 1);
@@ -2154,16 +2154,16 @@ test('meta purchases spend ore, respect caps, and unlocks are one-time', async (
   assert.equal(meta.purchaseUpgrade(capped, 'firepower'), false, 'maxed rank cannot be bought again');
 });
 
-test('ore drops follow the 0.3 rate for small enemies and guaranteed multiplied drops for large ones', async () => {
+test('ore drops: small enemies fixed 10, elite x3, midboss x5, boss x10 of stacked base', async () => {
   const meta = await import('../src/meta.js');
-  assert.equal(meta.oreDropFor('scout', 10, () => .29), 10, 'roll under 0.3 drops the base value');
-  assert.equal(meta.oreDropFor('scout', 10, () => .31), 0, 'roll over 0.3 drops nothing');
-  assert.equal(meta.oreDropFor('elite', 10, () => .99), 10, 'large enemies always drop');
+  assert.equal(meta.oreDropFor('scout', 40, () => .29), 10, 'small enemies always drop fixed 10');
+  assert.equal(meta.oreDropFor('scout', 40, () => .31), 0, 'roll over 0.3 drops nothing');
+  assert.equal(meta.oreDropFor('elite', 10, () => .99), 30, 'elite pays three times stacked base');
   assert.equal(meta.oreDropFor('midboss', 10, () => .99), 50, 'midboss pays five times base');
   assert.equal(meta.oreDropFor('boss', 12, () => .99), 120, 'boss pays ten times the current base');
 });
 
-test('killing enemies drops ore pickups, bosses raise the base, and the run banks once on game over', () => {
+test('killing enemies drops ore pickups, bosses raise the base by one, and the run banks once on game over', () => {
   const { game } = makeGame();
   game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
   game.chooseUpgrade(0);
@@ -2176,24 +2176,54 @@ test('killing enemies drops ore pickups, bosses raise the base, and the run bank
     game.killEnemy(scout);
     const ore = game.effects.find(effect => effect.type === 'ore');
     assert.ok(ore, 'small enemies drop an ore pickup on the field');
-    assert.equal(ore.value, 20, 'base 10 plus maxed oreGain 10');
+    assert.equal(ore.value, 10, 'small enemies always drop fixed 10, ignoring oreGain stacking');
 
     game.collectOre(ore.value, ore.x, ore.y);
-    assert.equal(game.runOre, 20);
+    assert.equal(game.runOre, 10);
 
     game.mode = 'playing';
     const boss = { id: 602, type: 'boss', bossId: 'manta', x: 240, y: 118, radius: 52, hp: 0, maxHp: 100, alive: true, orbiting: true, score: 1000, xp: 65, color: '#fff' };
     game.enemies = [boss];
     game.killEnemy(boss);
-    assert.equal(game.runOre, 20 + 200, 'boss ore is collected instantly at ten times base');
-    assert.equal(game.oreBossBonus, 2, 'each boss kill raises the drop base by two');
+    // maxed oreGain 10 + base 10 = 20 stacked; boss = 200
+    assert.equal(game.runOre, 10 + 200, 'boss ore is collected instantly at ten times stacked base');
+    assert.equal(game.oreBossBonus, 1, 'each boss kill raises the drop base by one');
   } finally {
     Math.random = originalRandom;
   }
 
   const banked = game.bankOre(0);
-  assert.equal(banked, 220);
+  assert.equal(banked, 210);
   assert.equal(game.bankOre(0), 0, 'banking is idempotent per run');
+});
+
+test('returning to title from a run banks unbanked ore', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.runOre = 333;
+  const before = game.meta.ore;
+  game.showTitle();
+  assert.equal(game.meta.ore, before + 333, 'pause/title exit banks run ore');
+  assert.equal(game.runOre, 0);
+  assert.equal(game.mode, 'title');
+});
+
+test('endless cycle 2+ never drops below stage-5 aggressiveness', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.endlessCycle = 0;
+  game.stageIndex = 4;
+  const stageFive = game.activeStage();
+  game.endlessCycle = 1;
+  game.stageIndex = 0;
+  const cycleTwo = game.activeStage();
+  assert.ok(cycleTwo.fireRate >= stageFive.fireRate - 1e-9, 'cycle2 fireRate >= S5');
+  assert.ok(cycleTwo.bulletCount >= stageFive.bulletCount - 1e-9, 'cycle2 bulletCount >= S5');
+  assert.ok(cycleTwo.enemySpeed >= stageFive.enemySpeed - 1e-9, 'cycle2 enemySpeed >= S5');
 });
 
 test('max mode and test mode runs never bank ore into the meta wallet', () => {

@@ -10,7 +10,7 @@ export const META_UPGRADES = {
   passiveSlot: { id: 'passiveSlot', name: '被動元件槽', icon: '▤', max: 2, costs: [4000, 20000], describe: rank => `被動槽 ${4 + rank}` },
   oreGain: { id: 'oreGain', name: '採礦強化', icon: '◆', max: 10, costs: [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000], describe: rank => `源晶礦基數 +${rank}` },
   xpGain: { id: 'xpGain', name: '經驗增幅', icon: '✦', max: 3, costs: [500, 2000, 5000], describe: rank => `經驗加成 +${rank * 10}%` },
-  overdriveBoost: { id: 'overdriveBoost', name: '超頻強化', icon: 'assets/icons/overdrive.webp', max: 5, costs: [2000, 5000, 10000, 18000, 30000], describe: rank => `超頻火力每次 +${5 + rank}%` },
+  overdriveBoost: { id: 'overdriveBoost', name: '超頻強化', icon: 'assets/icons/overdrive.webp', max: 9, costs: [1500, 3000, 5500, 9000, 14000, 22000, 38000, 65000, 100000], describe: rank => `超頻火力每次 +${1 + rank}%` },
 };
 
 export const META_UNLOCKS = {
@@ -138,19 +138,23 @@ export function metaFromUpgrades(upgrades) {
     passiveSlots: 4 + (upgrades.passiveSlot ?? 0),
     oreBonus: upgrades.oreGain ?? 0,
     xpMultiplier: metaXpMultiplier(upgrades.xpGain ?? 0),
-    overdriveStep: 5 + (upgrades.overdriveBoost ?? 0),
+    overdriveStep: 1 + (upgrades.overdriveBoost ?? 0),
   };
 }
 
 // --- Ore drop economics ----------------------------------------------------
+// Small enemies always drop a fixed ORE_BASE_VALUE (when they roll a drop).
+// Elite / midboss / boss scale off the stacked base (base + oreGain + per-stage bonus).
 export const ORE_BASE_VALUE = 10;
 export const ORE_DROP_CHANCE = .3;
 export const ORE_CLEAR_BONUS = 1750;
+export const ORE_STAGE_BONUS = 1; // +1 to stacked base per cleared stage / sector
 
 export function oreDropFor(enemyType, baseValue, random = Math.random) {
-  const large = enemyType === 'elite' || enemyType === 'midboss' || enemyType === 'boss';
-  if (!large && random() >= ORE_DROP_CHANCE) return 0;
   if (enemyType === 'boss') return baseValue * 10;
   if (enemyType === 'midboss') return baseValue * 5;
-  return baseValue;
+  if (enemyType === 'elite') return baseValue * 3;
+  // Small enemies: fixed 10, 30% chance — never scales with stacked base.
+  if (random() >= ORE_DROP_CHANCE) return 0;
+  return ORE_BASE_VALUE;
 }

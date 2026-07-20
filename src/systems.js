@@ -84,7 +84,7 @@ export function makeUpgradePool(build) {
     if (fusionEligible(fusion, build, secondaryCatalog)) pool.push(fusion);
   }
   if (isBuildMaxed(build)) {
-    pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '超頻：火力', description: `所有攻擊永久增加 ${build.overdriveStep ?? 10}%；目前總加成 +${(build.overdrive || 0) * (build.overdriveStep ?? 10)}%。` });
+    pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '超頻：火力', description: `所有攻擊永久增加 ${build.overdriveStep ?? 1}%；目前總加成 +${(build.overdrive || 0) * (build.overdriveStep ?? 1)}%。` });
     if (kungfu && (build.evasion || 20) < 80) {
       const current = build.evasion || 20;
       pool.push({ id: 'evasion-boost', category: 'evasion', icon: 'assets/icons/swift-defense.svg', name: '唯快不破', description: `迴避機率由 ${current}% 提升至 ${Math.min(80, current + 2)}%；最高 80%。` });

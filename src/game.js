@@ -1,6 +1,6 @@
 import { AIRCRAFT, BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, SECONDARIES, PASSIVES, PILOTS, PRIMARY_ICON, STAT_SCALE, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
-import { loadMetaState, maxedMetaState, metaFromUpgrades, ORE_BASE_VALUE, ORE_CLEAR_BONUS, oreDropFor, saveMetaState } from './meta.js';
+import { loadMetaState, maxedMetaState, metaFromUpgrades, ORE_BASE_VALUE, ORE_CLEAR_BONUS, ORE_STAGE_BONUS, oreDropFor, saveMetaState } from './meta.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -189,7 +189,7 @@ export class Game {
       bombs: isTest ? maxBombs : Math.min(maxBombs, this.metaCombat.bombs + bombBonus + (craft.bombCapBonus || 0)), maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
       shadowCooldown: 360, shadowTimer: 0, grazeBonus: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
-      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, overdriveStep: this.metaCombat?.overdriveStep ?? 10, revision: 0 },
+      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, overdriveStep: this.metaCombat?.overdriveStep ?? 1, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -238,6 +238,24 @@ export class Game {
     return this.runMode === 'endless' || Boolean(this.testFlags?.endless);
   }
 
+  // Combat-facing stage profile. Endless cycle 2+ (stage 6 onwards) never dips
+  // below VOID THRONE aggressiveness, and keeps climbing with each cycle.
+  activeStage() {
+    const stage = STAGES[this.stageIndex] || STAGES[0];
+    if (!this.isEndless() || this.endlessCycle < 1) return stage;
+    const floor = STAGES[STAGES.length - 1];
+    const cycleBoost = 1 + (this.endlessCycle - 1) * .06;
+    return {
+      ...stage,
+      enemySpeed: Math.max(stage.enemySpeed, floor.enemySpeed) * cycleBoost,
+      bulletSpeed: Math.max(stage.bulletSpeed, floor.bulletSpeed) * cycleBoost,
+      bulletCount: Math.max(stage.bulletCount, floor.bulletCount) * (1 + (this.endlessCycle - 1) * .04),
+      fireRate: Math.max(stage.fireRate, floor.fireRate) * (1 + (this.endlessCycle - 1) * .04),
+      enemyHp: Math.max(stage.enemyHp, floor.enemyHp) * (1 + (this.endlessCycle - 1) * .05),
+      bossHp: Math.max(stage.bossHp, floor.bossHp) * (1 + (this.endlessCycle - 1) * .05),
+    };
+  }
+
   endlessDamage(base) {
     if (!this.isEndless()) return base;
     return Math.min(30, base + this.endlessCycle * 3);
@@ -257,6 +275,10 @@ export class Game {
   }
 
   showTitle() {
+    // Returning from an active run banks any unbanked ore (pause → title included).
+    if (!this.oreBanked && this.runOre > 0 && this.mode !== 'title') {
+      this.bankOre(0);
+    }
     this.mode = 'title';
     this.frame = 0;
     this.worldScroll = 0;
@@ -272,9 +294,13 @@ export class Game {
     this.upgradeReturnMode = null;
     this.lastSoundFrame = {};
     this.announcementToken += 1;
+    this.runOre = 0;
+    this.oreBossBonus = 0;
+    this.oreBanked = false;
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['upgrade-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
+    this.dom['clear-overlay']?.classList.add('hidden');
     this.dom['title-overlay'].classList.remove('hidden');
     this.dom.announcement.classList.add('hidden');
     this.dom['pause-button'].textContent = 'PAUSE';
@@ -515,7 +541,7 @@ export class Game {
     for (const enemy of this.enemies) if (enemy.alive) activeEnemies += 1;
     if (activeEnemies >= WORLD.maxEnemies) return false;
     const base = ENEMY_TYPES[type];
-    const stage = STAGES[this.stageIndex];
+    const stage = this.activeStage();
     const endlessHp = 1 + this.endlessCycle * .35;
     const endlessSpeed = 1 + this.endlessCycle * .05;
     const hp = base.hp * stage.enemyHp * pressure * endlessHp * STAT_SCALE;
@@ -531,13 +557,14 @@ export class Game {
   }
 
   spawnBoss() {
-    const stage = STAGES[this.stageIndex];
-    const data = BOSSES[stage.boss];
+    const route = STAGES[this.stageIndex];
+    const stage = this.activeStage();
+    const data = BOSSES[route.boss];
     const hp = data.baseHp * stage.bossHp * (1 + this.endlessCycle * .35) * STAT_SCALE;
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
-      age: 0, phase: 0, hitFlash: 0, score: 10000 * stage.id, xp: 65 + stage.id * 15, pressure: 1, arriving: true,
+      age: 0, phase: 0, hitFlash: 0, score: 10000 * route.id, xp: 65 + route.id * 15, pressure: 1, arriving: true,
     });
     this.announce(data.name, data.title, 1700);
     this.sound('boss');
@@ -1177,13 +1204,13 @@ export class Game {
       enemy.cooldown -= motionScale;
       if (enemy.y >= 80 && enemy.cooldown <= 0) {
         this.midbossAttack(enemy);
-        enemy.cooldown = Math.max(52, 98 / STAGES[this.stageIndex].fireRate);
+        enemy.cooldown = Math.max(52, 98 / this.activeStage().fireRate);
       }
     }
   }
 
   midbossAttack(enemy) {
-    const speed = (1.55 + this.stageIndex * .1) * STAGES[this.stageIndex].bulletSpeed;
+    const speed = (1.55 + this.stageIndex * .1) * this.activeStage().bulletSpeed;
     if (this.stageIndex === 0) {
       for (let shot = -3; shot <= 3; shot += 1) this.aim(enemy, speed, shot * .13);
     } else if (this.stageIndex === 1) {
@@ -1209,7 +1236,7 @@ export class Game {
   }
 
   enemyCooldown(enemy) {
-    const stage = STAGES[this.stageIndex];
+    const stage = this.activeStage();
     const base = enemy.type === 'elite' ? 70 : enemy.type === 'gunship' ? 92 : 115;
     return Math.max(28, base / stage.fireRate / enemy.pressure + rand(-12, 16));
   }
@@ -1230,7 +1257,7 @@ export class Game {
   }
 
   enemyShoot(enemy) {
-    const stage = STAGES[this.stageIndex];
+    const stage = this.activeStage();
     const speed = (1.65 + this.stageIndex * .12) * stage.bulletSpeed;
     const countBonus = Math.floor((stage.bulletCount - .9) * 2.2);
     if (enemy.type === 'scout') this.aim(enemy, speed);
@@ -1271,13 +1298,13 @@ export class Game {
       boss.cooldown -= motionScale;
       if (boss.y >= 105 && boss.cooldown <= 0) {
         this.bossAttack(boss);
-        boss.cooldown = Math.max(24, (90 - phase * 14 - this.stageIndex * 5) / STAGES[this.stageIndex].fireRate);
+        boss.cooldown = Math.max(24, (90 - phase * 14 - this.stageIndex * 5) / this.activeStage().fireRate);
       }
     }
   }
 
   bossAttack(boss) {
-    const s = STAGES[this.stageIndex];
+    const s = this.activeStage();
     const speed = (1.75 + boss.phase * .22) * s.bulletSpeed;
     const radial = (count, bulletSpeed, offset = 0, skip = () => false) => {
       for (let n = 0; n < count; n += 1) { if (skip(n)) continue; const a = n / count * TAU + offset; this.addEnemyBullet(boss.x, boss.y, Math.cos(a) * bulletSpeed, Math.sin(a) * bulletSpeed, 5, boss.color, 360, 0, 10); }
@@ -1361,7 +1388,7 @@ export class Game {
     if (enemy.type === 'midboss' && !enemy.orbiting) return;
     if (enemy.type === 'boss' && enemy.arriving) return;
     const overdrive = this.player?.build?.overdrive || 0;
-    const overdriveStep = this.player?.build?.overdriveStep ?? 10;
+    const overdriveStep = this.player?.build?.overdriveStep ?? 1;
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
     const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
     const metaMultiplier = (this.metaCombat?.attackMultiplier ?? 1) * (source !== 'primary' && this.player?.craft?.secondaryBoost ? 1 + this.player.craft.secondaryBoost : 1);
@@ -1413,7 +1440,7 @@ export class Game {
     this.spawnBurst(enemy.x, enemy.y, enemy.type === 'boss' ? 56 : enemy.type === 'midboss' ? 34 : enemy.type === 'elite' ? 28 : 12, enemy.color);
     this.sound(enemy.type === 'boss' ? 'bossDown' : 'boom');
     if (enemy.type === 'boss' && !enemy.escort) {
-      this.oreBossBonus += 2;
+      this.oreBossBonus += ORE_STAGE_BONUS;
       if (this.isEndless()) {
         if (this.stageIndex >= STAGES.length - 1) { this.endlessCycle += 1; this.stageIndex = 0; }
         else this.stageIndex += 1;
@@ -1469,7 +1496,7 @@ export class Game {
     enemy.alive = false;
     this.score += enemy.score;
     this.dropOre(enemy);
-    this.oreBossBonus += 2;
+    this.oreBossBonus += ORE_STAGE_BONUS;
     this.mode = 'finale';
     this.enemyBullets = [];
     this.playerBullets = [];
@@ -1630,7 +1657,7 @@ export class Game {
       button.className = 'upgrade-card';
       const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.category === 'overdrive' ? this.player.build.overdrive || 0 : choice.category === 'evasion' ? this.player.build.evasion || 20 : choice.category === 'soulTaker' ? this.player.build.soulTaker || 1 : choice.category === 'battlefieldCleanup' ? this.player.build.battlefieldCleanup || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
       const next = current + 1 >= WORLD.maxUpgradeRank && ['primary', 'secondary', 'passive'].includes(choice.category) ? 'MAX' : current + 1;
-      const progress = choice.category === 'overdrive' ? `火力 +${current * (this.player.build.overdriveStep ?? 10)}% → +${(current + 1) * (this.player.build.overdriveStep ?? 10)}%` : choice.category === 'evasion' ? `${current}% → ${Math.min(80, current + 2)}%` : choice.category === 'soulTaker' ? `${current}% → ${Math.min(5, current + .5)}%` : choice.category === 'battlefieldCleanup' ? `+${current}% → +${current + 1}%` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
+      const progress = choice.category === 'overdrive' ? `火力 +${current * (this.player.build.overdriveStep ?? 1)}% → +${(current + 1) * (this.player.build.overdriveStep ?? 1)}%` : choice.category === 'evasion' ? `${current}% → ${Math.min(80, current + 2)}%` : choice.category === 'soulTaker' ? `${current}% → ${Math.min(5, current + .5)}%` : choice.category === 'battlefieldCleanup' ? `+${current}% → +${current + 1}%` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
       button.innerHTML = `<span class="upgrade-icon" aria-hidden="true">${skillIconMarkup(choice.icon)}</span><span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · ${progress}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
       button.addEventListener('click', () => this.chooseUpgrade(index));
       holder.append(button);
@@ -1968,7 +1995,7 @@ export class Game {
     const list = (items, catalog) => Object.entries(items).map(([id, rank]) => { const item = catalog[id]; return item ? `${item.name} ${rank >= item.max ? 'MAX' : `Lv.${rank}`}` : id; }).join('　/　') || '尚未取得';
     const kungfu = p.build.secondarySet === 'kungfu';
     const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${kungfu ? '宗師境界' : p.craft.mastery}` : '';
-    const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * (p.build.overdriveStep ?? 10)}%` : '';
+    const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * (p.build.overdriveStep ?? 1)}%` : '';
     const modeLabel = { normal: '一般模式', endless: `無限模式 · 循環 ${this.endlessCycle + 1}`, test: '測試模式' }[this.runMode] || '一般模式';
     const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
     this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
@@ -2109,7 +2136,7 @@ export class Game {
       const primaryBadge = rankBadge(p?.build.primaryLevel || 0);
       const kungfu = p?.build.secondarySet === 'kungfu';
       const secondaryCatalog = this.secondaryCatalog(p);
-      const firepowerBonus = (p?.build.overdrive || 0) * (p?.build.overdriveStep ?? 10);
+      const firepowerBonus = (p?.build.overdrive || 0) * (p?.build.overdriveStep ?? 1);
       const primaryName = kungfu ? '基本拳法' : `${p?.craft.name}主武器`;
       const primaryIcon = kungfu ? 'assets/icons/basic-fist.svg' : PRIMARY_ICON;
       const primaryToken = p ? token(primaryIcon, `${primaryBadge} · +${firepowerBonus}%`, `${primaryName} · 超頻火力 +${firepowerBonus}%`, p.build.primaryLevel) : '';

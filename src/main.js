@@ -133,6 +133,7 @@ const showLoadout = mode => {
   document.querySelector('#hangar-button').classList.add('hidden');
   document.querySelector('#codex-button').classList.add('hidden');
   loadoutSelect.classList.remove('hidden');
+  loadoutSelect.classList.remove('pilot-open');
   craftStep.classList.remove('hidden');
   pilotStep.classList.add('hidden');
   testOptions.classList.toggle('hidden', mode !== 'test');
@@ -143,6 +144,7 @@ const showLoadout = mode => {
 const showPilotStep = () => {
   craftStep.classList.add('hidden');
   pilotStep.classList.remove('hidden');
+  loadoutSelect.classList.add('pilot-open');
   renderPilots();
   renderSecondaryOptions();
   renderPassiveOptions();
@@ -274,6 +276,7 @@ document.querySelector('#craft-next').addEventListener('click', showPilotStep);
 document.querySelector('#pilot-back').addEventListener('click', () => {
   pilotStep.classList.add('hidden');
   craftStep.classList.remove('hidden');
+  loadoutSelect.classList.remove('pilot-open');
   renderAircraft();
 });
 

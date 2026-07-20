@@ -49,7 +49,7 @@
         <div class="title-lockup">
           <p class="eyebrow">TACTICAL ROGUELITE STRIKE</p>
           <h1>VOID<br><span>CIRCUIT</span></h1>
-          <p class="title-version" id="title-version">ver.29</p>
+          <p class="title-version" id="title-version">ver.30</p>
         </div>
         <div class="title-meta-bar">
           <div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
@@ -62,14 +62,14 @@
         <div id="mode-select" class="setup-step" aria-label="選擇遊戲模式"></div>
         <button id="codex-button" class="mode-card codex-button"><small>ARCHIVE</small><b>圖鑑</b><span>檢視所有機體、駕駛、副武器、被動與合成配方。</span></button>
         <div id="loadout-select" class="setup-step hidden" aria-label="配置本次出擊">
-          <div class="setup-heading"><button id="setup-back" class="back-square" aria-label="返回模式選擇">←</button><b id="setup-mode-title">一般模式</b></div>
+          <div class="setup-heading" id="setup-mode-heading"><button id="setup-back" class="back-text-btn" type="button">返回</button><b id="setup-mode-title">一般模式</b></div>
           <div id="craft-step">
             <small class="setup-label">SELECT AIRCRAFT · 選擇機體</small>
             <div id="aircraft-select" class="aircraft-grid" aria-label="選擇戰機"></div>
             <button id="craft-next" class="primary-button deploy-button">選擇駕駛 →</button>
           </div>
           <div id="pilot-step" class="hidden">
-            <div class="setup-heading"><button id="pilot-back" class="back-square" aria-label="返回機體選擇">←</button><b>SELECT PILOT · 選擇駕駛</b></div>
+            <div class="setup-heading"><button id="pilot-back" class="back-text-btn" type="button">返回</button><b>SELECT PILOT · 選擇駕駛</b></div>
             <div id="pilot-select" class="pilot-grid" aria-label="選擇駕駛"></div>
             <div id="test-options" class="test-options hidden">
               <label class="stage-select">起始關卡
@@ -137,7 +137,7 @@
       </section>
 
       <section id="hangar-overlay" class="overlay hangar-overlay hidden" aria-label="升級清單">
-        <div class="setup-heading"><button id="hangar-back" class="back-square" aria-label="返回主畫面">←</button><b>UPGRADE HANGAR · 升級機庫</b></div>
+        <div class="setup-heading"><button id="hangar-back" class="back-text-btn" type="button">返回</button><b>UPGRADE HANGAR · 升級機庫</b></div>
         <b id="hangar-ore" class="hangar-ore">◆ 0</b>
         <small class="setup-label">UPGRADES · 機體強化</small>
         <div id="hangar-upgrades" class="hangar-list"></div>
@@ -148,7 +148,7 @@
       </section>
 
       <section id="codex-overlay" class="overlay codex-overlay hidden" aria-label="圖鑑">
-        <div class="setup-heading"><button id="codex-back" class="back-square" aria-label="返回主畫面">←</button><b>ARCHIVE · 圖鑑</b></div>
+        <div class="setup-heading"><button id="codex-back" class="back-text-btn" type="button">返回</button><b>ARCHIVE · 圖鑑</b></div>
         <p class="codex-hint">尚未取得過的內容顯示為未解鎖。重置進度會一併清除此圖鑑。</p>
         <div id="codex-body"></div>
       </section>
@@ -164,6 +164,6 @@
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js?v=29"></script>
+  <script type="module" src="./src/main.js?v=30"></script>
 </body>
 </html>
