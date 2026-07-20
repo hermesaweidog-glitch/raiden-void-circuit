@@ -2264,15 +2264,70 @@ export class Game {
   drawBullets(ctx) {
     for(const b of this.playerBullets){
       if(b.kind==='beam'){
-        // Core stroke matches the damaging half-width (radius); outer glow is only a slim halo.
-        const core = Math.max(3, b.radius * 2);
-        const halo = core + 8;
+        // Readable aim core + soft edge-faded damage band (does not fully occlude enemies).
+        // Visual width tracks hit radius; opacity falls off toward the sides.
+        const half = Math.max(2.5, b.radius);
+        const top = b.endY;
+        const height = Math.max(1, b.y - top);
         ctx.save();
-        ctx.strokeStyle='#42e8ff';ctx.globalAlpha=.16;ctx.lineWidth=halo;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x,b.endY);ctx.stroke();
-        ctx.globalAlpha=.55;ctx.strokeStyle='#7df5ff';ctx.lineWidth=core*1.15;ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x,b.endY);ctx.stroke();
-        ctx.globalAlpha=.98;ctx.strokeStyle='#dffcff';ctx.lineWidth=core;ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x,b.endY);ctx.stroke();
-        if(b.statuses?.includes('shock')){ctx.strokeStyle='#facc15';ctx.globalAlpha=.75;ctx.lineWidth=Math.max(1.5,core*.22);ctx.beginPath();ctx.moveTo(b.x,b.y);for(let y=b.y-24,step=0;y>b.endY;y-=24,step+=1)ctx.lineTo(b.x+(step%2?4:-4),Math.max(y,b.endY));ctx.stroke();}
-        ctx.restore();continue;
+        const band = ctx.createLinearGradient(b.x - half, 0, b.x + half, 0);
+        band.addColorStop(0, 'rgba(66,232,255,0)');
+        band.addColorStop(.22, 'rgba(66,232,255,.10)');
+        band.addColorStop(.5, 'rgba(125,245,255,.26)');
+        band.addColorStop(.78, 'rgba(66,232,255,.10)');
+        band.addColorStop(1, 'rgba(66,232,255,0)');
+        ctx.fillStyle = band;
+        ctx.fillRect(b.x - half, top, half * 2, height);
+        // Thin bright core for aim clarity (≈35% of damage width).
+        ctx.globalAlpha = .92;
+        ctx.strokeStyle = '#f0fdff';
+        ctx.lineWidth = Math.max(2, half * .35);
+        ctx.lineCap = 'round';
+        ctx.shadowColor = '#7df5ff';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x, top);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // Faint edge guides marking the actual damage bounds.
+        ctx.globalAlpha = .18;
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#a5f3fc';
+        ctx.beginPath();
+        ctx.moveTo(b.x - half, b.y); ctx.lineTo(b.x - half, top);
+        ctx.moveTo(b.x + half, b.y); ctx.lineTo(b.x + half, top);
+        ctx.stroke();
+        if (b.statuses?.includes('shock')) {
+          // LV3: twin electric filaments + drifting sparks (replaces cheap zigzag).
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = '#fde68a';
+          ctx.lineWidth = 1.35;
+          for (const side of [-1, 1]) {
+            ctx.globalAlpha = .5;
+            ctx.beginPath();
+            let started = false;
+            for (let y = b.y, step = 0; y >= top; y -= 7, step += 1) {
+              const wobble = Math.sin(this.frame * .38 + step * .55 + side * 1.7) * half * .28;
+              const x = b.x + side * half * .62 + wobble;
+              if (!started) { ctx.moveTo(x, y); started = true; }
+              else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+          }
+          ctx.fillStyle = '#fff7c2';
+          for (let i = 0; i < 6; i += 1) {
+            const travel = ((this.frame * 4.2 + i * 41) % height) / height;
+            const y = b.y - travel * height;
+            const x = b.x + Math.sin(this.frame * .45 + i * 1.3) * half * .55;
+            ctx.globalAlpha = .35 + .4 * (0.5 + 0.5 * Math.sin(this.frame * .25 + i));
+            ctx.beginPath();
+            ctx.arc(x, y, 1.4, 0, TAU);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+        continue;
       }
       if(b.kind==='cluster'){const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);ctx.shadowColor='#f0abfc';ctx.shadowBlur=14;ctx.fillStyle='rgba(240,171,252,.28)';ctx.beginPath();ctx.ellipse(-14,0,20,5,0,0,TAU);ctx.fill();ctx.fillStyle='#f0abfc';ctx.beginPath();ctx.ellipse(0,0,11,3.6,0,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(3,0,5,2,0,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=1.5;const tw=this.frame*.5+b.id;ctx.beginPath();ctx.moveTo(-6+Math.sin(tw)*3,-6);ctx.lineTo(-2,0);ctx.lineTo(-6+Math.cos(tw)*3,6);ctx.stroke();ctx.restore();continue;}
       ctx.fillStyle=b.color;ctx.globalAlpha=.22;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.5,0,TAU);ctx.fill();ctx.globalAlpha=1;if(b.kind==='rail'){ctx.fillRect(b.x-b.radius/2,b.y-16,b.radius,32);}else{ctx.beginPath();ctx.ellipse(b.x,b.y,b.radius,b.radius*(b.kind==='missile'?1.8:1.4),0,0,TAU);ctx.fill();}const colors={burn:'#ff8a4c',chill:'#42e8ff',shock:'#facc15'};(b.statuses||[]).forEach((status,index)=>{ctx.strokeStyle=colors[status];ctx.lineWidth=2;ctx.globalAlpha=.8;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*1.8+index*3,0,TAU);ctx.stroke();});ctx.globalAlpha=1;
