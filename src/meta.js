@@ -17,9 +17,9 @@ export const META_UNLOCKS = {
   lancer: { id: 'lancer', kind: 'craft', name: 'LANCER', cost: 500 },
   wasp: { id: 'wasp', kind: 'craft', name: 'WASP', cost: 2000 },
   rambo: { id: 'rambo', kind: 'pilot', name: '藍波', cost: 500 },
-  gemini: { id: 'gemini', kind: 'pilot', name: '雙子星', cost: 2000 },
   shadow: { id: 'shadow', kind: 'pilot', name: '陰影', cost: 2000 },
   joker: { id: 'joker', kind: 'pilot', name: '小丑', cost: 7777 },
+  gemini: { id: 'gemini', kind: 'pilot', name: '雙子星', cost: 20000 },
   reaper: { id: 'reaper', kind: 'pilot', name: '死神', cost: 30000 },
   kungfu: { id: 'kungfu', kind: 'pilot', name: '功夫', cost: 50000 },
   gambler: { id: 'gambler', kind: 'pilot', name: '賭徒', cost: 100000 },
@@ -143,18 +143,17 @@ export function metaFromUpgrades(upgrades) {
 }
 
 // --- Ore drop economics ----------------------------------------------------
-// Small enemies always drop a fixed ORE_BASE_VALUE (when they roll a drop).
-// Elite / midboss / boss scale off the stacked base (base + oreGain + per-stage bonus).
+// Small enemies scale with the permanent mining base (base + oreGain + Lucky Star).
+// Elite / midboss / boss scale off the full stacked base, including per-stage bonus.
 export const ORE_BASE_VALUE = 10;
 export const ORE_DROP_CHANCE = .3;
-export const ORE_CLEAR_BONUS = 1750;
+export const ORE_CLEAR_BONUS = 1500;
 export const ORE_STAGE_BONUS = 1; // +1 to stacked base per cleared stage / sector
 
-export function oreDropFor(enemyType, baseValue, random = Math.random) {
+export function oreDropFor(enemyType, baseValue, random = Math.random, smallEnemyBase = baseValue) {
   if (enemyType === 'boss') return baseValue * 10;
   if (enemyType === 'midboss') return baseValue * 5;
   if (enemyType === 'elite') return baseValue * 3;
-  // Small enemies: fixed 10, 30% chance — never scales with stacked base.
   if (random() >= ORE_DROP_CHANCE) return 0;
-  return ORE_BASE_VALUE;
+  return smallEnemyBase;
 }

@@ -266,10 +266,19 @@ export class Game {
 
   endlessDamage(base) {
     if (!this.isEndless()) return base;
-    // From sector 6 onward: +1 damage per sector (not per 5-sector cycle).
-    const sector = this.stageIndex + this.endlessCycle * STAGES.length; // 0-based
-    const bonus = Math.max(0, sector - 4);
-    return Math.min(30, base + bonus);
+    const depth = this.endlessStageDepth();
+    if (depth <= 0) return base;
+    const damage = base + depth * 2;
+    // Keep the intended 27 → 30 final step for ordinary enemies.
+    return damage >= 29 ? 30 : Math.min(30, damage);
+  }
+
+  endlessHpGrowth(type) {
+    const depth = this.endlessStageDepth();
+    if (depth <= 0) return 1;
+    if (type === 'boss') return Math.pow(1.12, depth) * (1 + depth * .03);
+    if (type === 'elite' || type === 'midboss') return Math.pow(1.11, depth) * (1 + depth * .025);
+    return Math.pow(1.10, depth) * (1 + depth * .02);
   }
 
   xpStageIndex() {
@@ -505,7 +514,7 @@ export class Game {
     const stage = STAGES[(this.stageIndex + 2) % STAGES.length];
     const data = BOSSES[stage.boss];
     const depth = this.endlessStageDepth();
-    const bossHpGrowth = 1 + depth * .05;
+    const bossHpGrowth = this.endlessHpGrowth('boss');
     const hp = data.baseHp * stage.bossHp * bossHpGrowth * .6 * STAT_SCALE;
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 4, y: -85,
@@ -557,7 +566,7 @@ export class Game {
     const base = ENEMY_TYPES[type];
     const stage = this.activeStage();
     const depth = this.endlessStageDepth();
-    const hpGrowth = isLargeEnemyType(type) ? 1 + depth * .04 : 1 + depth * .03;
+    const hpGrowth = this.endlessHpGrowth(type);
     const endlessSpeed = 1 + this.endlessCycle * .05;
     const hp = base.hp * stage.enemyHp * pressure * hpGrowth * STAT_SCALE;
     const spawnX = isLargeEnemyType(type) ? x : clamp(x, base.radius, this.w - base.radius);
@@ -576,7 +585,7 @@ export class Game {
     const stage = this.activeStage();
     const data = BOSSES[route.boss];
     const depth = this.endlessStageDepth();
-    const bossHpGrowth = 1 + depth * .05;
+    const bossHpGrowth = this.endlessHpGrowth('boss');
     const hp = data.baseHp * stage.bossHp * bossHpGrowth * STAT_SCALE;
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
@@ -611,9 +620,14 @@ export class Game {
         player.shadowTimer -= 1;
         player.invincible = Math.max(player.invincible, 2);
         const clearRadius = 70;
-        const before = this.enemyBullets.length;
         this.enemyBullets = this.enemyBullets.filter(bullet => distanceSq(bullet, player) > clearRadius ** 2);
-        if (before > this.enemyBullets.length && this.frame % 6 === 0) this.addEffect({ type: 'ring', x: player.x, y: player.y, radius: 12, maxRadius: clearRadius, life: 12, maxLife: 12, color: '#c084fc' });
+        // Ten pulses over the two-second phase; total damage equals two seconds of primary DPS.
+        if (player.shadowTimer % 12 === 0) {
+          const pulseDamage = this.primaryDamagePerSecond(player) * .2;
+          for (const enemy of this.enemies) {
+            if (enemy.alive && distanceSq(enemy, player) <= clearRadius ** 2) this.damageEnemy(enemy, pulseDamage, false, 'shadowPhase');
+          }
+        }
       } else {
         player.shadowCooldown -= 1;
         if (player.shadowCooldown <= 0) {
@@ -665,7 +679,7 @@ export class Game {
       const count = 1 + Math.floor(level / 2) * 2 + projectileBonus;
       baseDps = this.vulcanPelletDamage(level) * count * 60 / cooldown;
     } else if (player.craft.primary === 'laser') {
-      baseDps = (.22 + level * .055) * (1 + projectileBonus) * 60;
+      baseDps = (.28 + level * .065) * (1 + projectileBonus) * 60;
     } else {
       const cooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
       let volleyDamage = (5.2 + level * 1.45) * (1 + projectileBonus);
@@ -718,7 +732,7 @@ export class Game {
         const offsetX = (slot - (beamCount - 1) / 2) * 38;
         const beamData = {
           x: p.x + offsetX, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: (4 + level * level * .48) * 1.5,
-          damage: .22 + level * .055, life: 2, color: '#7df5ff', kind: 'beam', beamSlot: slot, offsetX, primary: true,
+          damage: .28 + level * .065, life: 2, color: '#7df5ff', kind: 'beam', beamSlot: slot, offsetX, primary: true,
           maxTargets: Infinity, statuses, statusPowers,
         };
         const beam = this.playerBullets.find(bullet => bullet.kind === 'beam' && bullet.beamSlot === slot);
@@ -1110,16 +1124,15 @@ export class Game {
     return p.build.passives[id] || 0;
   }
 
-  luckyChanceBonus() {
-    return this.player?.build?.fusions?.luckyStar ? .02 : 0;
+  luckyOreBonus() {
+    return this.player?.build?.fusions?.luckyStar ? 2 : 0;
   }
 
   rollDamage(base) {
-    const lucky = this.luckyChanceBonus();
     const level = upgradePower(this.passiveRank('critical'));
-    const criticalDamage = Math.random() < level * .055 + lucky ? base * (1.65 + level * .07) : base;
+    const criticalDamage = Math.random() < level * .055 ? base * (1.65 + level * .07) : base;
     const supportRank = this.passiveRank('support');
-    const chance = [0, .02, .03, .04][supportRank] + (supportRank ? lucky : 0);
+    const chance = [0, .02, .03, .04][supportRank];
     const multiplier = [1, 1.5, 2, 3][supportRank];
     return Math.random() < chance ? criticalDamage * multiplier : criticalDamage;
   }
@@ -1429,7 +1442,7 @@ export class Game {
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
     const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
     const metaMultiplier = (this.metaCombat?.attackMultiplier ?? 1) * (source !== 'primary' && this.player?.craft?.secondaryBoost ? 1 + this.player.craft.secondaryBoost : 1);
-    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && enemy.type !== 'midboss' && Math.random() < (this.player.build.soulTaker || 1) / 100 + this.luckyChanceBonus();
+    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && enemy.type !== 'midboss' && Math.random() < (this.player.build.soulTaker || 1) / 100;
     const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * overdriveStep / 100) * pilotMultiplier * acidMultiplier * metaMultiplier;
     const immortal = Boolean(this.testFlags?.enemiesImmortal);
     this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
@@ -1499,8 +1512,9 @@ export class Game {
   }
 
   dropOre(enemy, random = Math.random) {
-    const base = ORE_BASE_VALUE + (this.metaCombat?.oreBonus ?? 0) + this.oreBossBonus;
-    const value = oreDropFor(enemy.type, base, random);
+    const permanentBase = ORE_BASE_VALUE + (this.metaCombat?.oreBonus ?? 0) + this.luckyOreBonus();
+    const stackedBase = permanentBase + this.oreBossBonus;
+    const value = oreDropFor(enemy.type, stackedBase, random, permanentBase);
     if (!value) return false;
     if (enemy.type === 'boss' || enemy.type === 'midboss') { this.collectOre(value, enemy.x, enemy.y); return true; }
     return this.addEffect({ type: 'ore', x: enemy.x, y: enemy.y, value, life: 900, radius: 7, vy: .5 });
@@ -1569,15 +1583,16 @@ export class Game {
   }
 
   maybeDropSupply(enemy, random = Math.random) {
-    const needsHeal = this.player.hp < this.player.maxHp;
-    const needsBomb = this.player.bombs < this.player.maxBombs;
-    const needsShield = this.player.shield < 1 && this.player.shieldsDropped < 2;
+    const fieldSupplies = new Set(this.effects.filter(effect => effect.type === 'supply').map(effect => effect.supply));
+    const needsHeal = this.player.hp < this.player.maxHp && !fieldSupplies.has('heal');
+    const needsBomb = this.player.bombs < this.player.maxBombs && !fieldSupplies.has('bomb');
+    const needsShield = this.player.shield < 1 && this.player.shieldsDropped < 2 && !fieldSupplies.has('shield');
     if (!needsHeal && !needsBomb && !needsShield) return false;
     const salvage = upgradePower(this.passiveRank('salvage'));
     const baseChance = { scout: .006, striker: .008, gunship: .012, elite: .035, midboss: .06 }[enemy.type] || .006;
     const shieldBoost = needsShield ? .02 : 0;
     const kungfuHealBoost = this.player.pilotId === 'kungfu' && needsHeal ? .22 : 0;
-    if (random() >= Math.min(kungfuHealBoost ? .38 : .14, baseChance + salvage * .004 + shieldBoost + kungfuHealBoost) + this.luckyChanceBonus()) return false;
+    if (random() >= Math.min(kungfuHealBoost ? .38 : .14, baseChance + salvage * .004 + shieldBoost + kungfuHealBoost)) return false;
     const candidates = [];
     if (needsHeal) candidates.push('heal', 'heal', ...(this.player.pilotId === 'kungfu' ? ['heal', 'heal', 'heal', 'heal'] : []));
     if (needsBomb) candidates.push('bomb');
@@ -1932,7 +1947,7 @@ export class Game {
 
   hitPlayer(damage = STAT_SCALE) {
     if (!this.player || this.player.invincible > 0 || this.testFlags?.playerInvincible) return;
-    if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion || 20) / 100 + this.luckyChanceBonus()) {
+    if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion || 20) / 100) {
       this.player.invincible = 18;
       this.addEffect({ type: 'kungfuDodge', x: this.player.x, y: this.player.y, life: 18, maxLife: 18 });
       this.spawnBurst(this.player.x, this.player.y, 12, '#e0f2fe');
@@ -2201,7 +2216,7 @@ export class Game {
       const extraPrimaryToken = !p ? ''
         : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `MAX · ${p.build.evasion || 20}%`, `唯快不破 · 迴避 ${p.build.evasion || 20}%`, 'MAX')
         : p.pilotId === 'gambler' ? token('assets/icons/frenzy.svg', `+${Math.round((p.grazeBonus || 0) * 100)}%`, `狂熱 · 傷害 +${Math.round((p.grazeBonus || 0) * 100)}%`)
-        : p.pilotId === 'reaper' ? token('assets/icons/soul-taker.svg', `${(p.build.soulTaker || 1) + (p.build.fusions?.luckyStar ? 2 : 0)}%`, `奪魂者 · 主武器即死 ${(p.build.soulTaker || 1) + (p.build.fusions?.luckyStar ? 2 : 0)}%`)
+        : p.pilotId === 'reaper' ? token('assets/icons/soul-taker.svg', `${p.build.soulTaker || 1}%`, `奪魂者 · 主武器即死 ${p.build.soulTaker || 1}%`)
         : p.pilotId === 'imperial' ? token('assets/icons/battlefield-cleanup.svg', `+${p.build.battlefieldCleanup || 0}%`, `戰場清理 · 資源效率 +${p.build.battlefieldCleanup || 0}%`)
         : p.pilotId === 'rambo' ? token('assets/icons/supply-chain.svg', 'MAX', '補給鏈 · 擊倒 BOSS 補滿炸彈', 'MAX')
         : '';
@@ -2237,6 +2252,32 @@ export class Game {
 
   drawPlayer(ctx) {
     if (!this.player) return; const p = this.player;
+    if (p.shadowTimer > 0) {
+      const radius = 70;
+      ctx.save();
+      const gradient = ctx.createRadialGradient(p.x, p.y, 8, p.x, p.y, radius);
+      gradient.addColorStop(0, 'rgba(0,0,0,.88)');
+      gradient.addColorStop(.7, 'rgba(0,0,0,.76)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      const points = 48;
+      for (let i = 0; i <= points; i += 1) {
+        const angle = i / points * TAU;
+        const wave = Math.sin(angle * 5 + this.frame * .12) * 4 + Math.sin(angle * 9 - this.frame * .08) * 2;
+        const r = radius + wave;
+        const x = p.x + Math.cos(angle) * r;
+        const y = p.y + Math.sin(angle) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = .7;
+      ctx.strokeStyle = '#111';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.restore();
+    }
     if (p.shadowTimer > 0) ctx.globalAlpha = .28;
     else if (p.invincible > 0 && Math.floor(this.frame / 4) % 2 === 0) ctx.globalAlpha = .45;
     ctx.save(); ctx.translate(p.x,p.y); ctx.scale?.(p.scale || 1,p.scale || 1); ctx.fillStyle='rgba(66,232,255,.16)'; ctx.beginPath(); ctx.ellipse(0,4,30,36,0,0,TAU); ctx.fill();

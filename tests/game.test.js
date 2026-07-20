@@ -824,7 +824,7 @@ test('new secondary archetypes create distinct gravity, prism, and interception 
 
   game.player.secondaryCooldowns.interceptor = 0;
   game.player.build.secondaries = { interceptor: 1 };
-  game.enemyBullets = [{ x: 240, y: 650, vx: 0, vy: 1, radius: 5 }];
+  game.enemyBullets = [{ x: game.player.x, y: game.player.y - 120, vx: 0, vy: 1, radius: 5 }];
   game.updateSecondaries();
   assert.equal(game.enemyBullets.length, 1, 'interception must telegraph before deleting bullets');
   assert.ok(game.effects.some(effect => effect.type === 'interceptorPulse'));
@@ -920,8 +920,10 @@ test('shield drops are hard-capped at two per stage and reset on sector shift', 
   game.player.shield = 0;
   const enemy = { type: 'scout', x: 100, y: 100 };
 
-  assert.equal(game.maybeDropSupply(enemy, () => .02), true);
-  assert.equal(game.maybeDropSupply(enemy, () => .02), true);
+  assert.equal(game.maybeDropSupply(enemy, () => 0), true);
+  assert.equal(game.maybeDropSupply(enemy, () => 0), false, 'a second shield cannot coexist on the field');
+  game.effects = game.effects.filter(effect => !(effect.type === 'supply' && effect.supply === 'shield'));
+  assert.equal(game.maybeDropSupply(enemy, () => 0), true, 'another shield may drop after the first leaves the field');
   assert.equal(game.maybeDropSupply(enemy, () => 0), false);
   assert.equal(game.player.shieldsDropped, 2);
 
@@ -932,6 +934,7 @@ test('shield drops are hard-capped at two per stage and reset on sector shift', 
   game.enemies = [boss];
   game.killEnemy(boss);
   assert.equal(game.player.shieldsDropped, 0, 'new sector restores shield drop budget');
+  game.effects = game.effects.filter(effect => effect.type !== 'supply');
   game.player.hp = game.player.maxHp;
   game.player.bombs = game.player.maxBombs;
   game.player.shield = 0;
@@ -1219,7 +1222,7 @@ test('endless director spawns waves on a fixed timer and tracks depth as one km 
   assert.ok(game.enemies.filter(enemy => enemy.alive).length >= alive, 'new enemies joined the field');
 });
 
-test('endless enemy damage grows one per sector from stage six and caps at thirty', () => {
+test('endless enemy damage grows two per sector from stage six and caps at thirty', () => {
   const { game } = makeGame();
   game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
   game.chooseUpgrade(0);
@@ -1230,10 +1233,10 @@ test('endless enemy damage grows one per sector from stage six and caps at thirt
   assert.equal(game.endlessDamage(5), 5, 'sector five still base');
   game.endlessCycle = 1;
   game.stageIndex = 0; // sector 6
-  assert.equal(game.endlessDamage(5), 6, 'sector six adds +1');
-  assert.equal(game.endlessDamage(10), 11);
-  game.stageIndex = 2; // sector 8 = +3
-  assert.equal(game.endlessDamage(5), 8);
+  assert.equal(game.endlessDamage(5), 7, 'sector six adds +2');
+  assert.equal(game.endlessDamage(10), 12);
+  game.stageIndex = 2; // sector 8 = +6
+  assert.equal(game.endlessDamage(5), 11);
   game.endlessCycle = 5;
   game.stageIndex = 4; // sector 5*5+4 = 29 → +25
   assert.equal(game.endlessDamage(5), 30, 'small hits cap at thirty');
@@ -1949,12 +1952,12 @@ test('soul taker executes only primary targets and its overclock caps at five pe
     Math.random = () => .069;
     const luckyTarget = { id: 702, type: 'scout', x: 0, y: 0, radius: 8, hp: 10000, maxHp: 10000, alive: true, score: 0, xp: 0, color: '#fff' };
     game.damageEnemy(luckyTarget, 1, false, 'primary');
-    assert.equal(luckyTarget.alive, false, 'lucky star adds two percent to the soul taker roll');
+    assert.equal(luckyTarget.alive, true, 'lucky star no longer alters soul taker probability');
   } finally {
     Math.random = originalRandom2;
   }
   game.updateHud();
-  assert.match(game.dom['primary-build'].innerHTML, /7%/, 'the HUD soul taker badge includes the lucky star bonus');
+  assert.match(game.dom['primary-build'].innerHTML, /5%/, 'the HUD soul taker badge stays at its own capped value');
 });
 
 test('battlefield cleanup scales XP and both repair sources with one resource multiplier', () => {
@@ -2193,10 +2196,10 @@ test('meta purchases spend ore, respect caps, and unlocks are one-time', async (
   assert.equal(meta.purchaseUpgrade(capped, 'firepower'), false, 'maxed rank cannot be bought again');
 });
 
-test('ore drops: small enemies fixed 10, elite x3, midboss x5, boss x10 of stacked base', async () => {
+test('ore drops: small enemies use mining base while elite x3, midboss x5, and boss x10 use stacked base', async () => {
   const meta = await import('../src/meta.js');
-  assert.equal(meta.oreDropFor('scout', 40, () => .29), 10, 'small enemies always drop fixed 10');
-  assert.equal(meta.oreDropFor('scout', 40, () => .31), 0, 'roll over 0.3 drops nothing');
+  assert.equal(meta.oreDropFor('scout', 40, () => .29, 18), 18, 'small enemies use the permanent mining base');
+  assert.equal(meta.oreDropFor('scout', 40, () => .31, 18), 0, 'roll over 0.3 drops nothing');
   assert.equal(meta.oreDropFor('elite', 10, () => .99), 30, 'elite pays three times stacked base');
   assert.equal(meta.oreDropFor('midboss', 10, () => .99), 50, 'midboss pays five times base');
   assert.equal(meta.oreDropFor('boss', 12, () => .99), 120, 'boss pays ten times the current base');
@@ -2215,24 +2218,24 @@ test('killing enemies drops ore pickups, bosses raise the base by one, and the r
     game.killEnemy(scout);
     const ore = game.effects.find(effect => effect.type === 'ore');
     assert.ok(ore, 'small enemies drop an ore pickup on the field');
-    assert.equal(ore.value, 10, 'small enemies always drop fixed 10, ignoring oreGain stacking');
+    assert.equal(ore.value, 20, 'max mining rank raises the small-enemy drop base from 10 to 20');
 
     game.collectOre(ore.value, ore.x, ore.y);
-    assert.equal(game.runOre, 10);
+    assert.equal(game.runOre, 20);
 
     game.mode = 'playing';
     const boss = { id: 602, type: 'boss', bossId: 'manta', x: 240, y: 118, radius: 52, hp: 0, maxHp: 100, alive: true, orbiting: true, score: 1000, xp: 65, color: '#fff' };
     game.enemies = [boss];
     game.killEnemy(boss);
     // maxed oreGain 10 + base 10 = 20 stacked; boss = 200
-    assert.equal(game.runOre, 10 + 200, 'boss ore is collected instantly at ten times stacked base');
+    assert.equal(game.runOre, 20 + 200, 'boss ore is collected instantly at ten times stacked base');
     assert.equal(game.oreBossBonus, 1, 'each boss kill raises the drop base by one');
   } finally {
     Math.random = originalRandom;
   }
 
   const banked = game.bankOre(0);
-  assert.equal(banked, 210);
+  assert.equal(banked, 220);
   assert.equal(game.bankOre(0), 0, 'banking is idempotent per run');
 });
 
@@ -2411,7 +2414,7 @@ test('test mode can run endless rules for waves, damage scaling, and seamless bo
   game.mode = 'playing';
   game.endlessCycle = 1;
   game.stageIndex = 0; // sector 6
-  assert.equal(game.endlessDamage(5), 6, 'test-endless applies per-sector damage bonus from stage six');
+  assert.equal(game.endlessDamage(5), 7, 'test-endless applies +2 per sector from stage six');
 
   game.endlessWaveTimer = 0;
   game.updateDirector();
