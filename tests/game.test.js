@@ -2265,6 +2265,36 @@ test('endless cycle 2+ never drops below stage-5 aggressiveness', () => {
   assert.ok(cycleTwo.enemySpeed >= stageFive.enemySpeed - 1e-9, 'cycle2 enemySpeed >= S5');
 });
 
+test('endless HP grows per stage from sector six via endlessStageDepth', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.endlessCycle = 0;
+  game.stageIndex = 0;
+  assert.equal(game.endlessStageDepth(), 0, 'first five sectors have zero depth');
+  game.stageIndex = 4;
+  assert.equal(game.endlessStageDepth(), 0);
+  game.endlessCycle = 1;
+  game.stageIndex = 0; // sector 6
+  assert.equal(game.endlessStageDepth(), 1);
+  game.stageIndex = 2; // sector 8
+  assert.equal(game.endlessStageDepth(), 3);
+
+  // Spawning with depth=1 should raise HP vs depth=0 baseline on same pressure.
+  game.endlessCycle = 0;
+  game.stageIndex = 4;
+  game.enemies = [];
+  game.spawnEnemy('scout', 100, 100, 1, 0, 0);
+  const earlyHp = game.enemies[0].maxHp;
+  game.enemies = [];
+  game.endlessCycle = 1;
+  game.stageIndex = 0;
+  game.spawnEnemy('scout', 100, 100, 1, 0, 0);
+  const laterHp = game.enemies[0].maxHp;
+  assert.ok(laterHp > earlyHp, 'sector six scout HP exceeds sector five baseline');
+});
+
 test('max mode and test mode runs never bank ore into the meta wallet', () => {
   const { game } = makeGame();
   game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial', maxMode: true });

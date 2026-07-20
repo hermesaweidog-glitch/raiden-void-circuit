@@ -238,8 +238,16 @@ export class Game {
     return this.runMode === 'endless' || Boolean(this.testFlags?.endless);
   }
 
+  endlessStageDepth() {
+    if (!this.isEndless()) return 0;
+    // First five stages keep normal values. From stage 6 onward, depth grows
+    // once per cleared stage rather than once per five-stage cycle.
+    return Math.max(0, this.endlessCycle * STAGES.length + this.stageIndex - (STAGES.length - 1));
+  }
+
   // Combat-facing stage profile. Endless cycle 2+ (stage 6 onwards) never dips
   // below VOID THRONE aggressiveness, and keeps climbing with each cycle.
+  // HP growth is handled separately via endlessStageDepth() at spawn time.
   activeStage() {
     const stage = STAGES[this.stageIndex] || STAGES[0];
     if (!this.isEndless() || this.endlessCycle < 1) return stage;
@@ -251,8 +259,8 @@ export class Game {
       bulletSpeed: Math.max(stage.bulletSpeed, floor.bulletSpeed) * cycleBoost,
       bulletCount: Math.max(stage.bulletCount, floor.bulletCount) * (1 + (this.endlessCycle - 1) * .04),
       fireRate: Math.max(stage.fireRate, floor.fireRate) * (1 + (this.endlessCycle - 1) * .04),
-      enemyHp: Math.max(stage.enemyHp, floor.enemyHp) * (1 + (this.endlessCycle - 1) * .05),
-      bossHp: Math.max(stage.bossHp, floor.bossHp) * (1 + (this.endlessCycle - 1) * .05),
+      enemyHp: Math.max(stage.enemyHp, floor.enemyHp),
+      bossHp: Math.max(stage.bossHp, floor.bossHp),
     };
   }
 
@@ -496,7 +504,9 @@ export class Game {
   spawnEndlessEscortBoss() {
     const stage = STAGES[(this.stageIndex + 2) % STAGES.length];
     const data = BOSSES[stage.boss];
-    const hp = data.baseHp * stage.bossHp * (1 + this.endlessCycle * .35) * .6 * STAT_SCALE;
+    const depth = this.endlessStageDepth();
+    const bossHpGrowth = 1 + depth * .05;
+    const hp = data.baseHp * stage.bossHp * bossHpGrowth * .6 * STAT_SCALE;
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 4, y: -85,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 130,
@@ -546,9 +556,10 @@ export class Game {
     if (activeEnemies >= WORLD.maxEnemies) return false;
     const base = ENEMY_TYPES[type];
     const stage = this.activeStage();
-    const endlessHp = 1 + this.endlessCycle * .35;
+    const depth = this.endlessStageDepth();
+    const hpGrowth = isLargeEnemyType(type) ? 1 + depth * .04 : 1 + depth * .03;
     const endlessSpeed = 1 + this.endlessCycle * .05;
-    const hp = base.hp * stage.enemyHp * pressure * endlessHp * STAT_SCALE;
+    const hp = base.hp * stage.enemyHp * pressure * hpGrowth * STAT_SCALE;
     const spawnX = isLargeEnemyType(type) ? x : clamp(x, base.radius, this.w - base.radius);
     this.enemies.push({
       id: this.entityId++, type, x: spawnX, y, originX: spawnX, radius: base.radius, alive: true,
@@ -564,7 +575,9 @@ export class Game {
     const route = STAGES[this.stageIndex];
     const stage = this.activeStage();
     const data = BOSSES[route.boss];
-    const hp = data.baseHp * stage.bossHp * (1 + this.endlessCycle * .35) * STAT_SCALE;
+    const depth = this.endlessStageDepth();
+    const bossHpGrowth = 1 + depth * .05;
+    const hp = data.baseHp * stage.bossHp * bossHpGrowth * STAT_SCALE;
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
