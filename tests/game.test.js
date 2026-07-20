@@ -1654,21 +1654,34 @@ test('acid vulnerability, support protocol, and both fusion payloads alter comba
   game.start('falcon');
   game.chooseUpgrade(0);
   game.mode = 'playing';
-  const target = { id: 501, type: 'scout', x: 240, y: 200, radius: 10, hp: 2000, maxHp: 2000, alive: true, score: 0, xp: 0, color: '#fff' };
+  const target = { id: 501, type: 'scout', x: 240, y: 520, radius: 10, hp: 2000, maxHp: 2000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [target];
+  game.player.x = 240;
+  game.player.y = 700;
   game.player.build.secondaries = { acid: 3 };
   game.player.secondaryCooldowns.acid = 0;
+  game.playerBullets = [];
   game.updateSecondaries();
-  const acidSpray = game.playerBullets.filter(bullet => bullet.kind === 'acid');
-  const acid = acidSpray[Math.floor(acidSpray.length / 2)];
-  assert.equal(acidSpray.length, 9);
-  assert.ok(acidSpray.every(bullet => bullet.life === 36));
-  assert.ok(Math.min(...acidSpray.map(bullet => bullet.vx)) < -2);
-  assert.ok(Math.max(...acidSpray.map(bullet => bullet.vx)) > 2);
-  assert.ok(game.effects.some(effect => effect.type === 'acidCone'));
-  game.applyBulletStatus(acid, target);
-  game.damageEnemy(target, 10, false);
-  assert.equal(target.hp, 1860);
+  assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'acid').length, 0, 'acid no longer fires green pellets');
+  const cone = game.effects.find(effect => effect.type === 'acidCone');
+  assert.ok(cone, 'acid sprays a one-shot cone effect');
+  assert.ok(cone.range > 200 && cone.halfAngle > 0);
+  assert.ok(target.hp < 2000, 'enemies inside the cone take damage immediately');
   assert.equal(target.acidTimer, 300);
+  assert.equal(target.acidAmp, .4);
+  // A target outside the fan is untouched.
+  const miss = { id: 502, type: 'scout', x: 40, y: 520, radius: 10, hp: 2000, maxHp: 2000, alive: true, score: 0, xp: 0, color: '#fff' };
+  game.enemies = [miss];
+  game.player.secondaryCooldowns.acid = 0;
+  game.updateSecondaries();
+  assert.equal(miss.hp, 2000, 'enemies outside the fan are not hit');
+  assert.equal(miss.acidTimer || 0, 0);
+
+  const hpAfterCone = target.hp;
+  target.alive = true;
+  game.enemies = [target];
+  game.damageEnemy(target, 10, false);
+  assert.ok(target.hp < hpAfterCone - 100, 'acid amp still multiplies follow-up hits');
 
   const originalRandom = Math.random;
   Math.random = () => 0;

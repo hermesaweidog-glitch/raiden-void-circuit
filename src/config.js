@@ -36,7 +36,7 @@ export const SECONDARIES = {
   homing: { id: 'homing', icon: 'assets/icons/homing.webp', name: '追蹤飛彈', max: 3, color: '#ffb703', description: '鎖定單一目標；目標死亡後停止導引。' },
   drone: { id: 'drone', icon: 'assets/icons/drone.webp', name: '軌道無人機', max: 3, color: '#8b5cf6', description: '環繞機體並定期射擊。' },
   chain: { id: 'chain', icon: 'assets/icons/chain.webp', name: '連鎖電弧', max: 3, color: '#67e8f9', description: '定時由機體跳電，瞬間連鎖附近敵人。' },
-  acid: { id: 'acid', icon: 'assets/icons/acid.svg', name: '酸性噴霧', max: 3, color: '#a3e635', description: '向前扇形噴射酸霧；使目標 5 秒內承受傷害 +20%／30%／40%。' },
+  acid: { id: 'acid', icon: 'assets/icons/acid.svg', name: '酸性噴霧', max: 3, color: '#a3e635', description: '向前扇形噴出酸霧區域，對範圍內敵人造成傷害，並使目標 5 秒內承受傷害 +20%／30%／40%。' },
   rail: { id: 'rail', icon: 'assets/icons/rail.webp', name: '磁軌爆發', max: 3, color: '#f8fafc', description: '定時發射高傷害貫通彈。' },
   bombard: { id: 'bombard', icon: 'assets/icons/bombard.webp', name: '轟炸莢艙', max: 3, color: '#fb923c', description: '標記敵群位置後進行範圍轟炸。' },
   gravity: { id: 'gravity', icon: 'assets/icons/gravity.webp', name: '微型重力井', max: 3, color: '#c084fc', description: '週期性生成奇點，牽引並持續傷害敵群。' },
