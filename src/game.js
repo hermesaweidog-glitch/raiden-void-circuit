@@ -823,7 +823,7 @@ export class Game {
             radius: 5, damage: 7 + level * 2.4, life: 60, color: '#f0abfc', kind: 'cluster', pierce: 6 + level, splash: 0,
           });
         }
-        this.setSecondaryCooldown('clusterStars', Math.max(70, 155 - level * 13));
+        this.setSecondaryCooldown('clusterStars', Math.max(40, 100 - level * 10));
       }
     }
     if (p.build.fusions?.blackHole) {
@@ -867,7 +867,7 @@ export class Game {
           const angle = this.frame * .035 + i / count * TAU;
           this.addPlayerBullet({ id: this.entityId++, x: p.x + Math.cos(angle) * 34, y: p.y + Math.sin(angle) * 20, vx: Math.sin(angle) * .5, vy: -9, radius: 3.2, damage: 1.5 + level * .55, life: 120, color: '#a78bfa', kind: target ? 'missile' : 'drone', pierce: 0, splash: 0, targetId: target?.id, guidanceActive: Boolean(target), turn: .08 });
         }
-        this.setSecondaryCooldown(id, Math.max(18, 48 - level * 5));
+        this.setSecondaryCooldown(id, Math.max(12, 36 - level * 4));
       } else if (id === 'chain') {
         const targets = this.nearestEnemies(p, Math.min(4, 1 + level) + this.projectileBonus());
         if (targets.length) {
@@ -911,7 +911,26 @@ export class Game {
         const targets = this.nearestEnemies(p, count);
         for (let index = 0; index < count && targets.length; index += 1) {
           const target = targets[index] || targets[0];
-          this.addEffect({ type: 'bombard', x: target.x + (index - (count - 1) / 2) * 18, y: target.y, timer: 45, maxTimer: 45, radius: 35 + level * 5, damage: 7 + level * 3.2 });
+          const targetOffsetX = (index - (count - 1) / 2) * 18;
+          const lockX = target.x + targetOffsetX;
+          const lockY = target.y;
+          this.addEffect({
+            type: 'bombard',
+            x: lockX,
+            y: lockY,
+            startX: lockX,
+            startY: lockY,
+            targetId: target.id,
+            targetOffsetX,
+            timer: 45,
+            maxTimer: 45,
+            firing: false,
+            shotIndex: 0,
+            shotCount: 3,
+            shotInterval: 6,
+            radius: 35 + level * 5,
+            damage: (7 + level * 3.2) * .45,
+          });
         }
         this.setSecondaryCooldown(id, Math.max(65, 145 - level * 11));
       } else if (id === 'gravity') {
@@ -931,7 +950,7 @@ export class Game {
         });
         this.setSecondaryCooldown(id, Math.max(95, 175 - level * 10));
       } else if (id === 'interceptor') {
-        this.addEffect({ type: 'interceptorPulse', x: p.x, y: p.y, timer: 18, maxTimer: 18, count: Math.min(6, 1 + level) + this.projectileBonus(), range: 245 });
+        this.addEffect({ type: 'interceptorPulse', x: p.x, y: p.y, timer: 18, maxTimer: 18, count: Math.min(6, 1 + level) + this.projectileBonus(), range: 170 });
         this.setSecondaryCooldown(id, Math.max(100, 160 - level * 12));
       }
     }
@@ -1760,7 +1779,26 @@ export class Game {
       const effect = this.effects[i];
       if (effect.type === 'bombard') {
         effect.timer -= 1;
-        if (effect.timer <= 0) { this.areaDamage(effect.x, effect.y, effect.radius, effect.damage); this.spawnBurst(effect.x, effect.y, 30, '#fb923c'); this.effects.splice(i, 1); }
+        if (effect.timer > 0) continue;
+
+        if (!effect.firing) {
+          const target = this.enemies.find(enemy => enemy.id === effect.targetId && enemy.alive);
+          effect.endX = target ? target.x + (effect.targetOffsetX || 0) : effect.startX;
+          effect.endY = target ? target.y : effect.startY;
+          effect.firing = true;
+          effect.shotIndex = 0;
+        }
+
+        const progress = effect.shotCount <= 1 ? 1 : effect.shotIndex / (effect.shotCount - 1);
+        const shotX = effect.startX + (effect.endX - effect.startX) * progress;
+        const shotY = effect.startY + (effect.endY - effect.startY) * progress;
+
+        this.areaDamage(shotX, shotY, effect.radius, effect.damage);
+        this.spawnBurst(shotX, shotY, 22, '#fb923c');
+        effect.shotIndex += 1;
+
+        if (effect.shotIndex >= effect.shotCount) this.effects.splice(i, 1);
+        else effect.timer = effect.shotInterval;
       } else if (effect.type === 'gravity') {
         effect.timer -= 1; effect.pulse += 1;
         for (const enemy of this.enemies) {
@@ -2399,7 +2437,7 @@ export class Game {
       else if(e.type==='ironMountain'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(t*.5);ctx.globalAlpha=1-t;ctx.strokeStyle='#fb923c';ctx.lineWidth=6-3*t;for(let n=0;n<8;n+=1){const a=n/8*TAU;ctx.beginPath();ctx.moveTo(Math.cos(a)*12,Math.sin(a)*12);ctx.lineTo(Math.cos(a)*(30+t*35),Math.sin(a)*(30+t*35));ctx.stroke();}ctx.restore();}
       else if(e.type==='kungfuDodge'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#e0f2fe';ctx.lineWidth=3;for(let n=-1;n<=1;n+=1){ctx.beginPath();ctx.moveTo(e.x-16+n*12-t*28,e.y+20);ctx.quadraticCurveTo(e.x+n*12,e.y-24,e.x+16+n*12+t*28,e.y-4);ctx.stroke();}ctx.restore();}
 
-      else if(e.type==='bombard'){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
+      else if(e.type==='bombard'&&!e.firing){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
       else if(e.type==='gravity'){const inner=12+Math.sin(this.frame*.18)*5;if(e.blackHole){ctx.save();const halo=ctx.createRadialGradient(e.x,e.y,inner,e.x,e.y,e.radius);halo.addColorStop(0,'rgba(163,230,53,.5)');halo.addColorStop(.55,'rgba(101,163,13,.28)');halo.addColorStop(1,'rgba(63,98,18,.05)');ctx.fillStyle=halo;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='rgba(163,230,53,.85)';ctx.lineWidth=2;ctx.setLineDash([6,7]);ctx.beginPath();ctx.arc(e.x,e.y,e.radius*.82,this.frame*.03,this.frame*.03+TAU);ctx.stroke();ctx.setLineDash([]);ctx.strokeStyle='rgba(217,249,157,.5)';ctx.lineWidth=1.5;ctx.setLineDash([3,9]);ctx.beginPath();ctx.arc(e.x,e.y,e.radius*.55,-this.frame*.05,-this.frame*.05+TAU);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.fill();ctx.shadowColor='#a3e635';ctx.shadowBlur=14;ctx.strokeStyle='#bef264';ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.stroke();ctx.shadowBlur=0;for(let n=0;n<3;n+=1){const a=this.frame*.09+n/3*TAU;ctx.strokeStyle='rgba(217,249,157,.9)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(e.x,e.y,inner+6,a,a+1.4);ctx.stroke();}for(let n=0;n<5;n+=1){const a=this.frame*.06+n/5*TAU;const dist=e.radius*(.9-((this.frame*.011+n*.2)%.62));ctx.fillStyle='#a3e635';ctx.globalAlpha=.75;ctx.fillRect(e.x+Math.cos(a)*dist-1.5,e.y+Math.sin(a)*dist-1.5,3,3);}ctx.globalAlpha=1;ctx.restore();}else{ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.stroke();}}
       else if(e.type==='clusterLock'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(t*2.4);ctx.globalAlpha=1-t;ctx.strokeStyle='#f0abfc';ctx.lineWidth=2.5;const r=18-t*8;for(let n=0;n<4;n+=1){const a=n/4*TAU;ctx.beginPath();ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);ctx.lineTo(Math.cos(a)*(r-6),Math.sin(a)*(r-6));ctx.stroke();}ctx.strokeStyle='rgba(240,171,252,.5)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,r,0,TAU);ctx.stroke();ctx.restore();}
       else if(e.type==='clusterFlash'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.globalAlpha=1-t;ctx.shadowColor='#f0abfc';ctx.shadowBlur=18;for(let n=0;n<6;n+=1){const a=n/6*TAU+t*1.2;ctx.strokeStyle=n%2?'#fff':'#f0abfc';ctx.lineWidth=3-t*2;ctx.beginPath();ctx.moveTo(Math.cos(a)*4,Math.sin(a)*4);ctx.lineTo(Math.cos(a)*(14+t*26),Math.sin(a)*(14+t*26));ctx.stroke();}ctx.restore();}
