@@ -102,3 +102,17 @@ git diff --check
 2. GitHub Pages 靜態網站部署
 
 本 repository 不應提交 `.env`、token、credentials、cookie、資料庫、runtime state 或 Hermes 本機計畫檔。
+
+
+## v37 audio fixes
+- Menu music is queued before the first user gesture and retries on pointer, touch, click, or keyboard input.
+- Other music elements are silently primed during the first gesture for more reliable mobile playback.
+- Stage music now uses an approximately 108-second extension made directly from the preferred original exploration recording with a 4-second equal-power loop crossfade.
+- Menu and stage music use a 0.6-second entrance fade; final results use a 3.2-second fade-out.
+
+
+## v38 帝國兵經濟被動調整
+- 帝國兵「戰場清理」不再提高經驗值、治療量或其他戰鬥資源。
+- 滿裝後每次超頻使源晶礦結算獲取量 +1%，無上限。
+- 加成套用於本次收集的源晶礦，以及一般模式的通關獎勵。
+- 結算畫面會分別列出本次收集、通關獎勵、戰場清理加成與最終入帳量。

@@ -22,7 +22,7 @@ export const AIRCRAFT = {
 };
 
 export const PILOTS = {
-  imperial: { id: 'imperial', name: '帝國兵', icon: '◇', art: 'assets/pilots/imperial.webp', subtitle: '戰場清理', ability: '所有資源效率可透過超頻每次 +1%，無上限。' },
+  imperial: { id: 'imperial', name: '帝國兵', icon: '◇', art: 'assets/pilots/imperial.webp', subtitle: '戰場清理', ability: '源晶礦結算獲取量可透過超頻每次 +1%，無上限；包含一般模式通關獎勵。' },
   rambo: { id: 'rambo', name: '藍波', icon: '✚', art: 'assets/pilots/rambo.webp', subtitle: '生存專家', ability: '生命與炸彈上限增加1階段；擊倒 BOSS 恢復 2 顆炸彈，炸彈對大型目標傷害 +50%。' },
   shadow: { id: 'shadow', name: '陰影', icon: '◐', art: 'assets/pilots/shadow.webp', subtitle: '相位潛行', ability: '每 6 秒潛入陰影 2 秒，持續清除近身敵彈並以黑潮傷害範圍內敵人；受傷後獲得 2 秒無敵，並以主武器 2 秒 DPS 對周圍造成相位反擊。' },
   joker: { id: 'joker', name: '小丑', icon: '♢', art: 'assets/pilots/joker.webp', subtitle: '混沌選牌', ability: '副武器與被動技能裝備上限各 +1；自動選擇升級項目，並有 20% 機率額外再獲得一次升級項目。' },

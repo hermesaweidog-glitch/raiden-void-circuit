@@ -95,7 +95,7 @@ export function makeUpgradePool(build) {
     }
     if (build.pilotId === 'imperial') {
       const current = build.battlefieldCleanup || 0;
-      pool.push({ id: 'battlefield-cleanup-boost', category: 'battlefieldCleanup', icon: 'assets/icons/battlefield-cleanup.svg', name: '超頻：戰場清理', description: `所有資源獲得效率由 +${current}% 提升至 +${current + 1}%；無上限。` });
+      pool.push({ id: 'battlefield-cleanup-boost', category: 'battlefieldCleanup', icon: 'assets/icons/battlefield-cleanup.svg', name: '超頻：戰場清理', description: `源晶礦結算獲取量由 +${current}% 提升至 +${current + 1}%；無上限，並套用於一般模式通關獎勵。` });
     }
   }
   return pool;

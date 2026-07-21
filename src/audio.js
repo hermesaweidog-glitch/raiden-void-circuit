@@ -24,16 +24,53 @@ export class MusicController {
     audio.loop = definition.loop;
     audio.volume = 0;
     audio.playsInline = true;
-    const track = { key, audio, volume: definition.volume, fadeToken: 0 };
+    audio.setAttribute?.('playsinline', '');
+    audio.setAttribute?.('webkit-playsinline', '');
+    audio.load?.();
+    const track = { key, audio, volume: definition.volume, fadeToken: 0, primed: false };
     audio.addEventListener?.('ended', () => {
       if (this.currentKey === key && !audio.loop) this.currentKey = null;
     });
     return track;
   }
 
+  prepare(key) {
+    if (!MUSIC_SCENES[key]) return false;
+    this.desiredKey = key;
+    return true;
+  }
+
   unlock() {
     this.unlocked = true;
-    if (!this.muted && !this.pausedByGame && this.desiredKey) this.startDesired(false);
+    const started = !this.muted && !this.pausedByGame && this.desiredKey
+      ? this.startDesired(false)
+      : false;
+    this.primeInactiveTracks();
+    return started;
+  }
+
+  primeInactiveTracks() {
+    for (const track of Object.values(this.tracks)) {
+      if (!track || track.key === this.currentKey || track.primed) continue;
+      const audio = track.audio;
+      const previousMuted = audio.muted;
+      audio.muted = true;
+      audio.volume = 0;
+      let result;
+      try { result = audio.play(); }
+      catch {
+        audio.muted = previousMuted;
+        continue;
+      }
+      Promise.resolve(result).then(() => {
+        audio.pause();
+        try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+        audio.muted = previousMuted;
+        track.primed = true;
+      }).catch(() => {
+        audio.muted = previousMuted;
+      });
+    }
   }
 
   setMuted(muted) {
@@ -46,8 +83,7 @@ export class MusicController {
   }
 
   scene(key, { fadeOut = .32, fadeIn = .42, restart = true } = {}) {
-    if (!MUSIC_SCENES[key]) return false;
-    this.desiredKey = key;
+    if (!this.prepare(key)) return false;
     if (!this.unlocked || this.muted || this.pausedByGame) return false;
     const next = this.tracks[key];
     if (!next) return false;
@@ -56,7 +92,7 @@ export class MusicController {
       if (restart) {
         try { next.audio.currentTime = 0; } catch { /* media not seekable yet */ }
       }
-      this.safePlay(next.audio);
+      this.safePlay(next);
       this.fade(next, next.volume, fadeIn);
       return true;
     }
@@ -68,7 +104,7 @@ export class MusicController {
     next.fadeToken += 1;
     try { if (restart) next.audio.currentTime = 0; } catch { /* media not seekable yet */ }
     next.audio.volume = 0;
-    this.safePlay(next.audio);
+    this.safePlay(next);
     this.fade(next, next.volume, fadeIn);
     return true;
   }
@@ -106,9 +142,21 @@ export class MusicController {
     }
   }
 
-  safePlay(audio) {
-    const result = audio.play();
-    result?.catch?.(() => {});
+  safePlay(track) {
+    const audio = track.audio;
+    let result;
+    try { result = audio.play(); }
+    catch {
+      this.unlocked = false;
+      return false;
+    }
+    Promise.resolve(result).then(() => {
+      track.primed = true;
+    }).catch(() => {
+      // Keep the desired scene queued and retry on the next real user gesture.
+      if (this.currentKey === track.key || this.desiredKey === track.key) this.unlocked = false;
+    });
+    return true;
   }
 
   fade(track, target, duration, stopAtEnd = false) {

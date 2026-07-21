@@ -47,6 +47,7 @@ export class Game {
     this.runOre = 0;
     this.oreBossBonus = 0;
     this.oreBanked = false;
+    this.lastOreSettlement = null;
     this.runLives = 0;
     this.stageIndex = 0;
     this.waveIndex = -1;
@@ -68,6 +69,7 @@ export class Game {
     this.muted = readStorage('void-circuit-muted') === '1';
     this.audio = null;
     this.music = new MusicController({ muted: this.muted });
+    this.music.prepare('menu');
     this.lastSoundFrame = {};
     this.lastTime = 0;
     this.accumulator = 0;
@@ -102,7 +104,10 @@ export class Game {
       if (event.code === 'Space' && this.mode === 'gameover') this.restart();
     }, { passive: false });
     window.addEventListener('keyup', event => this.keys.delete(event.code));
-    window.addEventListener('pointerdown', () => this.initAudio(), { capture: true, passive: true });
+    const unlockAudio = () => this.initAudio();
+    window.addEventListener('pointerdown', unlockAudio, { capture: true, passive: true });
+    window.addEventListener('touchend', unlockAudio, { capture: true, passive: true });
+    window.addEventListener('click', unlockAudio, { capture: true, passive: true });
     const point = event => {
       const rect = this.canvas.getBoundingClientRect();
       return { x: (event.clientX - rect.left) * this.w / rect.width, y: (event.clientY - rect.top) * this.h / rect.height };
@@ -146,6 +151,7 @@ export class Game {
     this.runOre = 0;
     this.oreBossBonus = 0;
     this.oreBanked = false;
+    this.lastOreSettlement = null;
     this.runLives = this.metaCombat.lives;
     this.endlessCycle = 0;
     this.endlessWave = 0;
@@ -237,8 +243,15 @@ export class Game {
     return this.h * (player?.pilotId === 'kungfu' ? .14 : .28);
   }
 
-  resourceMultiplier(player = this.player) {
+  oreSettlementMultiplier(player = this.player) {
     return 1 + (player?.build.battlefieldCleanup || 0) / 100;
+  }
+
+  oreSettlement(clearBonus = 0, player = this.player) {
+    const base = Math.max(0, Math.floor(this.runOre + clearBonus));
+    const percent = Math.max(0, player?.build.battlefieldCleanup || 0);
+    const total = Math.floor(base * this.oreSettlementMultiplier(player) + 1e-9);
+    return { base, percent, bonus: Math.max(0, total - base), total };
   }
 
   isEndless() {
@@ -294,7 +307,7 @@ export class Game {
 
   repairAmount(units = 2, player = this.player) {
     const kungfuMultiplier = player?.pilotId === 'kungfu' ? 2 : 1;
-    return units * STAT_SCALE * kungfuMultiplier * this.resourceMultiplier(player);
+    return units * STAT_SCALE * kungfuMultiplier;
   }
 
   restart() {
@@ -325,6 +338,7 @@ export class Game {
     this.runOre = 0;
     this.oreBossBonus = 0;
     this.oreBanked = false;
+    this.lastOreSettlement = null;
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['upgrade-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
@@ -347,7 +361,7 @@ export class Game {
     if (this.pointer.id !== null && this.canvas.hasPointerCapture?.(this.pointer.id)) this.canvas.releasePointerCapture?.(this.pointer.id);
     this.pointer = { active: false, id: null, x: 0, y: 0, startX: 0, startY: 0, playerX: 0, playerY: 0 };
     this.onShowTitle?.();
-    this.music.scene('menu', { fadeOut: .35, fadeIn: .45, restart: true });
+    this.music.scene('menu', { fadeOut: .35, fadeIn: .60, restart: true });
     this.updateHud();
   }
 
@@ -377,7 +391,7 @@ export class Game {
     // Keep the menu track through the initial pre-flight upgrade. Actual combat
     // music begins after the starter choice; test runs and later sectors start it here.
     if (this.runMode === 'test' || this.runFrames > 0) {
-      this.music.scene('stage', { fadeOut: .32, fadeIn: .45, restart: true });
+      this.music.scene('stage', { fadeOut: .32, fadeIn: .60, restart: true });
     }
     this.updateHud();
   }
@@ -1597,11 +1611,12 @@ export class Game {
   bankOre(clearBonus = 0) {
     if (this.oreBanked) return 0;
     this.oreBanked = true;
-    const total = this.runOre + clearBonus;
-    if (this.maxMode || this.runMode === 'test' || total <= 0) return total;
-    this.meta.ore += total;
+    const settlement = this.oreSettlement(clearBonus);
+    this.lastOreSettlement = settlement;
+    if (this.maxMode || this.runMode === 'test' || settlement.total <= 0) return settlement.total;
+    this.meta.ore += settlement.total;
     saveMetaState(this.meta);
-    return total;
+    return settlement.total;
   }
 
   beginFinale(enemy) {
@@ -1724,7 +1739,7 @@ export class Game {
   grantXp(amount, defer = false) {
     if (!this.player) return;
     const harvester = upgradePower(this.passiveRank('harvester'));
-    this.player.xp += Math.max(1, Math.round(amount * (1 + harvester * .08) * this.resourceMultiplier() * (this.metaCombat?.xpMultiplier ?? 1)));
+    this.player.xp += Math.max(1, Math.round(amount * (1 + harvester * .08) * (this.metaCombat?.xpMultiplier ?? 1)));
     while (this.player.level < WORLD.maxLevel && this.player.xp >= this.player.xpNeed) {
       this.player.xp -= this.player.xpNeed;
       this.player.level += 1;
@@ -1844,7 +1859,7 @@ export class Game {
     const resumeStageMusic = leavingPreflight || this.pendingStageMusic;
     this.pendingStageMusic = false;
     this.mode = this.upgradeReturnMode || 'playing';
-    if (resumeStageMusic) this.music.scene('stage', { fadeOut: .32, fadeIn: .45, restart: true });
+    if (resumeStageMusic) this.music.scene('stage', { fadeOut: .32, fadeIn: .60, restart: true });
     if (this.mode === 'stageClear') {
       this.transitionTimer = 90;
       this.transitionDeadline = performance.now() + 1500;
@@ -2093,7 +2108,7 @@ export class Game {
     this.mode = victory ? 'victory' : 'gameover';
     // Results are intentionally silent; let the active track recede instead of
     // adding a victory/game-over jingle.
-    this.music.stop({ duration: 2.4, clearDesired: true });
+    this.music.stop({ duration: 3.2, clearDesired: true });
     this.updateDps();
     if (this.score > this.best) { this.best = this.score; writeStorage('void-circuit-best', String(this.best)); }
     this.dom['end-kicker'].textContent = victory ? 'VOID CIRCUIT COLLAPSED' : 'RUN TERMINATED';
@@ -2111,13 +2126,16 @@ export class Game {
     const firstClear = victory && this.runMode === 'normal' && !this.maxMode && !this.meta.cleared;
     if (firstClear) this.meta.cleared = true;
     const banked = this.bankOre(clearBonus);
-    const oreSuffix = this.maxMode || this.runMode === 'test' ? '（未入帳）' : banked > 0 ? `　→ 總計 ◆ ${this.meta.ore}` : '';
+    const settlement = this.lastOreSettlement || this.oreSettlement(clearBonus);
+    const oreSuffix = this.maxMode || this.runMode === 'test' ? '（未入帳）' : banked > 0 ? `　→ 帳戶總計 ◆ ${this.meta.ore}` : '';
     const oreExtra = clearBonus ? `　CLEAR BONUS　◆ ${clearBonus}` : '';
-    const oreLine = `<div class="summary-ore">ORE　◆ ${this.runOre}${oreExtra}${oreSuffix}</div>`;
+    const cleanupExtra = settlement.bonus > 0 ? `　戰場清理 +${settlement.percent}%　◆ ${settlement.bonus}` : '';
+    const oreLine = `<div class="summary-ore">ORE　◆ ${this.runOre}${oreExtra}${cleanupExtra}　結算 ◆ ${settlement.total}${oreSuffix}</div>`;
     this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}${oreLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
     if (victory && this.runMode === 'normal') {
       const skipBank = this.maxMode || this.runMode === 'test';
-      this.dom['clear-body'].innerHTML = `<div class="summary-ore">通關獎勵　◆ ${clearBonus}<br>本次收集　◆ ${this.runOre}<br>${skipBank ? '（測試／MAX 模式不入帳）' : `帳戶總計　◆ ${this.meta.ore}`}</div>${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
+      const cleanupLine = settlement.bonus > 0 ? `戰場清理 +${settlement.percent}%　◆ ${settlement.bonus}<br>` : '';
+      this.dom['clear-body'].innerHTML = `<div class="summary-ore">通關獎勵　◆ ${clearBonus}<br>本次收集　◆ ${this.runOre}<br>${cleanupLine}本次結算　◆ ${settlement.total}<br>${skipBank ? '（測試／MAX 模式不入帳）' : `帳戶總計　◆ ${this.meta.ore}`}</div>${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
       this.dom['clear-overlay'].classList.remove('hidden');
       this.dom['clear-confirm'].onclick = () => {
         this.dom['clear-overlay'].classList.add('hidden');
@@ -2190,9 +2208,9 @@ export class Game {
 
   initAudio() {
     if (!this.audio) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) this.audio = new AC(); }
-    this.audio?.resume?.();
+    this.audio?.resume?.()?.catch?.(() => {});
+    if (this.mode === 'title') this.music.prepare('menu');
     this.music.unlock();
-    if (this.mode === 'title') this.music.scene('menu', { fadeOut: 0, fadeIn: .45, restart: false });
   }
 
   sound(type) {
@@ -2291,7 +2309,7 @@ export class Game {
         : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `MAX · ${p.build.evasion || 20}%`, `唯快不破 · 迴避 ${p.build.evasion || 20}%`, 'MAX')
         : p.pilotId === 'gambler' ? token('assets/icons/frenzy.svg', `+${Math.round((p.grazeBonus || 0) * 100)}%`, `狂熱 · 傷害 +${Math.round((p.grazeBonus || 0) * 100)}%`)
         : p.pilotId === 'reaper' ? token('assets/icons/soul-taker.svg', `${p.build.soulTaker || 1}%`, `奪魂者 · 主武器即死 ${p.build.soulTaker || 1}%`)
-        : p.pilotId === 'imperial' ? token('assets/icons/battlefield-cleanup.svg', `+${p.build.battlefieldCleanup || 0}%`, `戰場清理 · 資源效率 +${p.build.battlefieldCleanup || 0}%`)
+        : p.pilotId === 'imperial' ? token('assets/icons/battlefield-cleanup.svg', `+${p.build.battlefieldCleanup || 0}%`, `戰場清理 · 源晶礦結算 +${p.build.battlefieldCleanup || 0}%`)
         : p.pilotId === 'rambo' ? token('assets/icons/supply-chain.svg', 'MAX', '補給鏈 · 擊倒 BOSS 補滿炸彈', 'MAX')
         : '';
       this.dom['primary-build'].innerHTML = p ? primaryToken + extraPrimaryToken : '—';

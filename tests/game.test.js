@@ -1960,30 +1960,51 @@ test('soul taker executes only primary targets and its overclock caps at five pe
   assert.match(game.dom['primary-build'].innerHTML, /5%/, 'the HUD soul taker badge stays at its own capped value');
 });
 
-test('battlefield cleanup scales XP and both repair sources with one resource multiplier', () => {
+test('battlefield cleanup no longer changes XP or repairs and instead raises ore settlement', () => {
   const { game } = makeGame();
   game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
   game.player.build.battlefieldCleanup = 50;
   game.grantXp(100, true);
-  assert.equal(game.player.xp, 150);
+  assert.equal(game.player.xp, 100, 'imperial no longer scales XP');
 
   game.player.hp = 0;
   game.currentChoices = [{ id: 'repair', category: 'supply' }];
   game.upgradeReturnMode = 'playing';
   game.mode = 'levelup';
   game.chooseUpgrade(0);
-  assert.equal(game.player.hp, 30);
+  assert.equal(game.player.hp, 20, 'upgrade repair keeps its normal amount');
 
   game.player.hp = 0;
   game.effects = [{ type: 'supply', supply: 'heal', x: game.player.x, y: game.player.y, life: 10, radius: 16 }];
   game.updateEffects();
-  assert.equal(game.player.hp, 15);
+  assert.equal(game.player.hp, 10, 'field healing keeps its normal amount');
 
   game.currentChoices = [{ id: 'battlefield-cleanup-boost', category: 'battlefieldCleanup' }];
   game.upgradeReturnMode = 'playing';
   game.mode = 'levelup';
   game.chooseUpgrade(0);
   assert.equal(game.player.build.battlefieldCleanup, 51);
+
+  game.runOre = 1000;
+  const settlement = game.oreSettlement(500);
+  assert.deepEqual(settlement, { base: 1500, percent: 51, bonus: 765, total: 2265 });
+});
+
+test('imperial ore settlement bonus includes the normal-mode clear reward', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.player.build.battlefieldCleanup = 25;
+  game.runOre = 500;
+  const before = game.meta.ore;
+
+  game.endRun(true);
+
+  assert.equal(game.meta.ore, before + 2500, '500 collected + 1500 clear reward receive the full 25% settlement bonus');
+  assert.match(game.dom['clear-body'].innerHTML, /通關獎勵　◆ 1500/);
+  assert.match(game.dom['clear-body'].innerHTML, /本次收集　◆ 500/);
+  assert.match(game.dom['clear-body'].innerHTML, /戰場清理 \+25%　◆ 500/);
+  assert.match(game.dom['clear-body'].innerHTML, /本次結算　◆ 2500/);
 });
 
 test('rambo supply chain restores two bombs after bosses and bombs deal fifty percent more to large targets', () => {
@@ -2239,15 +2260,16 @@ test('killing enemies drops ore pickups, bosses raise the base by one, and the r
   assert.equal(game.bankOre(0), 0, 'banking is idempotent per run');
 });
 
-test('returning to title from a run banks unbanked ore', () => {
+test('returning to title banks run ore with the imperial settlement bonus', () => {
   const { game } = makeGame();
   game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
   game.chooseUpgrade(0);
   game.mode = 'playing';
-  game.runOre = 333;
+  game.player.build.battlefieldCleanup = 20;
+  game.runOre = 500;
   const before = game.meta.ore;
   game.showTitle();
-  assert.equal(game.meta.ore, before + 333, 'pause/title exit banks run ore');
+  assert.equal(game.meta.ore, before + 600, 'pause/title exit applies the 20% ore settlement bonus');
   assert.equal(game.runOre, 0);
   assert.equal(game.mode, 'title');
 });

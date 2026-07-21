@@ -15,6 +15,7 @@ test('final content roster is complete', () => {
   assert.equal(STAGES.length, 5);
   assert.equal(Object.keys(BOSSES).length, 5);
   assert.equal(Object.keys(PILOTS).length, 8);
+  assert.match(PILOTS.imperial.ability, /源晶礦結算獲取量.*通關獎勵/);
   assert.deepEqual(Object.keys(FUSIONS), ['seekerOrbit', 'seekerOrbitPlus', 'lanceOrbit', 'clusterStars', 'blackHole', 'langinus', 'suicideSquad', 'luckyStar', 'taijiMaster', 'sixHarmony']);
 });
 
@@ -98,7 +99,7 @@ test('every sector has enough waves and a mandatory midboss checkpoint', () => {
 });
 
 
-test('music scenes include the selected v8 tracks and user-provided boss warning', () => {
+test('music scenes include the selected menu and boss tracks, extended original exploration, and user-provided warning', () => {
   for (const path of [
     '../assets/audio/menu.mp3',
     '../assets/audio/stage.mp3',

@@ -204,7 +204,7 @@ test('pilot-specific overclock upgrades expose capped soul taking and uncapped b
   assert.deepEqual(makeUpgradePool(imperial).map(item => item.id), ['overdrive-boost', 'battlefield-cleanup-boost']);
   imperial.battlefieldCleanup = 137;
   assert.deepEqual(makeUpgradePool(imperial).map(item => item.id), ['overdrive-boost', 'battlefield-cleanup-boost']);
-  assert.match(makeUpgradePool(imperial)[1].description, /137%.*138%/);
+  assert.match(makeUpgradePool(imperial)[1].description, /源晶礦結算獲取量.*137%.*138%.*通關獎勵/);
 });
 
 test('homing missile never reacquires after target death', () => {
