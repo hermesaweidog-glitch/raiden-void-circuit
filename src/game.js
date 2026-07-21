@@ -1,6 +1,7 @@
 import { AIRCRAFT, BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, SECONDARIES, PASSIVES, PILOTS, PRIMARY_ICON, STAT_SCALE, STAGES, BOSSES, ENEMY_TYPES, WORLD } from './config.js';
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
 import { loadMetaState, maxedMetaState, metaFromUpgrades, ORE_BASE_VALUE, ORE_CLEAR_BONUS, ORE_STAGE_BONUS, oreDropFor, saveMetaState } from './meta.js';
+import { MusicController } from './audio.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -9,6 +10,8 @@ const skillIconMarkup = icon => icon.startsWith('assets/') ? `<img src="${icon}"
 const isLargeEnemyType = type => type === 'elite' || type === 'midboss' || type === 'boss';
 const enemyDamage = type => isLargeEnemyType(type) ? 10 : 5;
 const KUNGFU_FIST_DAMAGE_BONUS = [0, 10, 60, 110];
+const BOSS_WARNING_DURATION_MS = 3100;
+const BOSS_WARNING_DURATION_FRAMES = Math.ceil(BOSS_WARNING_DURATION_MS / (1000 / 60));
 const readStorage = (key, fallback = null) => {
   try { return localStorage.getItem(key) ?? fallback; }
   catch { return fallback; }
@@ -64,6 +67,7 @@ export class Game {
     this.touchSeen = matchMedia('(pointer: coarse)').matches;
     this.muted = readStorage('void-circuit-muted') === '1';
     this.audio = null;
+    this.music = new MusicController({ muted: this.muted });
     this.lastSoundFrame = {};
     this.lastTime = 0;
     this.accumulator = 0;
@@ -74,7 +78,10 @@ export class Game {
       this.accumulator = 0;
       this.lastTime = performance.now();
       this.pointer.active = false;
-      if (document.hidden && this.mode === 'playing') this.setPaused(true);
+      if (document.hidden) {
+        if (this.mode === 'playing') this.setPaused(true);
+        else this.music.pause();
+      } else if (this.mode !== 'paused') this.music.resume();
     });
     this.updateHud();
     requestAnimationFrame(time => this.loop(time));
@@ -95,6 +102,7 @@ export class Game {
       if (event.code === 'Space' && this.mode === 'gameover') this.restart();
     }, { passive: false });
     window.addEventListener('keyup', event => this.keys.delete(event.code));
+    window.addEventListener('pointerdown', () => this.initAudio(), { capture: true, passive: true });
     const point = event => {
       const rect = this.canvas.getBoundingClientRect();
       return { x: (event.clientX - rect.left) * this.w / rect.width, y: (event.clientY - rect.top) * this.h / rect.height };
@@ -143,6 +151,7 @@ export class Game {
     this.endlessWave = 0;
     this.endlessDepth = 0;
     this.endlessWaveTimer = 0;
+    this.pendingStageMusic = false;
     this.testFlags = {
       playerInvincible: this.runMode === 'test' && Boolean(options.playerInvincible),
       enemiesImmortal: this.runMode === 'test' && Boolean(options.enemiesImmortal),
@@ -205,9 +214,7 @@ export class Game {
     this.startStage(isTest ? clamp(Number(options.startStage || 1) - 1, 0, STAGES.length - 1) : 0);
     if (isTest && options.startAtBoss) {
       this.waveIndex = STAGES[this.stageIndex].waves;
-      this.mode = 'bossWarning';
-      this.transitionTimer = 50;
-      this.transitionDeadline = performance.now() + 830;
+      this.beginBossWarning();
     }
     if (!isTest) this.showUpgrade();
   }
@@ -312,6 +319,7 @@ export class Game {
     this.entityId = 1;
     this.hudBuildRevision = -1;
     this.upgradeReturnMode = null;
+    this.pendingStageMusic = false;
     this.lastSoundFrame = {};
     this.announcementToken += 1;
     this.runOre = 0;
@@ -339,6 +347,7 @@ export class Game {
     if (this.pointer.id !== null && this.canvas.hasPointerCapture?.(this.pointer.id)) this.canvas.releasePointerCapture?.(this.pointer.id);
     this.pointer = { active: false, id: null, x: 0, y: 0, startX: 0, startY: 0, playerX: 0, playerY: 0 };
     this.onShowTitle?.();
+    this.music.scene('menu', { fadeOut: .35, fadeIn: .45, restart: true });
     this.updateHud();
   }
 
@@ -365,6 +374,11 @@ export class Game {
     this.player.shieldsDropped = 0;
     const stage = STAGES[this.stageIndex];
     this.announce(`STAGE ${stage.id} — ${stage.name}`, stage.subtitle, 1900);
+    // Keep the menu track through the initial pre-flight upgrade. Actual combat
+    // music begins after the starter choice; test runs and later sectors start it here.
+    if (this.runMode === 'test' || this.runFrames > 0) {
+      this.music.scene('stage', { fadeOut: .32, fadeIn: .45, restart: true });
+    }
     this.updateHud();
   }
 
@@ -482,14 +496,17 @@ export class Game {
     if (this.waveCooldown > 0) { this.waveCooldown -= 1; return; }
     const stage = STAGES[this.stageIndex];
     if (this.waveIndex + 1 < stage.waves) this.spawnNextWave();
-    else {
-      this.mode = 'bossWarning';
-      this.transitionTimer = 100;
-      this.transitionDeadline = performance.now() + 1700;
-      this.enemyBullets = [];
-      this.announce('WARNING', `${BOSSES[stage.boss].name} APPROACHING`, 2400);
-      this.sound('warning');
-    }
+    else this.beginBossWarning();
+  }
+
+  beginBossWarning() {
+    const stage = STAGES[this.stageIndex];
+    this.mode = 'bossWarning';
+    this.transitionTimer = BOSS_WARNING_DURATION_FRAMES;
+    this.transitionDeadline = performance.now() + BOSS_WARNING_DURATION_MS;
+    this.enemyBullets = [];
+    this.announce('WARNING', `${BOSSES[stage.boss].name} APPROACHING`, BOSS_WARNING_DURATION_MS);
+    this.music.scene('warning', { fadeOut: .24, fadeIn: .03, restart: true });
   }
 
   updateEndlessDirector() {
@@ -497,10 +514,15 @@ export class Game {
     if (this.endlessWaveTimer > 0) return;
     const stage = STAGES[this.stageIndex];
     const bossAlive = this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
-    if (!bossAlive && this.waveIndex + 1 >= stage.waves) {
-      this.spawnBoss();
-      if (this.endlessCycle >= 2) this.spawnEnemy('midboss', this.w / 3, -110, 1 + this.endlessCycle * .1, 7, 0);
-      if (this.endlessCycle >= 6) this.spawnEndlessEscortBoss();
+    if (bossAlive) {
+      this.spawnBossReinforcement();
+      this.endlessWaveTimer = 300;
+      return;
+    }
+    if (this.waveIndex + 1 >= stage.waves) {
+      this.beginBossWarning();
+      this.endlessWaveTimer = 300;
+      return;
     } else {
       this.spawnNextWave();
       if (this.endlessCycle >= 4 && this.waveIndex + 1 === stage.midbossWave) this.spawnEnemy('midboss', this.w * .75, -130, 1 + this.endlessCycle * .1, 7, 1);
@@ -508,6 +530,26 @@ export class Game {
     this.endlessWave += 1;
     this.endlessDepth = this.endlessWave;
     this.endlessWaveTimer = 300;
+  }
+
+  spawnBossReinforcement() {
+    const normalTypes = new Set(['scout', 'striker', 'gunship']);
+    let normalCount = 0;
+    for (const enemy of this.enemies) if (enemy.alive && normalTypes.has(enemy.type)) normalCount += 1;
+    const cap = 20;
+    if (normalCount >= cap) return;
+    const stage = STAGES[this.stageIndex];
+    const pressure = stagePressure(stage, Math.max(0, this.waveIndex));
+    const formation = (this.waveIndex * 3 + this.stageIndex) % 7;
+    const count = Math.min(cap - normalCount, 6 + this.stageIndex + Math.floor(Math.max(0, this.waveIndex) * .35));
+    for (let i = 0; i < count; i += 1) {
+      let type = 'scout';
+      if (this.stageIndex >= 1 && (i + this.waveIndex) % 4 === 0) type = 'striker';
+      if (this.stageIndex >= 2 && (i + this.waveIndex) % 5 === 0) type = 'gunship';
+      const x = 55 + (i % 6) * ((this.w - 110) / 5);
+      const y = -45 - Math.floor(i / 6) * 60;
+      this.spawnEnemy(type, x, y, pressure, formation, i);
+    }
   }
 
   spawnEndlessEscortBoss() {
@@ -592,8 +634,12 @@ export class Game {
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
       age: 0, phase: 0, hitFlash: 0, score: 10000 * route.id, xp: 65 + route.id * 15, pressure: 1, arriving: true,
     });
+    if (this.isEndless()) {
+      if (this.endlessCycle >= 2) this.spawnEnemy('midboss', this.w / 3, -110, 1 + this.endlessCycle * .1, 7, 0);
+      if (this.endlessCycle >= 6) this.spawnEndlessEscortBoss();
+    }
     this.announce(data.name, data.title, 1700);
-    this.sound('boss');
+    this.music.scene('boss', { fadeOut: .08, fadeIn: .18, restart: true });
   }
 
   updatePlayer(transitionOnly) {
@@ -679,7 +725,7 @@ export class Game {
       const count = 1 + Math.floor(level / 2) * 2 + projectileBonus;
       baseDps = this.vulcanPelletDamage(level) * count * 60 / cooldown;
     } else if (player.craft.primary === 'laser') {
-      baseDps = (.28 + level * .065) * (1 + projectileBonus) * 60;
+      baseDps = (.35 + level * .08125) * (1 + projectileBonus) * 60;
     } else {
       const cooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
       let volleyDamage = (5.2 + level * 1.45) * (1 + projectileBonus);
@@ -732,7 +778,7 @@ export class Game {
         const offsetX = (slot - (beamCount - 1) / 2) * 38;
         const beamData = {
           x: p.x + offsetX, y: p.y - 22, endY: 0, vx: 0, vy: 0, radius: (4 + level * level * .48) * 1.5,
-          damage: .28 + level * .065, life: 2, color: '#7df5ff', kind: 'beam', beamSlot: slot, offsetX, primary: true,
+          damage: .35 + level * .08125, life: 2, color: '#7df5ff', kind: 'beam', beamSlot: slot, offsetX, primary: true,
           maxTargets: Infinity, statuses, statusPowers,
         };
         const beam = this.playerBullets.find(bullet => bullet.kind === 'beam' && bullet.beamSlot === slot);
@@ -1157,12 +1203,24 @@ export class Game {
         enemy.chillStacks = (enemy.chillStacks || 0) + 1;
         if (enemy.chillStacks >= 6) { enemy.freezeTimer = 20 + power * 4; enemy.chillStacks = 0; }
       } else if (status === 'shock' && (enemy.shockCooldown || 0) <= 0) {
-        const targets = this.nearestEnemies(enemy, Math.min(3, 1 + Math.floor(power / 2)), 180 ** 2, enemy.id);
-        if (targets.length) {
-          const points = [{ x: enemy.x, y: enemy.y }];
-          for (const target of targets) { this.damageEnemy(target, bullet.damage * .32, false); points.push({ x: target.x, y: target.y }); }
-          this.addEffect({ type: 'arc', points, life: 12, maxLife: 12 });
+        const points = [{ x: enemy.x, y: enemy.y }];
+        let current = enemy;
+        for (let bounce = 0; bounce < 3; bounce += 1) {
+          let target = null;
+          let nearestDistance = 180 ** 2;
+          for (const candidate of this.enemies) {
+            if (!candidate.alive || candidate.id === current.id) continue;
+            const d2 = distanceSq(current, candidate);
+            if (d2 < nearestDistance) { target = candidate; nearestDistance = d2; }
+          }
+          // Previously hit enemies may be selected again, but each bounce
+          // still requires another living enemy near the current target.
+          if (!target) break;
+          this.damageEnemy(target, bullet.damage * .64, false);
+          points.push({ x: target.x, y: target.y });
+          current = target;
         }
+        this.addEffect({ type: 'arc', points, life: 12, maxLife: 12 });
         enemy.shockCooldown = 10;
       }
     }
@@ -1493,6 +1551,8 @@ export class Game {
       this.oreBossBonus += ORE_STAGE_BONUS;
       if (this.player) this.player.shieldsDropped = 0;
       if (this.isEndless()) {
+        this.music.stop({ duration: .38, clearDesired: true });
+        this.pendingStageMusic = true;
         if (this.stageIndex >= STAGES.length - 1) { this.endlessCycle += 1; this.stageIndex = 0; }
         else this.stageIndex += 1;
         this.waveIndex = -1;
@@ -1780,7 +1840,11 @@ export class Game {
       p.invincible = Math.max(p.invincible, 45);
     }
     this.dom['upgrade-overlay'].classList.add('hidden');
+    const leavingPreflight = this.upgradeReturnMode === 'stageIntro' && this.runFrames === 0 && this.stageIndex === 0;
+    const resumeStageMusic = leavingPreflight || this.pendingStageMusic;
+    this.pendingStageMusic = false;
     this.mode = this.upgradeReturnMode || 'playing';
+    if (resumeStageMusic) this.music.scene('stage', { fadeOut: .32, fadeIn: .45, restart: true });
     if (this.mode === 'stageClear') {
       this.transitionTimer = 90;
       this.transitionDeadline = performance.now() + 1500;
@@ -2019,6 +2083,7 @@ export class Game {
   }
 
   completeStage() {
+    this.music.stop({ duration: .38, clearDesired: true });
     this.mode = 'stageClear'; this.transitionTimer = 90; this.transitionDeadline = performance.now() + 1500; this.enemyBullets = []; this.playerBullets = [];
     this.player.targetY = -80;
     this.announce('STAGE CLEAR', `SECTOR ${this.stageIndex + 1} SECURED`, 2300);
@@ -2026,6 +2091,9 @@ export class Game {
 
   endRun(victory) {
     this.mode = victory ? 'victory' : 'gameover';
+    // Results are intentionally silent; let the active track recede instead of
+    // adding a victory/game-over jingle.
+    this.music.stop({ duration: 2.4, clearDesired: true });
     this.updateDps();
     if (this.score > this.best) { this.best = this.score; writeStorage('void-circuit-best', String(this.best)); }
     this.dom['end-kicker'].textContent = victory ? 'VOID CIRCUIT COLLAPSED' : 'RUN TERMINATED';
@@ -2059,7 +2127,6 @@ export class Game {
       this.dom['end-overlay'].classList.remove('hidden');
     }
     this.dom['pause-fab'].classList.add('hidden');
-    this.sound(victory ? 'victory' : 'gameover');
   }
 
   updatePausePanel() {
@@ -2100,10 +2167,12 @@ export class Game {
       this.updatePausePanel();
       this.dom['pause-overlay'].classList.remove('hidden');
       this.dom['pause-button'].textContent = 'RESUME';
+      this.music.pause();
     } else if (!paused && this.mode === 'paused') {
       this.mode = this.pauseReturnMode || 'playing';
       this.dom['pause-overlay'].classList.add('hidden');
       this.dom['pause-button'].textContent = 'PAUSE';
+      this.music.resume();
     }
   }
 
@@ -2113,12 +2182,17 @@ export class Game {
   }
 
   toggleMute() {
-    this.muted = !this.muted; writeStorage('void-circuit-muted', this.muted ? '1' : '0'); this.dom['mute-button'].textContent = this.muted ? 'MUTED' : 'SOUND';
+    this.muted = !this.muted;
+    writeStorage('void-circuit-muted', this.muted ? '1' : '0');
+    this.dom['mute-button'].textContent = this.muted ? 'MUTED' : 'SOUND';
+    this.music.setMuted(this.muted);
   }
 
   initAudio() {
     if (!this.audio) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) this.audio = new AC(); }
     this.audio?.resume?.();
+    this.music.unlock();
+    if (this.mode === 'title') this.music.scene('menu', { fadeOut: 0, fadeIn: .45, restart: false });
   }
 
   sound(type) {

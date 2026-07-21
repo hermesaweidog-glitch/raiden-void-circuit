@@ -2385,6 +2385,8 @@ test('deep endless cycles add midboss escorts and a second boss', () => {
   game.endlessWaveTimer = 0;
   game.enemies = [];
   game.updateDirector();
+  assert.equal(game.mode, 'bossWarning', 'endless bosses use the same warning transition');
+  game.spawnBoss();
   assert.equal(game.enemies.filter(enemy => enemy.type === 'boss').length, 1);
   assert.equal(game.enemies.filter(enemy => enemy.type === 'midboss').length, 1, 'cycle three bosses arrive with a midboss escort');
 
@@ -2393,6 +2395,8 @@ test('deep endless cycles add midboss escorts and a second boss', () => {
   game.endlessWaveTimer = 0;
   game.enemies = [];
   game.updateDirector();
+  assert.equal(game.mode, 'bossWarning', 'deep endless bosses still announce their arrival');
+  game.spawnBoss();
   const bosses = game.enemies.filter(enemy => enemy.type === 'boss');
   assert.equal(bosses.length, 2, 'cycle seven adds an escort boss');
   assert.equal(bosses.filter(boss => boss.escort).length, 1, 'exactly one is flagged as escort');

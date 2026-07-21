@@ -60,6 +60,7 @@ python3 -m http.server 8765 --bind 0.0.0.0
 - 戰鬥底欄以獨立生成式美術 icon 與數字等級顯示完整 build；超載加成顯示於主武器欄，暫停畫面可檢視完整名稱
 - 五隻 Boss 使用各自的程序化向量輪廓、裝甲結構與發光核心，維持手機效能與清晰辨識度
 - 明確限制敵人、子彈、粒子與特效數量，降低手機效能壓力
+- 內建場景音樂：主選單、宇宙探索、Boss 警告與 Boss 戰；支援淡入淡出、暫停、靜音與離線快取
 - PWA manifest 與 service worker，支援離線快取
 
 ## 專案結構
@@ -73,8 +74,10 @@ raiden/
 ├── src/
 │   ├── main.js
 │   ├── game.js
+│   ├── audio.js
 │   ├── config.js
 │   └── systems.js
+├── assets/audio/
 ├── tests/
 ├── scripts/
 └── .github/workflows/

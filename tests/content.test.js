@@ -96,3 +96,13 @@ test('every sector has enough waves and a mandatory midboss checkpoint', () => {
     assert.ok(stage.midbossWave <= stage.waves - 2, `${stage.name} needs waves after its checkpoint`);
   }
 });
+
+
+test('music scenes include the selected v8 tracks and user-provided boss warning', () => {
+  for (const path of [
+    '../assets/audio/menu.mp3',
+    '../assets/audio/stage.mp3',
+    '../assets/audio/boss-warning.mp3',
+    '../assets/audio/boss.mp3',
+  ]) assert.ok(existsSync(new URL(path, import.meta.url)), `missing ${path}`);
+});
