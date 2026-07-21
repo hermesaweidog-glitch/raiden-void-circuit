@@ -33,7 +33,7 @@ export class Game {
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
       'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node', 'ore', 'lives', 'clear-overlay', 'clear-body', 'clear-confirm',
       'pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive',
-      'pause-pilot', 'pause-fab', 'pause-test-controls', 'pause-player-invincible', 'pause-enemies-immortal', 'dps-1s', 'dps-10s', 'dps-total',
+      'pause-pilot', 'pause-fab', 'pause-test-controls', 'pause-player-invincible', 'pause-enemies-immortal', 'dps-1s', 'dps-10s', 'dps-total', 'review-button', 'damage-review',
     ].map(id => [id, document.getElementById(id)]));
     this.mode = 'title';
     this.hudBuildRevision = -1;
@@ -48,6 +48,9 @@ export class Game {
     this.oreBossBonus = 0;
     this.oreBanked = false;
     this.lastOreSettlement = null;
+    this.damageSources = {};
+    this.endlessBossWarningTimer = 0;
+    this.endlessBossSpawned = false;
     this.runLives = 0;
     this.stageIndex = 0;
     this.waveIndex = -1;
@@ -137,6 +140,7 @@ export class Game {
     this.canvas.addEventListener('pointerup', release);
     this.canvas.addEventListener('pointercancel', release);
     window.addEventListener('blur', () => { this.keys.clear(); this.pointer.active = false; if (this.mode === 'playing') this.togglePause(); });
+    this.dom['review-button']?.addEventListener('click', () => this.dom['damage-review']?.classList.toggle('hidden'));
   }
 
   start(craftOrOptions = 'falcon') {
@@ -152,6 +156,9 @@ export class Game {
     this.oreBossBonus = 0;
     this.oreBanked = false;
     this.lastOreSettlement = null;
+    this.damageSources = {};
+    this.endlessBossWarningTimer = 0;
+    this.endlessBossSpawned = false;
     this.runLives = this.metaCombat.lives;
     this.endlessCycle = 0;
     this.endlessWave = 0;
@@ -339,6 +346,9 @@ export class Game {
     this.oreBossBonus = 0;
     this.oreBanked = false;
     this.lastOreSettlement = null;
+    this.damageSources = {};
+    this.endlessBossWarningTimer = 0;
+    this.endlessBossSpawned = false;
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['upgrade-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
@@ -471,6 +481,7 @@ export class Game {
     }
     this.updateXpOrbs();
     this.updateEffects();
+    this.updateEndlessBossWarning();
     if (!enemiesFrozen) this.updateDirector();
     this.updateHud();
   }
@@ -515,12 +526,34 @@ export class Game {
 
   beginBossWarning() {
     const stage = STAGES[this.stageIndex];
+    if (this.isEndless()) {
+      if (this.endlessBossWarningTimer > 0 || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive)) return;
+      this.endlessBossWarningTimer = BOSS_WARNING_DURATION_FRAMES;
+      this.endlessBossSpawned = false;
+      this.announce('WARNING', `${BOSSES[stage.boss].name} APPROACHING`, BOSS_WARNING_DURATION_MS);
+      this.music.scene('warning', { fadeOut: .24, fadeIn: .03, restart: true });
+      return;
+    }
     this.mode = 'bossWarning';
     this.transitionTimer = BOSS_WARNING_DURATION_FRAMES;
     this.transitionDeadline = performance.now() + BOSS_WARNING_DURATION_MS;
     this.enemyBullets = [];
     this.announce('WARNING', `${BOSSES[stage.boss].name} APPROACHING`, BOSS_WARNING_DURATION_MS);
     this.music.scene('warning', { fadeOut: .24, fadeIn: .03, restart: true });
+  }
+
+  updateEndlessBossWarning() {
+    if (!this.isEndless() || this.endlessBossWarningTimer <= 0) return;
+    this.endlessBossWarningTimer -= 1;
+    const elapsed = BOSS_WARNING_DURATION_FRAMES - this.endlessBossWarningTimer;
+    if (!this.endlessBossSpawned && elapsed >= 60) {
+      this.endlessBossSpawned = true;
+      this.spawnBoss({ startMusic: false });
+    }
+    if (this.endlessBossWarningTimer <= 0) {
+      if (!this.endlessBossSpawned) this.spawnBoss({ startMusic: false });
+      this.music.scene('boss', { fadeOut: .10, fadeIn: .18, restart: true });
+    }
   }
 
   updateEndlessDirector() {
@@ -534,7 +567,7 @@ export class Game {
       return;
     }
     if (this.waveIndex + 1 >= stage.waves) {
-      this.beginBossWarning();
+      if (this.endlessBossWarningTimer <= 0) this.beginBossWarning();
       this.endlessWaveTimer = 300;
       return;
     } else {
@@ -636,7 +669,7 @@ export class Game {
     return true;
   }
 
-  spawnBoss() {
+  spawnBoss({ startMusic = true } = {}) {
     const route = STAGES[this.stageIndex];
     const stage = this.activeStage();
     const data = BOSSES[route.boss];
@@ -653,7 +686,7 @@ export class Game {
       if (this.endlessCycle >= 6) this.spawnEndlessEscortBoss();
     }
     this.announce(data.name, data.title, 1700);
-    this.music.scene('boss', { fadeOut: .08, fadeIn: .18, restart: true });
+    if (startMusic) this.music.scene('boss', { fadeOut: .08, fadeIn: .18, restart: true });
   }
 
   updatePlayer(transitionOnly) {
@@ -685,7 +718,7 @@ export class Game {
         if (player.shadowTimer % 12 === 0) {
           const pulseDamage = this.primaryDamagePerSecond(player) * .2;
           for (const enemy of this.enemies) {
-            if (enemy.alive && distanceSq(enemy, player) <= clearRadius ** 2) this.damageEnemy(enemy, pulseDamage, false, 'shadowPhase');
+            if (enemy.alive && distanceSq(enemy, player) <= clearRadius ** 2) this.damageEnemy(enemy, pulseDamage, false, 'pilot:陰影｜相位範圍傷害');
           }
         }
       } else {
@@ -777,6 +810,7 @@ export class Game {
       splash: options.splash || 0, targetId: options.targetId, guidanceActive: options.guidanceActive,
       turn: options.turn || .055, reacquired: false, statuses: options.statuses || statuses, statusPowers: options.statusPowers || statusPowers,
       thunderHammer: options.thunderHammer || false, hammerRadius: options.hammerRadius || 0, hammerDamage: options.hammerDamage || 0,
+      damageSource: options.damageSource || `primary:${p.craft.name}｜本體`,
     });
     if (p.craft.primary === 'vulcan') {
       p.fireCooldown = Math.max(4, Math.round((11 - level) / rate));
@@ -908,7 +942,7 @@ export class Game {
         const targets = this.nearestEnemies(p, count);
         for (let index = 0; index < count && targets.length; index += 1) {
           const target = targets[index] || targets[0];
-          this.addEffect({ type: 'gravity', blackHole: true, x: target.x + (index - (count - 1) / 2) * 22, y: target.y, radius: (52 + level * 6) * 1.15, timer: 300, damage: .45 + level * .18, pulse: 0 });
+          this.addEffect({ type: 'gravity', blackHole: true, x: target.x + (index - (count - 1) / 2) * 22, y: target.y, radius: (52 + level * 6) * 1.15, timer: 300, damage: .45 + level * .18, pulse: 0, damageSource: 'fusion:黑洞奇點' });
         }
         // Longer-lived, rarer singularity: duration 300 < cooldown 380 keeps at
         // most one black hole on the field without projectile upgrades.
@@ -930,7 +964,7 @@ export class Game {
             vx: (i - (count - 1) / 2) * .7, vy: -6.2, radius: 5, damage: 3 + level * 1.15,
             life: 190, color: '#ffb703', kind: 'missile', pierce: 0, splash: 14 + level * 2,
             targetId: target.id, guidanceActive: true, turn: .035 + level * .009 + upgradePower(this.passiveRank('guidance')) * .005,
-            reacquired: false,
+            reacquired: false, damageSource: 'secondary:追蹤導彈',
           });
         }
         this.setSecondaryCooldown(id, Math.max(30, 88 - level * 9));
@@ -939,7 +973,7 @@ export class Game {
         const target = p.build.fusions?.seekerOrbit ? pickNearestTarget(p, this.enemies) : null;
         for (let i = 0; i < count; i += 1) {
           const angle = this.frame * .035 + i / count * TAU;
-          this.addPlayerBullet({ id: this.entityId++, x: p.x + Math.cos(angle) * 34, y: p.y + Math.sin(angle) * 20, vx: Math.sin(angle) * .5, vy: -9, radius: 3.2, damage: 1.5 + level * .55, life: 120, color: '#a78bfa', kind: target ? 'missile' : 'drone', pierce: 0, splash: 0, targetId: target?.id, guidanceActive: Boolean(target), turn: .08 });
+          this.addPlayerBullet({ id: this.entityId++, x: p.x + Math.cos(angle) * 34, y: p.y + Math.sin(angle) * 20, vx: Math.sin(angle) * .5, vy: -9, radius: 3.2, damage: 1.5 + level * .55, life: 120, color: '#a78bfa', kind: target ? 'missile' : 'drone', pierce: 0, splash: 0, targetId: target?.id, guidanceActive: Boolean(target), turn: .08, damageSource: p.build.fusions?.seekerOrbit ? 'fusion:追獵軌道' : 'secondary:無人機' });
         }
         this.setSecondaryCooldown(id, Math.max(12, 36 - level * 4));
       } else if (id === 'chain') {
@@ -947,7 +981,7 @@ export class Game {
         if (targets.length) {
           let previous = { x: p.x, y: p.y };
           const points = [{ ...previous }];
-          for (const target of targets) { this.damageEnemy(target, 2.4 + level * 1.15, false); points.push({ x: target.x, y: target.y }); previous = target; }
+          for (const target of targets) { this.damageEnemy(target, 2.4 + level * 1.15, false, 'secondary:連鎖電弧'); points.push({ x: target.x, y: target.y }); previous = target; }
           this.addEffect({ type: 'arc', points, life: 12, maxLife: 12 });
         }
         this.setSecondaryCooldown(id, Math.max(45, 115 - level * 10));
@@ -971,14 +1005,14 @@ export class Game {
           while (delta > Math.PI) delta -= Math.PI * 2;
           while (delta < -Math.PI) delta += Math.PI * 2;
           if (Math.abs(delta) > halfAngle) continue;
-          this.damageEnemy(enemy, blastDamage, true);
+          this.damageEnemy(enemy, blastDamage, true, 'secondary:腐蝕噴射');
           enemy.acidTimer = 300;
           enemy.acidAmp = Math.max(enemy.acidAmp || 0, amp);
         }
         this.setSecondaryCooldown(id, Math.max(10, 28 - level * 2));
       } else if (id === 'rail') {
         const count = 1 + this.projectileBonus();
-        for (let index = 0; index < count; index += 1) this.addPlayerBullet({ id: this.entityId++, x: p.x + (index - (count - 1) / 2) * 14, y: p.y - 20, vx: 0, vy: -15, radius: 5, damage: 7 + level * 2.4, life: 75, color: '#fff', kind: 'rail', pierce: 6 + level, splash: 0 });
+        for (let index = 0; index < count; index += 1) this.addPlayerBullet({ id: this.entityId++, x: p.x + (index - (count - 1) / 2) * 14, y: p.y - 20, vx: 0, vy: -15, radius: 5, damage: 7 + level * 2.4, life: 75, color: '#fff', kind: 'rail', pierce: 6 + level, splash: 0, damageSource: 'secondary:磁軌炮' });
         this.setSecondaryCooldown(id, Math.max(70, 155 - level * 13));
       } else if (id === 'bombard') {
         const count = 1 + this.projectileBonus();
@@ -1003,7 +1037,7 @@ export class Game {
             shotCount: 3,
             shotInterval: 6,
             radius: 35 + level * 5,
-            damage: (7 + level * 3.2) * .45,
+            damage: (7 + level * 3.2) * .45, damageSource: 'secondary:軌道轟炸',
           });
         }
         this.setSecondaryCooldown(id, Math.max(65, 145 - level * 11));
@@ -1012,7 +1046,7 @@ export class Game {
         const targets = this.nearestEnemies(p, count);
         for (let index = 0; index < count && targets.length; index += 1) {
           const target = targets[index] || targets[0];
-          this.addEffect({ type: 'gravity', x: target.x + (index - (count - 1) / 2) * 22, y: target.y, radius: 52 + level * 6, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0 });
+          this.addEffect({ type: 'gravity', x: target.x + (index - (count - 1) / 2) * 22, y: target.y, radius: 52 + level * 6, timer: 100 + level * 10, damage: .45 + level * .18, pulse: 0, damageSource: 'secondary:重力場' });
         }
         this.setSecondaryCooldown(id, Math.max(95, 190 - level * 15));
       } else if (id === 'prism') {
@@ -1046,7 +1080,7 @@ export class Game {
         this.enemyBullets = this.enemyBullets.filter(bullet => !inPushArea(bullet));
         for (const enemy of this.enemies) {
           if (!enemy.alive || !inPushArea(enemy)) continue;
-          this.damageEnemy(enemy, this.rollDamage(3.3 * 1.85 * damageScale), true);
+          this.damageEnemy(enemy, this.rollDamage(3.3 * 1.85 * damageScale), true, 'fusion:太極宗師');
           if ((enemy.ironMountainCooldown || 0) <= 0) {
             enemy.kungfuAttackLock = 90;
             enemy.ironMountainCooldown = 300;
@@ -1063,7 +1097,7 @@ export class Game {
         const targets = this.nearestEnemies(p, 3, (250 * areaScale) ** 2);
         for (let strike = 0; strike < 3 && targets.length; strike += 1) {
           const enemy = targets[strike % targets.length];
-          this.damageEnemy(enemy, this.rollDamage(4.2 * damageScale), true);
+          this.damageEnemy(enemy, this.rollDamage(4.2 * damageScale), true, 'fusion:六合連擊');
           enemy.kungfuSlowTimer = 90;
           enemy.kungfuSlowFactor = Math.min(enemy.kungfuSlowFactor || 1, .6);
           this.addEffect({ type: 'afterimage', x: enemy.x, y: enemy.y, craftId: p.craftId, color: '#34d399', strike, life: 22, maxLife: 22 });
@@ -1093,7 +1127,7 @@ export class Game {
         const slowFactor = [1, .8, .7, .6][rank];
         for (const enemy of this.enemies) {
           if (!enemy.alive || distanceSq(p, enemy) > (radius + enemy.radius) ** 2) continue;
-          this.damageEnemy(enemy, this.rollDamage([0, 2, 2.8, 3.7][rank] * damageScale), true);
+          this.damageEnemy(enemy, this.rollDamage([0, 2, 2.8, 3.7][rank] * damageScale), true, 'secondary:聯合打擊');
           enemy.kungfuSlowTimer = 90;
           enemy.kungfuSlowFactor = Math.min(enemy.kungfuSlowFactor || 1, slowFactor);
         }
@@ -1107,7 +1141,7 @@ export class Game {
         const width = [0, 82, 102, 122][rank] * areaScale;
         for (const enemy of this.enemies) {
           if (!enemy.alive || enemy.y > p.y - range / 2 + enemy.radius || enemy.y < p.y - range - enemy.radius || Math.abs(enemy.x - p.x) > width / 2 + enemy.radius) continue;
-          this.damageEnemy(enemy, this.rollDamage([0, 1.6, 2.3, 3.3][rank] * damageScale), true);
+          this.damageEnemy(enemy, this.rollDamage([0, 1.6, 2.3, 3.3][rank] * damageScale), true, 'secondary:推手');
         }
         this.addEffect({ type: 'pushHands', x: p.x, y: p.y - range / 2, range: range / 2, width, life: 12, maxLife: 12 });
         this.setSecondaryCooldown(id, [0, 22, 18, 14][rank]);
@@ -1119,7 +1153,7 @@ export class Game {
       } else if (id === 'afterimage') {
         const targets = this.nearestEnemies(p, rank, [0, 170, 210, 250][rank] ** 2);
         for (const enemy of targets) {
-          this.damageEnemy(enemy, this.rollDamage([0, 2.4, 3.2, 4.2][rank]), true);
+          this.damageEnemy(enemy, this.rollDamage([0, 2.4, 3.2, 4.2][rank]), true, 'secondary:殘影');
           this.addEffect({ type: 'afterimage', x: enemy.x, y: enemy.y, craftId: p.craftId, life: 22, maxLife: 22 });
         }
         this.setSecondaryCooldown(id, 60);
@@ -1137,7 +1171,7 @@ export class Game {
         let targets = 0;
         for (const enemy of this.enemies) {
           if (!enemy.alive || enemy.y > bullet.y || Math.abs(enemy.x - bullet.x) > enemy.radius + bullet.radius) continue;
-          this.damageEnemy(enemy, this.rollDamage(bullet.damage), true, bullet.primary ? 'primary' : null);
+          this.damageEnemy(enemy, this.rollDamage(bullet.damage), true, bullet.damageSource || (bullet.primary ? `primary:${this.player.craft.name}｜本體` : 'other:其他傷害'));
           this.applyBulletStatus(bullet, enemy);
           targets += 1;
           if (targets >= bullet.maxTargets) break;
@@ -1161,10 +1195,10 @@ export class Game {
         const rr = bullet.radius + enemy.radius;
         if (distanceSq(bullet, enemy) > rr * rr) continue;
         bullet.hitIds ||= new Set(); bullet.hitIds.add(enemy.id);
-        this.damageEnemy(enemy, this.rollDamage(bullet.damage), true, bullet.primary ? 'primary' : null);
+        this.damageEnemy(enemy, this.rollDamage(bullet.damage), true, bullet.damageSource || (bullet.primary ? `primary:${this.player.craft.name}｜本體` : 'other:其他傷害'));
         this.applyBulletStatus(bullet, enemy);
-        if (bullet.splash) this.areaDamage(bullet.x, bullet.y, bullet.splash, bullet.damage * .45, enemy.id, bullet.primary ? 'primary' : null);
-        if (bullet.thunderHammer) this.triggerThunderHammer(enemy.x, enemy.y, bullet.hammerRadius, bullet.hammerDamage, enemy.id, bullet.primary ? 'primary' : null);
+        if (bullet.splash) this.areaDamage(bullet.x, bullet.y, bullet.splash, bullet.damage * .45, enemy.id, `${bullet.damageSource || 'other:其他傷害'}｜爆炸`);
+        if (bullet.thunderHammer) this.triggerThunderHammer(enemy.x, enemy.y, bullet.hammerRadius, bullet.hammerDamage, enemy.id, `primary:${this.player.craft.name}｜雷槌追加`);
         if (bullet.pierce > 0) bullet.pierce -= 1;
         else { this.playerBullets.splice(i, 1); removed = true; }
         break;
@@ -1212,6 +1246,7 @@ export class Game {
       if (status === 'burn') {
         enemy.burnTimer = Math.max(enemy.burnTimer || 0, 90 + power * 12);
         enemy.burnDamage = this.primaryDamagePerSecond() * .3 / 4;
+        enemy.burnSource = `primary:${this.player.craft.name}｜燃燒追加`;
       } else if (status === 'chill') {
         enemy.chillTimer = Math.max(enemy.chillTimer || 0, 75 + power * 6);
         enemy.chillStacks = (enemy.chillStacks || 0) + 1;
@@ -1230,7 +1265,7 @@ export class Game {
           // Previously hit enemies may be selected again, but each bounce
           // still requires another living enemy near the current target.
           if (!target) break;
-          this.damageEnemy(target, bullet.damage * .64, false);
+          this.damageEnemy(target, bullet.damage * .64, false, `primary:${this.player.craft.name}｜連鎖電擊`);
           points.push({ x: target.x, y: target.y });
           current = target;
         }
@@ -1252,7 +1287,7 @@ export class Game {
     enemy.kungfuSlowTimer = Math.max(0, (enemy.kungfuSlowTimer || 0) - 1);
     enemy.kungfuAttackLock = Math.max(0, (enemy.kungfuAttackLock || 0) - 1);
     enemy.ironMountainCooldown = Math.max(0, (enemy.ironMountainCooldown || 0) - 1);
-    if (enemy.burnTimer > 0 && this.frame % 20 === 0) this.damageEnemy(enemy, enemy.burnDamage || .1, false);
+    if (enemy.burnTimer > 0 && this.frame % 20 === 0) this.damageEnemy(enemy, enemy.burnDamage || .1, false, enemy.burnSource || 'primary:主武器｜燃燒追加');
     if (!enemy.alive) return 0;
     if (enemy.chillTimer <= 0 && enemy.freezeTimer <= 0) enemy.chillStacks = 0;
     const heavy = isLargeEnemyType(enemy.type);
@@ -1294,7 +1329,7 @@ export class Game {
         if (kungfu && (enemy.kungfuHitCooldown || 0) <= 0) {
           const ironMountain = this.player.build.secondaries.ironMountain || 0;
           const fistDamage = 2 * (1 + KUNGFU_FIST_DAMAGE_BONUS[this.player.build.primaryLevel] / 100);
-          this.damageEnemy(enemy, this.rollDamage(fistDamage * [1, 1.3, 1.55, 1.85][ironMountain]), true);
+          this.damageEnemy(enemy, this.rollDamage(fistDamage * [1, 1.3, 1.55, 1.85][ironMountain]), true, 'pilot:功夫｜撞擊傷害');
           if (ironMountain && (enemy.ironMountainCooldown || 0) <= 0) {
             enemy.kungfuAttackLock = [0, 48, 60, 90][ironMountain];
             enemy.ironMountainCooldown = 300;
@@ -1483,12 +1518,31 @@ export class Game {
     if (playerHitDamage > 0) this.hitPlayer(playerHitDamage);
   }
 
-  recordDamage(amount) {
+  recordDamage(amount, source = 'other:其他傷害') {
     if (!(amount > 0)) return;
     this.damageTotal += amount;
     this.stageDamageTotal += amount;
     this.damageLog.push({ frame: this.runFrames, amount });
+    const key = typeof source === 'string' && source.includes(':') ? source : 'other:其他傷害';
+    this.damageSources[key] = (this.damageSources[key] || 0) + amount;
     this.updateDps();
+  }
+
+  damageReviewMarkup() {
+    const categoryNames = { primary: '主武器', secondary: '副武器', fusion: '融合武器', pilot: '駕駛員被動', other: '其他' };
+    const entries = Object.entries(this.damageSources || {}).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((sum, [, value]) => sum + value, 0);
+    if (!entries.length) return '<p>本場尚無有效傷害紀錄。</p>';
+    const groups = {};
+    for (const [key, value] of entries) {
+      const [category, ...labelParts] = key.split(':');
+      (groups[category] ||= []).push({ label: labelParts.join(':') || '其他傷害', value });
+    }
+    const sections = Object.entries(groups).map(([category, rows]) => {
+      const subtotal = rows.reduce((sum, row) => sum + row.value, 0);
+      return `<section class="damage-group"><h3>${categoryNames[category] || category}　${Math.round(subtotal).toLocaleString()}</h3>${rows.map(row => `<div class="damage-row"><span>${row.label}</span><b>${Math.round(row.value).toLocaleString()}</b><small>${(row.value / total * 100).toFixed(1)}%</small></div>`).join('')}</section>`;
+    }).join('');
+    return `<div class="damage-total">總傷害　${Math.round(total).toLocaleString()}</div>${sections}`;
   }
 
   updateDps() {
@@ -1513,11 +1567,12 @@ export class Game {
     const overdriveStep = this.player?.build?.overdriveStep ?? 1;
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
     const acidMultiplier = enemy.acidTimer > 0 ? 1 + (enemy.acidAmp || 0) : 1;
-    const metaMultiplier = (this.metaCombat?.attackMultiplier ?? 1) * (source !== 'primary' && this.player?.craft?.secondaryBoost ? 1 + this.player.craft.secondaryBoost : 1);
-    const soulTaken = source === 'primary' && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && enemy.type !== 'midboss' && Math.random() < (this.player.build.soulTaker || 1) / 100;
+    const isPrimarySource = source === 'primary' || String(source || '').startsWith('primary:');
+    const metaMultiplier = (this.metaCombat?.attackMultiplier ?? 1) * (!isPrimarySource && this.player?.craft?.secondaryBoost ? 1 + this.player.craft.secondaryBoost : 1);
+    const soulTaken = isPrimarySource && this.player?.pilotId === 'reaper' && enemy.type !== 'boss' && enemy.type !== 'midboss' && Math.random() < (this.player.build.soulTaker || 1) / 100;
     const adjustedDamage = soulTaken ? Math.max(enemy.hp, 0) : damage * STAT_SCALE * (1 + overdrive * overdriveStep / 100) * pilotMultiplier * acidMultiplier * metaMultiplier;
     const immortal = Boolean(this.testFlags?.enemiesImmortal);
-    this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)));
+    this.recordDamage(immortal ? adjustedDamage : Math.min(adjustedDamage, Math.max(0, enemy.hp)), source || 'other:其他傷害');
     enemy.hp = immortal ? Math.max(1, enemy.hp - adjustedDamage) : enemy.hp - adjustedDamage;
     if (particles && isLargeEnemyType(enemy.type)) enemy.hitFlash = 4;
     else if (particles) this.spawnBurst(enemy.x, enemy.y, 2, enemy.color);
@@ -1887,7 +1942,7 @@ export class Game {
         const shotX = effect.startX + (effect.endX - effect.startX) * progress;
         const shotY = effect.startY + (effect.endY - effect.startY) * progress;
 
-        this.areaDamage(shotX, shotY, effect.radius, effect.damage);
+        this.areaDamage(shotX, shotY, effect.radius, effect.damage, null, effect.damageSource || 'secondary:軌道轟炸');
         this.spawnBurst(shotX, shotY, 22, '#fb923c');
         effect.shotIndex += 1;
 
@@ -1919,14 +1974,14 @@ export class Game {
             }
           }
         }
-        if (effect.pulse % 12 === 0) this.areaDamage(effect.x, effect.y, effect.radius, effect.damage);
+        if (effect.pulse % 12 === 0) this.areaDamage(effect.x, effect.y, effect.radius, effect.damage, null, effect.damageSource || (effect.blackHole ? 'fusion:黑洞奇點' : 'secondary:重力場'));
         if (effect.timer <= 0) this.effects.splice(i, 1);
       } else if (effect.type === 'lanceOrbit') {
         effect.life -= 1; effect.angle += .035;
         effect.x = this.player.x + Math.cos(effect.angle) * 42;
         effect.y = this.player.y + Math.sin(effect.angle) * 24;
         for (const enemy of this.enemies) {
-          if (enemy.alive && enemy.y < effect.y && Math.abs(enemy.x - effect.x) <= enemy.radius + 4.5) this.damageEnemy(enemy, .275, false);
+          if (enemy.alive && enemy.y < effect.y && Math.abs(enemy.x - effect.x) <= enemy.radius + 4.5) this.damageEnemy(enemy, .275, false, 'fusion:槍騎軌道');
         }
         if (effect.life <= 0) this.effects.splice(i, 1);
       } else if (effect.type === 'prismSatellite') {
@@ -1934,7 +1989,7 @@ export class Game {
         effect.x = this.player.x + Math.cos(effect.angle) * 44;
         effect.y = this.player.y + Math.sin(effect.angle) * 22;
         if (effect.pulse <= 0) {
-          this.addPlayerBullet({ id: this.entityId++, x: effect.x, y: effect.y - 8, vx: 0, vy: -12.5, radius: 3.5, damage: 1.2 + effect.rank * .48, life: 90, color: '#f0abfc', kind: 'prism', pierce: 99, splash: 0 });
+          this.addPlayerBullet({ id: this.entityId++, x: effect.x, y: effect.y - 8, vx: 0, vy: -12.5, radius: 3.5, damage: 1.2 + effect.rank * .48, life: 90, color: '#f0abfc', kind: 'prism', pierce: 99, splash: 0, damageSource: 'secondary:稜鏡衛星' });
           effect.pulse = Math.max(12, 25 - effect.rank * 2);
         }
         if (effect.life <= 0) this.effects.splice(i, 1);
@@ -2009,7 +2064,7 @@ export class Game {
       const large = isLargeEnemyType(enemy.type);
       const ramboMultiplier = large && this.player.pilotId === 'rambo' ? 1.5 : 1;
       const damage = (large ? Math.min(enemy.maxHp * .025, 52 + level * 10) : enemy.hp / STAT_SCALE + 1) * ramboMultiplier;
-      this.damageEnemy(enemy, damage, false);
+      this.damageEnemy(enemy, damage, false, 'other:全畫面炸彈');
     }
     this.addEffect({ type: 'ring', x: this.player.x, y: this.player.y, radius: 10, maxRadius: 500, life: 42, maxLife: 42, color: '#ffd166' });
     this.spawnBurst(this.player.x, this.player.y, 90, '#ffd166');
@@ -2070,7 +2125,7 @@ export class Game {
       const radius = 135;
       const damage = this.primaryDamagePerSecond() * 2;
       for (const enemy of this.enemies) {
-        if (enemy.alive && distanceSq(enemy, this.player) <= radius ** 2) this.damageEnemy(enemy, damage, false, 'shadowRetaliation');
+        if (enemy.alive && distanceSq(enemy, this.player) <= radius ** 2) this.damageEnemy(enemy, damage, false, 'pilot:陰影｜反擊範圍傷害');
       }
       this.addEffect({ type: 'shadowRetaliation', x: this.player.x, y: this.player.y, radius: 12, maxRadius: radius, life: 28, maxLife: 28 });
       this.spawnBurst(this.player.x, this.player.y, 36, ['#090612', '#6b21a8', '#c084fc']);
@@ -2131,6 +2186,8 @@ export class Game {
     const oreExtra = clearBonus ? `　CLEAR BONUS　◆ ${clearBonus}` : '';
     const cleanupExtra = settlement.bonus > 0 ? `　戰場清理 +${settlement.percent}%　◆ ${settlement.bonus}` : '';
     const oreLine = `<div class="summary-ore">ORE　◆ ${this.runOre}${oreExtra}${cleanupExtra}　結算 ◆ ${settlement.total}${oreSuffix}</div>`;
+    this.dom['damage-review'].innerHTML = this.damageReviewMarkup();
+    this.dom['damage-review'].classList.add('hidden');
     this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}${oreLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
     if (victory && this.runMode === 'normal') {
       const skipBank = this.maxMode || this.runMode === 'test';
