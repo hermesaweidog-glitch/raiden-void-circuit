@@ -317,7 +317,7 @@ document.querySelector('#bomb-button').addEventListener('pointerdown', event => 
 document.querySelector('#pause-button').addEventListener('click', () => game.togglePause());
 document.querySelector('#pause-fab').addEventListener('click', () => game.togglePause());
 document.querySelector('#resume-button').addEventListener('click', () => game.togglePause());
-document.querySelector('#title-button').addEventListener('click', () => game.showTitle());
+document.querySelector('#title-button').addEventListener('click', () => game.abandonRun());
 for (const [id, flag] of [['pause-player-invincible', 'playerInvincible'], ['pause-enemies-immortal', 'enemiesImmortal']]) {
   document.querySelector(`#${id}`).addEventListener('change', event => game.setTestFlag(flag, event.target.checked));
 }

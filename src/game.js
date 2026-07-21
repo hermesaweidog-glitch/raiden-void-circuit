@@ -322,6 +322,15 @@ export class Game {
     this.showTitle();
   }
 
+  abandonRun() {
+    if (this.mode !== 'paused' || !this.player) return false;
+    this.dom['pause-overlay'].classList.add('hidden');
+    this.dom['pause-button'].textContent = 'PAUSE';
+    this.pauseReturnMode = null;
+    this.endRun(false);
+    return true;
+  }
+
   showTitle() {
     // Returning from an active run banks any unbanked ore (pause → title included).
     if (!this.oreBanked && this.runOre > 0 && this.mode !== 'title') {
@@ -2163,6 +2172,8 @@ export class Game {
 
   endRun(victory) {
     this.mode = victory ? 'victory' : 'gameover';
+    this.dom['pause-overlay'].classList.add('hidden');
+    this.dom['pause-button'].textContent = 'PAUSE';
     // Results are intentionally silent; let the active track recede instead of
     // adding a victory/game-over jingle.
     this.music.stop({ duration: 3.2, clearDesired: true });

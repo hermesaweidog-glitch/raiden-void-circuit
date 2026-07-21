@@ -2091,16 +2091,21 @@ test('the normal sector-five boss enters a rewardless multi-burst finale before 
   assert.ok(bursts.some(args => args[2] === 120), 'finale must end in one large explosion');
 });
 
-test('returning from pause to the title resets the active run', () => {
+test('abandoning from pause enters failed-run settlement instead of returning directly to title', () => {
   const { game } = makeGame();
   game.start('falcon');
   game.chooseUpgrade(0);
   game.mode = 'playing';
+  game.runOre = 125;
   game.togglePause();
-  game.showTitle();
-  assert.equal(game.mode, 'title');
-  assert.equal(game.player, null);
-  assert.equal(game.dom['title-overlay'].classList.contains('hidden'), false);
+  const abandoned = game.abandonRun();
+  assert.equal(abandoned, true);
+  assert.equal(game.mode, 'gameover');
+  assert.ok(game.player, 'the run remains available for settlement and combat review');
+  assert.equal(game.dom['pause-overlay'].classList.contains('hidden'), true);
+  assert.equal(game.dom['end-overlay'].classList.contains('hidden'), false);
+  assert.equal(game.dom['end-title'].textContent, 'MISSION FAILED');
+  assert.match(game.dom['run-summary'].innerHTML, /獲得源晶礦/);
 });
 
 // --- Meta progression & ore economy ---------------------------------------
@@ -2259,7 +2264,7 @@ test('killing enemies drops ore pickups, bosses raise the base by one, and the r
   assert.equal(game.bankOre(0), 0, 'banking is idempotent per run');
 });
 
-test('returning to title banks run ore with the imperial settlement bonus', () => {
+test('abandoning from pause banks run ore with the imperial settlement bonus', () => {
   const { game } = makeGame();
   game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
   game.chooseUpgrade(0);
@@ -2267,10 +2272,11 @@ test('returning to title banks run ore with the imperial settlement bonus', () =
   game.player.build.battlefieldCleanup = 20;
   game.runOre = 500;
   const before = game.meta.ore;
-  game.showTitle();
-  assert.equal(game.meta.ore, before + 600, 'pause/title exit applies the 20% ore settlement bonus');
-  assert.equal(game.runOre, 0);
-  assert.equal(game.mode, 'title');
+  game.togglePause();
+  game.abandonRun();
+  assert.equal(game.meta.ore, before + 600, 'pause abandon applies the 20% ore settlement bonus');
+  assert.equal(game.mode, 'gameover');
+  assert.equal(game.lastOreSettlement.total, 600);
 });
 
 test('endless cycle 2+ never drops below stage-5 aggressiveness', () => {
