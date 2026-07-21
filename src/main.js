@@ -18,6 +18,13 @@ let selectedPilot = 'imperial';
 
 const isMaxMode = () => document.querySelector('#max-mode').checked;
 
+
+const PRIMARY_DESCRIPTIONS = {
+  vulcan: { name: '擴散散彈', type: '近距離／廣域', text: '每顆散彈維持固定威力，升級主要增加彈丸數量與覆蓋範圍。貼近目標可讓多顆同時命中。' },
+  laser: { name: '貫穿雷射', type: '持續／直線', text: '持續照射前方敵人，升級強化光束寬度與附加效果，適合穩定清理直線目標。' },
+  cannon: { name: '重型機砲', type: '單發／爆發', text: '發射高威力砲彈，升級提升射擊效率與爆炸能力，擅長處理高耐久目標。' },
+};
+
 const MODES = [
   { id: 'normal', name: '一般模式', tag: 'CAMPAIGN', description: '五個戰區，逐步建立裝備並完成任務。' },
   { id: 'endless', name: '無限模式', tag: 'ENDLESS', description: '通過第五戰區後循環，敵人逐輪強化。', requiresClear: true },
@@ -40,9 +47,10 @@ const renderAircraft = () => {
   const meta = isMaxMode() ? { unlocks: Object.keys(META_UNLOCKS) } : game.meta;
   aircraftSelect.innerHTML = Object.values(AIRCRAFT).map(craft => {
     const unlocked = isCraftUnlocked(meta, craft.id);
+    const weapon = PRIMARY_DESCRIPTIONS[craft.primary] || { name: '主武器', type: '標準', text: craft.description };
     return `
   <button class="aircraft-card${craft.id === selectedCraft ? ' selected' : ''}${unlocked ? '' : ' locked'}" data-craft="${craft.id}" ${unlocked ? '' : 'disabled'} style="--craft:${craft.color}">
-    <img class="aircraft-art" src="${craft.art}" alt="${craft.name} ${craft.subtitle}" draggable="false"><strong>${craft.name}</strong><small>${craft.subtitle}</small><p>${unlocked ? craft.description : `🔒 需要 ◆${META_UNLOCKS[craft.id]?.cost ?? '—'} 解鎖`}</p>
+    <img class="aircraft-art" src="${craft.art}" alt="${craft.name} ${craft.subtitle}" draggable="false"><strong>${craft.name}</strong><small>${craft.subtitle}</small><p>${unlocked ? craft.description : `🔒 需要 ◆${META_UNLOCKS[craft.id]?.cost ?? '—'} 解鎖`}</p>${unlocked ? `<div class="weapon-info"><b>主武器｜${weapon.name}</b><small>${weapon.type}</small><span>${weapon.text}</span></div>` : ''}
   </button>`;
   }).join('');
   for (const button of aircraftSelect.querySelectorAll('[data-craft]')) button.addEventListener('click', () => {
@@ -56,7 +64,7 @@ const renderPilots = () => {
   pilotSelect.innerHTML = Object.values(PILOTS).map(pilot => {
     const unlocked = isPilotUnlocked(meta, pilot.id);
     return `
-  <button class="pilot-card${pilot.id === selectedPilot ? ' selected' : ''}${unlocked ? '' : ' locked'}" data-pilot="${pilot.id}" ${unlocked ? '' : 'disabled'}><i><img src="${pilot.art}" alt="" draggable="false"></i><span><strong>${pilot.name}</strong><small>${unlocked ? `${pilot.subtitle} · ${pilot.ability}` : `🔒 需要 ◆${META_UNLOCKS[pilot.id]?.cost ?? '—'} 解鎖`}</small></span></button>`;
+  <button class="pilot-card${pilot.id === selectedPilot ? ' selected' : ''}${unlocked ? '' : ' locked'}" data-pilot="${pilot.id}" ${unlocked ? '' : 'disabled'}><i><img src="${pilot.art}" alt="" draggable="false"></i><span><strong>${pilot.name}</strong><em>${pilot.subtitle}</em><small>${unlocked ? pilot.ability : `🔒 需要 ◆${META_UNLOCKS[pilot.id]?.cost ?? '—'} 解鎖`}</small></span></button>`;
   }).join('');
   for (const button of pilotSelect.querySelectorAll('[data-pilot]')) button.addEventListener('click', () => {
     selectedPilot = button.dataset.pilot;

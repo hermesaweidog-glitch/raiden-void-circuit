@@ -49,7 +49,7 @@
         <div class="title-lockup">
           <p class="eyebrow">TACTICAL ROGUELITE STRIKE</p>
           <h1>VOID<br><span>CIRCUIT</span></h1>
-          <p class="title-version" id="title-version">ver.39</p>
+          <p class="title-version" id="title-version">ver.40</p>
         </div>
         <div class="title-meta-bar">
           <div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
@@ -124,9 +124,13 @@
         <p id="end-kicker">RUN TERMINATED</p>
         <h2 id="end-title">MISSION FAILED</h2>
         <div id="run-summary" class="run-summary"></div>
-        <button id="review-button" class="secondary-action-button" type="button">回顧 · 傷害統計</button>
+        <div class="end-actions"><button id="review-button" class="secondary-action-button" type="button">戰鬥回顧</button><button id="retry-button" class="primary-button">重新出擊</button></div>
         <div id="damage-review" class="damage-review hidden"></div>
-        <button id="retry-button" class="primary-button">重新出擊</button>
+      </section>
+
+      <section id="review-overlay" class="overlay review-overlay hidden" aria-label="戰鬥回顧">
+        <div class="setup-heading review-heading"><button id="review-back" class="back-text-btn" type="button">返回結算</button><b>COMBAT REVIEW · 戰鬥回顧</b></div>
+        <div id="review-summary" class="review-summary"></div>
       </section>
 
       <section id="clear-overlay" class="overlay clear-overlay hidden" aria-label="通關獎勵">
@@ -166,6 +170,6 @@
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js?v=39"></script>
+  <script type="module" src="./src/main.js?v=40"></script>
 </body>
 </html>

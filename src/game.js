@@ -33,7 +33,7 @@ export class Game {
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
       'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node', 'ore', 'lives', 'clear-overlay', 'clear-body', 'clear-confirm',
       'pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive',
-      'pause-pilot', 'pause-fab', 'pause-test-controls', 'pause-player-invincible', 'pause-enemies-immortal', 'dps-1s', 'dps-10s', 'dps-total', 'review-button', 'damage-review',
+      'pause-pilot', 'pause-fab', 'pause-test-controls', 'pause-player-invincible', 'pause-enemies-immortal', 'dps-1s', 'dps-10s', 'dps-total', 'review-button', 'damage-review', 'review-overlay', 'review-back', 'review-summary',
     ].map(id => [id, document.getElementById(id)]));
     this.mode = 'title';
     this.hudBuildRevision = -1;
@@ -140,7 +140,8 @@ export class Game {
     this.canvas.addEventListener('pointerup', release);
     this.canvas.addEventListener('pointercancel', release);
     window.addEventListener('blur', () => { this.keys.clear(); this.pointer.active = false; if (this.mode === 'playing') this.togglePause(); });
-    this.dom['review-button']?.addEventListener('click', () => this.dom['damage-review']?.classList.toggle('hidden'));
+    this.dom['review-button']?.addEventListener('click', () => { this.dom['review-summary'].innerHTML = this.damageReviewMarkup(); this.dom['end-overlay'].classList.add('hidden'); this.dom['review-overlay'].classList.remove('hidden'); });
+    this.dom['review-back']?.addEventListener('click', () => { this.dom['review-overlay'].classList.add('hidden'); this.dom['end-overlay'].classList.remove('hidden'); });
   }
 
   start(craftOrOptions = 'falcon') {
@@ -303,9 +304,9 @@ export class Game {
   endlessHpGrowth(type) {
     const depth = this.endlessStageDepth();
     if (depth <= 0) return 1;
-    if (type === 'boss') return Math.pow(1.12, depth) * (1 + depth * .03);
-    if (type === 'elite' || type === 'midboss') return Math.pow(1.11, depth) * (1 + depth * .025);
-    return Math.pow(1.10, depth) * (1 + depth * .02);
+    if (type === 'boss') return Math.pow(1.205, depth) * (1 + depth * .04);
+    if (type === 'elite' || type === 'midboss') return Math.pow(1.185, depth) * (1 + depth * .035);
+    return Math.pow(1.165, depth) * (1 + depth * .03);
   }
 
   xpStageIndex() {
@@ -353,6 +354,7 @@ export class Game {
     this.dom['upgrade-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
     this.dom['clear-overlay']?.classList.add('hidden');
+    this.dom['review-overlay']?.classList.add('hidden');
     this.dom['title-overlay'].classList.remove('hidden');
     this.dom.announcement.classList.add('hidden');
     this.dom['pause-button'].textContent = 'PAUSE';
@@ -786,10 +788,10 @@ export class Game {
     return baseDps * expectedCritical * expectedSupport;
   }
 
-  // Vulcan lv1 keeps its original per-pellet damage; higher ranks grow slower
-  // so the pellet-count scaling no longer dominates the other primaries.
-  vulcanPelletDamage(level) {
-    return level <= 1 ? .9 + level * .13 : 1.03 + (level - 1) * .07;
+  // Falcon's shotgun grows through pellet count, not pellet damage.
+  // All three ranks use the former rank-3 pellet damage.
+  vulcanPelletDamage() {
+    return 1.31;
   }
 
   firePrimary() {
@@ -814,7 +816,7 @@ export class Game {
     });
     if (p.craft.primary === 'vulcan') {
       p.fireCooldown = Math.max(4, Math.round((11 - level) / rate));
-      const count = 1 + Math.floor(level / 2) * 2 + this.projectileBonus();
+      const count = ({ 1: 2, 3: 3, 5: 5 }[level] || Math.max(2, level)) + this.projectileBonus();
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
         add(offset * 1.6, -10.8 + Math.abs(offset) * .22, { damage: this.vulcanPelletDamage(level), radius: 3.2, ox: offset * 5, color: '#ff4267' });
@@ -1819,7 +1821,7 @@ export class Game {
     for (const supply of supplies) if (this.currentChoices.length < choiceCount) this.currentChoices.push(supply);
     const skillChoices = this.currentChoices.filter(choice => choice.category !== 'supply');
     if (skillChoices.length === 1 && skillChoices[0].id === 'overdrive-boost' && this.currentChoices.length === 1) {
-      this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 34, text: '+10% DMG', color: '#ffd166', life: 70, maxLife: 70 });
+      this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 34, text: `火力超頻 +${this.player.build.overdriveStep ?? 1}%`, color: '#ffd166', life: 70, maxLife: 70 });
       this.chooseUpgrade(this.currentChoices.indexOf(skillChoices[0]), true);
       return;
     }
@@ -2182,17 +2184,17 @@ export class Game {
     if (firstClear) this.meta.cleared = true;
     const banked = this.bankOre(clearBonus);
     const settlement = this.lastOreSettlement || this.oreSettlement(clearBonus);
-    const oreSuffix = this.maxMode || this.runMode === 'test' ? '（未入帳）' : banked > 0 ? `　→ 帳戶總計 ◆ ${this.meta.ore}` : '';
-    const oreExtra = clearBonus ? `　CLEAR BONUS　◆ ${clearBonus}` : '';
-    const cleanupExtra = settlement.bonus > 0 ? `　戰場清理 +${settlement.percent}%　◆ ${settlement.bonus}` : '';
-    const oreLine = `<div class="summary-ore">ORE　◆ ${this.runOre}${oreExtra}${cleanupExtra}　結算 ◆ ${settlement.total}${oreSuffix}</div>`;
+    const unbankedNote = this.maxMode || this.runMode === 'test' ? '（未入帳）' : '';
+    const cleanupNote = settlement.bonus > 0 ? `<small>戰場清理額外 +${settlement.bonus}</small>` : '';
+    const oreLine = `<div class="summary-ore"><b>獲得源晶礦　${settlement.total}</b>${cleanupNote}<b>累積源晶礦　${this.meta.ore} ${unbankedNote}</b></div>`;
     this.dom['damage-review'].innerHTML = this.damageReviewMarkup();
     this.dom['damage-review'].classList.add('hidden');
+    this.dom['review-overlay']?.classList.add('hidden');
     this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}${oreLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
     if (victory && this.runMode === 'normal') {
       const skipBank = this.maxMode || this.runMode === 'test';
-      const cleanupLine = settlement.bonus > 0 ? `戰場清理 +${settlement.percent}%　◆ ${settlement.bonus}<br>` : '';
-      this.dom['clear-body'].innerHTML = `<div class="summary-ore">通關獎勵　◆ ${clearBonus}<br>本次收集　◆ ${this.runOre}<br>${cleanupLine}本次結算　◆ ${settlement.total}<br>${skipBank ? '（測試／MAX 模式不入帳）' : `帳戶總計　◆ ${this.meta.ore}`}</div>${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
+      const cleanupLine = settlement.bonus > 0 ? `<small>戰場清理額外 +${settlement.bonus}</small>` : '';
+      this.dom['clear-body'].innerHTML = `<div class="summary-ore"><b>獲得源晶礦　${settlement.total}</b>${cleanupLine}<b>累積源晶礦　${this.meta.ore} ${skipBank ? '（未入帳）' : ''}</b></div>${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
       this.dom['clear-overlay'].classList.remove('hidden');
       this.dom['clear-confirm'].onclick = () => {
         this.dom['clear-overlay'].classList.add('hidden');
@@ -2343,7 +2345,7 @@ export class Game {
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
     setText('bomb-count', p?.bombs ?? 0);
     setStyle('xp-bar', 'width', p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%');
-    setText('route-label', p ? this.isEndless() ? `DEPTH ${this.endlessDepth || 0} km · ${stage.name}` : `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT');
+    if (this.dom['route-label']) this.dom['route-label'].innerHTML = p ? this.isEndless() ? `<span class="depth-label">DEPTH <b>${this.endlessDepth || 0}</b> km</span><span class="depth-stage"> · ${stage.name}</span>` : `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT';
     setText('route-status', routeStatus);
     setStyle('route-fill', 'width', `${progress * 100}%`);
     setStyle('midboss-node', 'left', `${midbossProgress(stage) * 100}%`);
@@ -2385,7 +2387,7 @@ export class Game {
     const ctx = this.ctx; const stage = STAGES[this.stageIndex] || STAGES[0];
     const gradient = ctx.createLinearGradient(0, 0, 0, this.h); gradient.addColorStop(0, stage.theme[0]); gradient.addColorStop(1, stage.theme[1]); ctx.fillStyle = gradient; ctx.fillRect(0, 0, this.w, this.h);
     this.drawBackground(ctx, stage);
-    this.drawXp(ctx); this.drawEffects(ctx); this.drawEnemies(ctx); this.drawBullets(ctx); this.drawPlayer(ctx); this.drawParticles(ctx);
+    this.drawXp(ctx); this.drawEffects(ctx); this.drawEnemies(ctx); this.drawBullets(ctx); this.drawPlayer(ctx); this.drawParticles(ctx); this.drawSkillGauge(ctx);
     if (this.finaleFlash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(this.finaleFlash, 0, 1)})`; ctx.fillRect(0,0,this.w,this.h); }
     if (this.mode === 'paused') { ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0,0,this.w,this.h); ctx.fillStyle='#ffd166'; ctx.font='900 38px monospace'; ctx.textAlign='center'; ctx.fillText('PAUSED',this.w/2,this.h/2); }
   }
@@ -2437,7 +2439,43 @@ export class Game {
     if(p.kungfuShield>0){ctx.strokeStyle='rgba(250,204,21,.95)';ctx.fillStyle='rgba(250,204,21,.09)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(p.x,p.y,36+Math.sin(this.frame/7)*3,0,TAU);ctx.fill();ctx.stroke();}
     if(p.shadowTimer>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(p.x,p.y,34+Math.sin(this.frame/5)*4,0,TAU);ctx.stroke();}
     if(p.invincible>0){ctx.strokeStyle='rgba(66,232,255,.65)';ctx.beginPath();ctx.arc(p.x,p.y,27+Math.sin(this.frame/8)*3,0,TAU);ctx.stroke();}
-    if(p.pilotId==='shadow'){const seconds=Math.max(0,Math.ceil((p.shadowTimer>0?p.shadowTimer:p.shadowCooldown)/60));ctx.fillStyle=p.shadowTimer>0?'#c084fc':'#dffcff';ctx.font='900 14px monospace';ctx.textAlign='center';ctx.fillText(String(seconds),p.x,p.y-43);}
+  }
+
+
+  drawSkillGauge(ctx) {
+    const p = this.player;
+    if (!p) return;
+    let ratio = null; let seconds = 0; let label = ''; let active = false; let color = '#67e8f9';
+    if (p.pilotId === 'shadow') {
+      active = p.shadowTimer > 0;
+      ratio = active ? p.shadowTimer / 120 : 1 - clamp(p.shadowCooldown / 360, 0, 1);
+      seconds = Math.max(0, (active ? p.shadowTimer : p.shadowCooldown) / 60);
+      label = active ? 'PHASE' : 'SHADOW';
+      color = active ? '#c084fc' : '#67e8f9';
+    } else if (p.pilotId === 'kungfu' && p.build.secondaries?.kiai) {
+      const rank = p.build.secondaries.kiai;
+      const maxFrames = [0, 720, 660, 600][rank] || 600;
+      const remain = Math.max(0, p.secondaryCooldowns.kiai ?? 0);
+      ratio = 1 - clamp(remain / maxFrames, 0, 1);
+      seconds = remain / 60;
+      label = '大喝';
+      color = '#fde68a';
+    }
+    if (ratio === null) return;
+    const width = 92; const height = 8;
+    const y = p.y < 72 ? p.y + 46 : p.y - 54;
+    const x = clamp(p.x - width / 2, 8, this.w - width - 8);
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(2,8,18,.92)'; ctx.fillRect(x - 2, y - 2, width + 4, height + 4);
+    ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1; ctx.strokeRect(x - 2, y - 2, width + 4, height + 4);
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(x, y, width, height);
+    ctx.fillStyle = color; ctx.fillRect(x, y, width * clamp(ratio, 0, 1), height);
+    ctx.font = '900 10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#020617'; ctx.lineWidth = 3;
+    const text = `${label} ${seconds.toFixed(1)}s`;
+    ctx.strokeText(text, x + width / 2, y - 4); ctx.fillText(text, x + width / 2, y - 4);
+    ctx.restore();
   }
 
   drawBossSprite(ctx, enemy) {

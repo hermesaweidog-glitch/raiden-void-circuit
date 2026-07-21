@@ -1276,7 +1276,7 @@ test('gemini adds primary and secondary projectiles and makes the craft twenty p
   game.playerBullets = [];
   game.firePrimary();
   assert.equal(game.player.scale, 1.2);
-  assert.equal(game.playerBullets.length, 2);
+  assert.equal(game.playerBullets.length, 3, 'Falcon rank 1 fires two pellets plus Gemini bonus');
   game.player.build.secondaries = { rail: 1 };
   game.player.secondaryCooldowns.rail = 0;
   game.playerBullets = [];
@@ -2001,10 +2001,9 @@ test('imperial ore settlement bonus includes the normal-mode clear reward', () =
   game.endRun(true);
 
   assert.equal(game.meta.ore, before + 2500, '500 collected + 1500 clear reward receive the full 25% settlement bonus');
-  assert.match(game.dom['clear-body'].innerHTML, /通關獎勵　◆ 1500/);
-  assert.match(game.dom['clear-body'].innerHTML, /本次收集　◆ 500/);
-  assert.match(game.dom['clear-body'].innerHTML, /戰場清理 \+25%　◆ 500/);
-  assert.match(game.dom['clear-body'].innerHTML, /本次結算　◆ 2500/);
+  assert.match(game.dom['clear-body'].innerHTML, /獲得源晶礦　2500/);
+  assert.match(game.dom['clear-body'].innerHTML, /戰場清理額外 \+500/);
+  assert.match(game.dom['clear-body'].innerHTML, /累積源晶礦/);
 });
 
 test('rambo supply chain restores two bombs after bosses and bombs deal fifty percent more to large targets', () => {
