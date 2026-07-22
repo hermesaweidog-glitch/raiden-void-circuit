@@ -79,6 +79,13 @@ export class Game {
     this.accumulator = 0;
     this.announcementToken = 0;
     this.stars = Array.from({ length: 90 }, (_, i) => ({ x: (i * 71 + 19) % this.w, y: (i * 113 + 7) % this.h, speed: .45 + (i % 5) * .23, size: i % 7 === 0 ? 2 : 1 }));
+    this.craftImages = Object.fromEntries(Object.values(AIRCRAFT).map(craft => {
+      if (typeof Image === 'undefined') return [craft.id, null];
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = craft.art;
+      return [craft.id, image];
+    }));
     this.bindInput();
     document.addEventListener('visibilitychange', () => {
       this.accumulator = 0;
@@ -2564,9 +2571,56 @@ export class Game {
     }
     if (p.shadowTimer > 0) ctx.globalAlpha = .28;
     else if (p.invincible > 0 && Math.floor(this.frame / 4) % 2 === 0) ctx.globalAlpha = .45;
-    ctx.save(); ctx.translate(p.x,p.y); ctx.scale?.(p.scale || 1,p.scale || 1); ctx.fillStyle='rgba(66,232,255,.16)'; ctx.beginPath(); ctx.ellipse(0,4,30,36,0,0,TAU); ctx.fill();
-    ctx.fillStyle=p.craft.color; ctx.beginPath(); ctx.moveTo(0,-27); ctx.lineTo(-13,7); ctx.lineTo(-29,15); ctx.lineTo(-12,20); ctx.lineTo(0,12); ctx.lineTo(12,20); ctx.lineTo(29,15); ctx.lineTo(13,7); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle='#dffcff';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#c9fbff';ctx.fillRect(-4,-17,8,15);ctx.fillStyle=this.frame%6<3?'#ffd166':'#ff5e32';ctx.fillRect(-9,20,5,13);ctx.fillRect(4,20,5,13);ctx.restore();
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale?.(p.scale || 1, p.scale || 1);
+    const craftImage = this.craftImages?.[p.craft.id];
+    const useFalconSprite = p.craft.id === 'falcon' && craftImage?.complete && craftImage.naturalWidth > 0;
+    if (useFalconSprite) {
+      // Scheme C: the hull is a static transparent sprite; thrust is drawn every frame in Canvas.
+      const pulse = .5 + .5 * Math.sin(this.frame * .55);
+      const jitter = Math.sin(this.frame * 1.37) * 2 + Math.sin(this.frame * .73) * 1.2;
+      const thrustLength = 13 + pulse * 7 + jitter;
+      const thrustPoints = [-23.5, 23.5];
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const x of thrustPoints) {
+        const y = 22;
+        const glow = ctx.createRadialGradient(x, y, 1, x, y + 6, 15 + pulse * 4);
+        glow.addColorStop(0, 'rgba(255,255,230,.95)');
+        glow.addColorStop(.18, 'rgba(255,196,64,.75)');
+        glow.addColorStop(.55, 'rgba(255,76,24,.3)');
+        glow.addColorStop(1, 'rgba(255,40,10,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.ellipse(x, y + 7, 11 + pulse * 2, 17 + pulse * 4, 0, 0, TAU); ctx.fill();
+        const flame = ctx.createLinearGradient(x, y, x, y + thrustLength);
+        flame.addColorStop(0, 'rgba(255,255,235,.98)');
+        flame.addColorStop(.22, 'rgba(255,210,90,.92)');
+        flame.addColorStop(.58, 'rgba(255,88,24,.68)');
+        flame.addColorStop(1, 'rgba(255,45,12,0)');
+        ctx.fillStyle = flame;
+        ctx.beginPath();
+        ctx.moveTo(x - 4.2, y);
+        ctx.quadraticCurveTo(x - 5.5 - pulse * 1.5, y + thrustLength * .45, x + jitter * .18, y + thrustLength);
+        ctx.quadraticCurveTo(x + 5.5 + pulse * 1.5, y + thrustLength * .45, x + 4.2, y);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(255,252,220,.9)';
+        ctx.beginPath();
+        ctx.moveTo(x - 1.6, y + 1);
+        ctx.quadraticCurveTo(x - 2.2, y + thrustLength * .38, x, y + thrustLength * .7);
+        ctx.quadraticCurveTo(x + 2.2, y + thrustLength * .38, x + 1.6, y + 1);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,49,88,.13)';
+      ctx.beginPath(); ctx.ellipse(0, 3, 33, 37, 0, 0, TAU); ctx.fill();
+      ctx.drawImage(craftImage, -38, -38, 76, 76);
+    } else {
+      ctx.fillStyle='rgba(66,232,255,.16)'; ctx.beginPath(); ctx.ellipse(0,4,30,36,0,0,TAU); ctx.fill();
+      ctx.fillStyle=p.craft.color; ctx.beginPath(); ctx.moveTo(0,-27); ctx.lineTo(-13,7); ctx.lineTo(-29,15); ctx.lineTo(-12,20); ctx.lineTo(0,12); ctx.lineTo(12,20); ctx.lineTo(29,15); ctx.lineTo(13,7); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='#dffcff';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#c9fbff';ctx.fillRect(-4,-17,8,15);ctx.fillStyle=this.frame%6<3?'#ffd166':'#ff5e32';ctx.fillRect(-9,20,5,13);ctx.fillRect(4,20,5,13);
+    }
+    ctx.restore();
     ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(p.x,p.y,p.hitRadius,0,TAU);ctx.fill();
     if(p.shield>0){ctx.strokeStyle='rgba(192,132,252,.9)';ctx.fillStyle='rgba(192,132,252,.08)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x,p.y,31+Math.sin(this.frame/10)*2,0,TAU);ctx.fill();ctx.stroke();}
     if(p.kungfuShield>0){ctx.strokeStyle='rgba(250,204,21,.95)';ctx.fillStyle='rgba(250,204,21,.09)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(p.x,p.y,36+Math.sin(this.frame/7)*3,0,TAU);ctx.fill();ctx.stroke();}
