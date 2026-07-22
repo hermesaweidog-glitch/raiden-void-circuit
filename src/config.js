@@ -11,7 +11,7 @@ export const WORLD = {
   maxUpgradeRank: 3,
 };
 
-export const BUILD_LIMITS = { secondary: 3, passive: 6 };
+export const BUILD_LIMITS = { secondary: 4, passive: 8 };
 export const STAT_SCALE = 10;
 export const PRIMARY_ICON = 'assets/icons/primary-cannon.webp';
 

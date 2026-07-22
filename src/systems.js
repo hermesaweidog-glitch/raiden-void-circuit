@@ -33,13 +33,14 @@ export function fusionConsumedSets(fusions) {
   return { consumedSecondaries, consumedPassives };
 }
 
-export function fusionEligible(fusion, build, secondaryCatalog) {
+export function fusionEligible(fusion, build) {
   const secondaries = build.secondaries || {};
   const passives = build.passives || {};
   const fusions = build.fusions || {};
   if (fusions[fusion.id]) return false;
   if (fusion.requiresFusion && !fusions[fusion.requiresFusion]) return false;
-  if (!(fusion.requires || []).every(id => secondaryCatalog[id] && (secondaries[id] || 0) >= secondaryCatalog[id].max)) return false;
+  const allSecondaries = { ...SECONDARIES, ...KUNGFU_SECONDARIES };
+  if (!(fusion.requires || []).every(id => allSecondaries[id] && (secondaries[id] || 0) >= allSecondaries[id].max)) return false;
   if (!(fusion.requiresPassives || []).every(id => PASSIVES[id] && (passives[id] || 0) >= PASSIVES[id].max)) return false;
   return true;
 }
@@ -55,7 +56,7 @@ export function makeUpgradePool(build) {
   }
   const secondaries = build.secondaries || {};
   const fusions = build.fusions || {};
-  const fusionCatalog = Object.values(FUSIONS).filter(fusion => fusion.set === (kungfu ? 'kungfu' : 'standard'));
+  const fusionCatalog = Object.values(FUSIONS);
   const { consumedSecondaries, consumedPassives } = fusionConsumedSets(fusions);
   const secondaryFusionCount = Object.keys(fusions).filter(id => FUSIONS[id] && FUSIONS[id].kind !== 'passive').length;
   const passiveFusionCount = Object.keys(fusions).filter(id => FUSIONS[id]?.kind === 'passive').length;
@@ -81,13 +82,13 @@ export function makeUpgradePool(build) {
     }
   }
   for (const fusion of fusionCatalog) {
-    if (fusionEligible(fusion, build, secondaryCatalog)) pool.push(fusion);
+    if (fusionEligible(fusion, build)) pool.push(fusion);
   }
   if (isBuildMaxed(build)) {
     pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '超頻：火力', description: `所有攻擊永久增加 ${build.overdriveStep ?? 1}%；目前總加成 +${(build.overdrive || 0) * (build.overdriveStep ?? 1)}%。` });
-    if (kungfu && (build.evasion || 20) < 80) {
-      const current = build.evasion || 20;
-      pool.push({ id: 'evasion-boost', category: 'evasion', icon: 'assets/icons/swift-defense.svg', name: '唯快不破', description: `迴避機率由 ${current}% 提升至 ${Math.min(80, current + 2)}%；最高 80%。` });
+    if (kungfu && (build.evasion ?? 10) < 20) {
+      const current = build.evasion ?? 10;
+      pool.push({ id: 'evasion-boost', category: 'evasion', icon: 'assets/icons/swift-defense.svg', name: '唯快不破', description: `迴避機率由 ${current}% 提升至 ${Math.min(20, current + 2)}%；最高 20%。` });
     }
     if (build.pilotId === 'reaper' && (build.soulTaker || 1) < 5) {
       const current = build.soulTaker || 1;
@@ -107,7 +108,7 @@ export function isBuildMaxed(build) {
   const fusions = build.fusions || {};
   const kungfu = build.secondarySet === 'kungfu';
   const secondaryCatalog = kungfu ? KUNGFU_SECONDARIES : SECONDARIES;
-  const fusionCatalog = Object.values(FUSIONS).filter(fusion => fusion.set === (kungfu ? 'kungfu' : 'standard'));
+  const fusionCatalog = Object.values(FUSIONS);
   const secondaryFusionCount = Object.keys(fusions).filter(id => FUSIONS[id] && FUSIONS[id].kind !== 'passive').length;
   const passiveFusionCount = Object.keys(fusions).filter(id => FUSIONS[id]?.kind === 'passive').length;
   return (build.primaryLevel || 1) >= 3
@@ -115,7 +116,7 @@ export function isBuildMaxed(build) {
     && Object.entries(secondaries).every(([id, rank]) => secondaryCatalog[id] && rank >= secondaryCatalog[id].max)
     && Object.keys(passives).length + passiveFusionCount >= (build.passiveSlots || BUILD_LIMITS.passive)
     && Object.entries(passives).every(([id, rank]) => PASSIVES[id] && rank >= PASSIVES[id].max)
-    && fusionCatalog.every(fusion => build.fusions?.[fusion.id] || !fusionEligible(fusion, build, secondaryCatalog));
+    && fusionCatalog.every(fusion => build.fusions?.[fusion.id] || !fusionEligible(fusion, build));
 }
 
 export function makeUpgradeChoices(build, random = Math.random, count = 3) {

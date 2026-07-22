@@ -106,8 +106,8 @@ const testMeta = () => isMaxMode() ? { firepower: 10, fuelTank: 5, lives: 1, bom
 const syncTestLimits = () => {
   const bonus = selectedPilot === 'joker' ? 1 : 0;
   const upgrades = testMeta();
-  const secondaryLimit = 2 + (upgrades.secondarySlot ?? 0) + bonus;
-  const passiveLimit = 4 + (upgrades.passiveSlot ?? 0) + bonus + (AIRCRAFT[selectedCraft]?.passiveSlotBonus || 0);
+  const secondaryLimit = Math.min(BUILD_LIMITS.secondary, 2 + (upgrades.secondarySlot ?? 0) + bonus);
+  const passiveLimit = Math.min(BUILD_LIMITS.passive, 4 + (upgrades.passiveSlot ?? 0) + bonus + (AIRCRAFT[selectedCraft]?.passiveSlotBonus || 0));
   for (const [name, limit, countId] of [['test-secondary', secondaryLimit, 'test-secondary-count'], ['test-passive', passiveLimit, 'test-passive-count']]) {
     const inputs = [...document.querySelectorAll(`input[name="${name}"]`)];
     inputs.filter(input => input.checked).slice(limit).forEach(input => { input.checked = false; });

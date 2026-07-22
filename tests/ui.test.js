@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=42"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=43"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -62,12 +62,12 @@ test('generated icons are centered and clipped inside their token frames', () =>
   assert.match(css, /\.upgrade-icon img\{[^}]*object-position:center[^}]*display:block/);
 });
 
-test('mobile build strip reserves enough compact space for all six passive icons', () => {
-  assert.match(css, /\.build-strip\{[^}]*grid-template-columns:\.7fr minmax\(96px,1\.2fr\) 1\.7fr/);
-  assert.match(css, /\.build-strip>div>span\{[^}]*flex-wrap:wrap[^}]*overflow:visible/);
-  assert.match(css, /@media \(max-width:420px\)\{\.build-strip\{grid-template-columns:74px 88px minmax\(0,1fr\)/);
-  assert.match(css, /@media \(max-width:420px\)[\s\S]*\.build-strip>div>span\{[^}]*flex-wrap:wrap[^}]*overflow:visible/);
-  assert.doesNotMatch(css, /@media \(max-width:390px\)[^}]*\.build-strip>div:last-child\{display:none/);
+test('build strip uses two fixed rows with two primary, four secondary, and eight passive cells', () => {
+  assert.match(css, /grid-template-areas:"primary secondary" "passive passive"/);
+  assert.match(css, /nth-child\(1\)>span\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /nth-child\(2\)>span\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(css, /nth-child\(3\)>span\{grid-template-columns:repeat\(8,minmax\(0,1fr\)\)/);
+  assert.match(css, /skill-token\.empty/);
 });
 
 test('title page exposes the upgrade hangar, ore balance, and max mode toggle', () => {
@@ -109,7 +109,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.42/);
+  assert.match(html, /ver\.43/);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {

@@ -143,7 +143,7 @@ test('kungfu skill pairs expose martial fusions and block post-max boosts until 
     secondarySlots: 4,
     passiveSlots: 6,
     fusions: {},
-    evasion: 20,
+    evasion: 10,
   };
 
   let pool = makeUpgradePool(build);
@@ -156,9 +156,10 @@ test('kungfu skill pairs expose martial fusions and block post-max boosts until 
   assert.ok(!pool.some(item => ['taijiMaster', 'sixHarmony'].includes(item.id)));
   assert.ok(pool.some(item => item.id === 'overdrive-boost'));
   assert.ok(pool.some(item => item.id === 'evasion-boost'));
+  assert.match(pool.find(item => item.id === 'evasion-boost').description, /10%.*12%/);
 });
 
-test('maxed kungfu builds choose between attack and dodge until dodge reaches eighty percent', () => {
+test('maxed kungfu builds choose between attack and dodge until dodge reaches twenty percent', () => {
   const build = {
     primaryLevel: 3,
     secondarySet: 'kungfu',
@@ -167,15 +168,15 @@ test('maxed kungfu builds choose between attack and dodge until dodge reaches ei
     secondarySlots: 3,
     passiveSlots: 6,
     fusions: {},
-    evasion: 20,
+    evasion: 10,
     overdrive: 0,
   };
 
   let pool = makeUpgradePool(build);
   assert.deepEqual(new Set(pool.filter(item => ['overdrive', 'evasion'].includes(item.category)).map(item => item.id)), new Set(['overdrive-boost', 'evasion-boost']));
-  assert.match(pool.find(item => item.id === 'evasion-boost').description, /20%.*22%/);
+  assert.match(pool.find(item => item.id === 'evasion-boost').description, /10%.*12%/);
 
-  build.evasion = 80;
+  build.evasion = 20;
   pool = makeUpgradePool(build);
   assert.ok(pool.some(item => item.id === 'overdrive-boost'));
   assert.ok(!pool.some(item => item.id === 'evasion-boost'));

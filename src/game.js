@@ -9,7 +9,7 @@ const choose = items => items[(Math.random() * items.length) | 0];
 const skillIconMarkup = icon => icon.startsWith('assets/') ? `<img src="${icon}" alt="" draggable="false">` : icon;
 const isLargeEnemyType = type => type === 'elite' || type === 'midboss' || type === 'boss';
 const enemyDamage = type => isLargeEnemyType(type) ? 10 : 5;
-const KUNGFU_FIST_DAMAGE_BONUS = [0, 10, 60, 110];
+const KUNGFU_FIST_DAMAGE_BONUS = [0, 30, 90, 150];
 const BOSS_WARNING_DURATION_MS = 3100;
 const BOSS_WARNING_DURATION_FRAMES = Math.ceil(BOSS_WARNING_DURATION_MS / (1000 / 60));
 const readStorage = (key, fallback = null) => {
@@ -65,6 +65,7 @@ export class Game {
     this.xpOrbs = [];
     this.particles = [];
     this.effects = [];
+    this.healDropsThisStage = 0;
     this.floaters = [];
     this.keys = new Set();
     this.pointer = { active: false, id: null, x: 0, y: 0, startX: 0, startY: 0, playerX: 0, playerY: 0 };
@@ -174,8 +175,8 @@ export class Game {
     };
     const isTest = this.runMode === 'test';
     const slotBonus = pilot.id === 'joker' ? 1 : 0;
-    const secondarySlots = this.metaCombat.secondarySlots + slotBonus;
-    const passiveSlots = this.metaCombat.passiveSlots + slotBonus + (craft.passiveSlotBonus || 0);
+    const secondarySlots = Math.min(BUILD_LIMITS.secondary, this.metaCombat.secondarySlots + slotBonus);
+    const passiveSlots = Math.min(BUILD_LIMITS.passive, this.metaCombat.passiveSlots + slotBonus + (craft.passiveSlotBonus || 0));
     const secondaryCatalog = pilot.id === 'kungfu' ? KUNGFU_SECONDARIES : SECONDARIES;
     const selectedSecondaries = isTest ? Object.fromEntries([...new Set(options.secondaries || [])].filter(id => secondaryCatalog[id]).slice(0, secondarySlots).map(id => [id, secondaryCatalog[id].max])) : {};
     const selectedPassives = isTest ? Object.fromEntries([...new Set(options.passives || [])].filter(id => PASSIVES[id] && !(pilot.id === 'kungfu' && id === 'guidance')).slice(0, passiveSlots).map(id => [id, PASSIVES[id].max])) : {};
@@ -213,7 +214,7 @@ export class Game {
       bombs: isTest ? maxBombs : Math.min(maxBombs, this.metaCombat.bombs + bombBonus + (craft.bombCapBonus || 0)), maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0, respawnVisible: true,
       shadowCooldown: 360, shadowTimer: 0, grazeBonus: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
-      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, overdriveStep: this.metaCombat?.overdriveStep ?? 1, revision: 0 },
+      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 10 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, overdriveStep: this.metaCombat?.overdriveStep ?? 1, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -1632,6 +1633,7 @@ export class Game {
     if (enemy.type === 'boss' && !enemy.escort) {
       this.oreBossBonus += ORE_STAGE_BONUS;
       if (this.player) this.player.shieldsDropped = 0;
+      this.healDropsThisStage = 0;
       if (this.isEndless()) {
         this.music.stop({ duration: .38, clearDesired: true });
         this.pendingStageMusic = true;
@@ -1727,7 +1729,7 @@ export class Game {
 
   maybeDropSupply(enemy, random = Math.random) {
     const fieldSupplies = new Set(this.effects.filter(effect => effect.type === 'supply').map(effect => effect.supply));
-    const needsHeal = this.player.hp < this.player.maxHp && !fieldSupplies.has('heal');
+    const needsHeal = this.player.hp < this.player.maxHp && this.healDropsThisStage < 2 && !fieldSupplies.has('heal');
     const needsBomb = this.player.bombs < this.player.maxBombs && !fieldSupplies.has('bomb');
     const needsShield = this.player.shield < 1 && this.player.shieldsDropped < 2 && !fieldSupplies.has('shield');
     if (!needsHeal && !needsBomb && !needsShield) return false;
@@ -1748,6 +1750,7 @@ export class Game {
     }
     const dropped = this.addEffect({ type: 'supply', x: enemy.x, y: enemy.y, supply, life: 520, radius: 16 });
     if (dropped && supply === 'shield') this.player.shieldsDropped += 1;
+    if (dropped && supply === 'heal') this.healDropsThisStage += 1;
     return dropped;
   }
 
@@ -1831,7 +1834,7 @@ export class Game {
     if (this.player.bombs < this.player.maxBombs) supplies.push({ id: 'bomb', category: 'supply', icon: '◈', name: '炸彈補給', description: '補充 1 枚炸彈。' });
     for (const supply of supplies) if (this.currentChoices.length < choiceCount) this.currentChoices.push(supply);
     const skillChoices = this.currentChoices.filter(choice => choice.category !== 'supply');
-    if (skillChoices.length === 1 && skillChoices[0].id === 'overdrive-boost' && this.currentChoices.length === 1) {
+    if (skillChoices.length === 1 && skillChoices[0].id === 'overdrive-boost') {
       this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 34, text: `火力超頻 +${this.player.build.overdriveStep ?? 1}%`, color: '#ffd166', life: 70, maxLife: 70 });
       this.chooseUpgrade(this.currentChoices.indexOf(skillChoices[0]), true);
       return;
@@ -1852,9 +1855,9 @@ export class Game {
     this.currentChoices.forEach((choice, index) => {
       const button = document.createElement('button');
       button.className = 'upgrade-card';
-      const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.category === 'overdrive' ? this.player.build.overdrive || 0 : choice.category === 'evasion' ? this.player.build.evasion || 20 : choice.category === 'soulTaker' ? this.player.build.soulTaker || 1 : choice.category === 'battlefieldCleanup' ? this.player.build.battlefieldCleanup || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
+      const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.category === 'overdrive' ? this.player.build.overdrive || 0 : choice.category === 'evasion' ? this.player.build.evasion ?? 10 : choice.category === 'soulTaker' ? this.player.build.soulTaker || 1 : choice.category === 'battlefieldCleanup' ? this.player.build.battlefieldCleanup || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
       const next = current + 1 >= WORLD.maxUpgradeRank && ['primary', 'secondary', 'passive'].includes(choice.category) ? 'MAX' : current + 1;
-      const progress = choice.category === 'overdrive' ? `火力 +${current * (this.player.build.overdriveStep ?? 1)}% → +${(current + 1) * (this.player.build.overdriveStep ?? 1)}%` : choice.category === 'evasion' ? `${current}% → ${Math.min(80, current + 2)}%` : choice.category === 'soulTaker' ? `${current}% → ${Math.min(5, current + .5)}%` : choice.category === 'battlefieldCleanup' ? `+${current}% → +${current + 1}%` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
+      const progress = choice.category === 'overdrive' ? `火力 +${current * (this.player.build.overdriveStep ?? 1)}% → +${(current + 1) * (this.player.build.overdriveStep ?? 1)}%` : choice.category === 'evasion' ? `${current}% → ${Math.min(20, current + 2)}%` : choice.category === 'soulTaker' ? `${current}% → ${Math.min(5, current + .5)}%` : choice.category === 'battlefieldCleanup' ? `+${current}% → +${current + 1}%` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
       button.innerHTML = `<span class="upgrade-icon" aria-hidden="true">${skillIconMarkup(choice.icon)}</span><span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · ${progress}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
       button.addEventListener('click', () => this.chooseUpgrade(index));
       holder.append(button);
@@ -1868,7 +1871,7 @@ export class Game {
     const choice = this.currentChoices[index];
     const p = this.player;
     if (choice.id === 'overdrive-boost') p.build.overdrive = (p.build.overdrive || 0) + 1;
-    else if (choice.id === 'evasion-boost') p.build.evasion = Math.min(80, (p.build.evasion || 20) + 2);
+    else if (choice.id === 'evasion-boost') p.build.evasion = Math.min(20, (p.build.evasion ?? 10) + 2);
     else if (choice.id === 'soul-taker-boost') p.build.soulTaker = Math.min(5, (p.build.soulTaker || 1) + .5);
     else if (choice.id === 'battlefield-cleanup-boost') p.build.battlefieldCleanup = (p.build.battlefieldCleanup || 0) + 1;
     else if (choice.category === 'fusion') {
@@ -2094,7 +2097,7 @@ export class Game {
 
   hitPlayer(damage = STAT_SCALE) {
     if (!this.player || this.player.invincible > 0 || this.testFlags?.playerInvincible) return;
-    if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion || 20) / 100) {
+    if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion ?? 10) / 100) {
       this.player.invincible = 18;
       this.addEffect({ type: 'kungfuDodge', x: this.player.x, y: this.player.y, life: 18, maxLife: 18 });
       this.spawnBurst(this.player.x, this.player.y, 12, '#e0f2fe');
@@ -2127,7 +2130,8 @@ export class Game {
     }
     this.player.hp -= damage;
     const armor = upgradePower(this.player.build.passives.armor || 0);
-    this.player.invincible = this.player.pilotId === 'shadow' ? Math.max(120, 95 + armor * 15) : 95 + armor * 15;
+    const armorExtension = armor * 15 * (this.player.pilotId === 'kungfu' ? .5 : 1);
+    this.player.invincible = this.player.pilotId === 'shadow' ? Math.max(120, 95 + armorExtension) : 95 + armorExtension;
     this.enemyBullets = this.enemyBullets.filter(b => distanceSq(b, this.player) > 90 ** 2);
     if (this.player.build.fusions?.suicideSquad && this.player.bombs > 0) {
       this.player.bombs -= 1;
@@ -2263,7 +2267,7 @@ export class Game {
     const modeLabel = { normal: '一般模式', endless: `無限模式 · 循環 ${this.endlessCycle + 1}`, test: '測試模式' }[this.runMode] || '一般模式';
     const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
     this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
-    this.dom['pause-primary'].textContent = `${kungfu ? `基本拳法 · 傷害 +${KUNGFU_FIST_DAMAGE_BONUS[p.build.primaryLevel]}% · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}　/　唯快不破 · 迴避 ${p.build.evasion || 20}% · MAX` : `${p.craft.name} · ${p.craft.primary.toUpperCase()} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}`}${mastery}${overdrive}`;
+    this.dom['pause-primary'].textContent = `${kungfu ? `基本拳法 · 傷害 +${KUNGFU_FIST_DAMAGE_BONUS[p.build.primaryLevel]}% · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}　/　唯快不破 · 迴避 ${p.build.evasion ?? 10}% · MAX` : `${p.craft.name} · ${p.craft.primary.toUpperCase()} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}`}${mastery}${overdrive}`;
     const fusionNames = kind => Object.keys(p.build.fusions || {}).filter(id => (FUSIONS[id]?.kind === 'passive') === (kind === 'passive')).map(id => FUSIONS[id].name).join('　/　');
     const weaponFusions = fusionNames('secondary');
     const passiveFusions = fusionNames('passive');
@@ -2412,19 +2416,22 @@ export class Game {
       const primaryIcon = kungfu ? 'assets/icons/basic-fist.svg' : PRIMARY_ICON;
       const primaryToken = p ? token(primaryIcon, `${primaryBadge} · +${firepowerBonus}%`, `${primaryName} · 超頻火力 +${firepowerBonus}%`, p.build.primaryLevel) : '';
       const extraPrimaryToken = !p ? ''
-        : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `MAX · ${p.build.evasion || 20}%`, `唯快不破 · 迴避 ${p.build.evasion || 20}%`, 'MAX')
+        : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `MAX · ${p.build.evasion ?? 10}%`, `唯快不破 · 迴避 ${p.build.evasion ?? 10}%`, 'MAX')
         : p.pilotId === 'gambler' ? token('assets/icons/frenzy.svg', `+${Math.round((p.grazeBonus || 0) * 100)}%`, `狂熱 · 傷害 +${Math.round((p.grazeBonus || 0) * 100)}%`)
         : p.pilotId === 'reaper' ? token('assets/icons/soul-taker.svg', `${p.build.soulTaker || 1}%`, `奪魂者 · 主武器即死 ${p.build.soulTaker || 1}%`)
         : p.pilotId === 'imperial' ? token('assets/icons/battlefield-cleanup.svg', `+${p.build.battlefieldCleanup || 0}%`, `戰場清理 · 源晶礦結算 +${p.build.battlefieldCleanup || 0}%`)
         : p.pilotId === 'rambo' ? token('assets/icons/supply-chain.svg', 'MAX', '補給鏈 · 擊倒 BOSS 補滿炸彈', 'MAX')
         : '';
-      this.dom['primary-build'].innerHTML = p ? primaryToken + extraPrimaryToken : '—';
+      const emptyToken = (locked = false) => `<span class="skill-token empty${locked ? ' locked' : ''}" aria-hidden="true"><i></i><b></b></span>`;
+      const fillSlots = (tokens, visibleSlots, unlockedSlots) => Array.from({ length: visibleSlots }, (_, index) => tokens[index] || emptyToken(index >= unlockedSlots)).join('');
+      const primaryTokens = p ? [primaryToken, extraPrimaryToken].filter(Boolean) : [];
+      this.dom['primary-build'].innerHTML = fillSlots(primaryTokens, 2, p ? 2 : 0);
       const fusionToken = id => token(FUSIONS[id].icon, 'MAX', FUSIONS[id].name, 'MAX');
       const fusionIds = p ? Object.keys(p.build.fusions || {}) : [];
-      const secondaryFusionTokens = fusionIds.filter(id => FUSIONS[id]?.kind !== 'passive').map(fusionToken).join('');
-      const passiveFusionTokens = fusionIds.filter(id => FUSIONS[id]?.kind === 'passive').map(fusionToken).join('');
-      this.dom['secondary-build'].innerHTML = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(secondaryCatalog[id].icon, rankBadge(level), secondaryCatalog[id].name, level)).join('') + secondaryFusionTokens || '—' : '—';
-      this.dom['passive-build'].innerHTML = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, rankBadge(level), PASSIVES[id].name, level)).join('') + passiveFusionTokens || '—' : '—';
+      const secondaryTokens = p ? Object.entries(p.build.secondaries).map(([id, level]) => token(secondaryCatalog[id].icon, rankBadge(level), secondaryCatalog[id].name, level)).concat(fusionIds.filter(id => FUSIONS[id]?.kind !== 'passive').map(fusionToken)) : [];
+      const passiveTokens = p ? Object.entries(p.build.passives).map(([id, level]) => token(PASSIVES[id].icon, rankBadge(level), PASSIVES[id].name, level)).concat(fusionIds.filter(id => FUSIONS[id]?.kind === 'passive').map(fusionToken)) : [];
+      this.dom['secondary-build'].innerHTML = fillSlots(secondaryTokens, BUILD_LIMITS.secondary, p?.build.secondarySlots || 0);
+      this.dom['passive-build'].innerHTML = fillSlots(passiveTokens, BUILD_LIMITS.passive, p?.build.passiveSlots || 0);
       this.hudBuildRevision = buildRevision;
     }
     setText('mute-button', this.muted ? 'MUTED' : 'SOUND');
