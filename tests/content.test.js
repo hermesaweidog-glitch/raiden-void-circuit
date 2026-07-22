@@ -9,14 +9,14 @@ test('final content roster is complete', () => {
   assert.ok(['gravity', 'prism', 'interceptor'].every(id => SECONDARIES[id]));
   assert.ok(SECONDARIES.acid && !SECONDARIES.mines);
   assert.ok(Object.keys(PASSIVES).length >= 12);
-  assert.ok(['capacitor', 'payload', 'flux', 'harvester'].every(id => PASSIVES[id]));
+  assert.ok(['capacitor', 'payload', 'flux', 'harvester', 'directCore', 'pierceCore', 'areaCore', 'siege', 'fieldAmp'].every(id => PASSIVES[id]));
   assert.ok(PASSIVES.support && !PASSIVES.engine);
   assert.ok(['incendiary', 'cryo', 'voltaic'].every(id => !PASSIVES[id]));
   assert.equal(STAGES.length, 5);
   assert.equal(Object.keys(BOSSES).length, 5);
   assert.equal(Object.keys(PILOTS).length, 8);
   assert.match(PILOTS.imperial.ability, /源晶礦結算獲取量.*通關獎勵/);
-  assert.deepEqual(Object.keys(FUSIONS), ['seekerOrbit', 'seekerOrbitPlus', 'lanceOrbit', 'clusterStars', 'blackHole', 'langinus', 'suicideSquad', 'luckyStar', 'taijiMaster', 'sixHarmony']);
+  assert.deepEqual(Object.keys(FUSIONS), ['seekerOrbit', 'seekerOrbitPlus', 'lanceOrbit', 'clusterStars', 'blackHole', 'langinus', 'suicideSquad', 'luckyStar', 'taijiMaster', 'sixHarmony', 'sixMeridians', 'overclockDirect', 'overclockPierce', 'overclockArea', 'world']);
 });
 
 test('runtime budgets are explicit and mobile-safe', () => {

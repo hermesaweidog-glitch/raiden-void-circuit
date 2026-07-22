@@ -33,11 +33,21 @@ export function fusionConsumedSets(fusions) {
   return { consumedSecondaries, consumedPassives };
 }
 
+function selectedExclusiveGroup(build, group, allowed = []) {
+  if (!group) return false;
+  const allow = new Set(allowed);
+  const passives = build.passives || {};
+  const fusions = build.fusions || {};
+  return Object.keys(passives).some(id => !allow.has(id) && PASSIVES[id]?.exclusiveGroup === group)
+    || Object.keys(fusions).some(id => !allow.has(id) && FUSIONS[id]?.exclusiveGroup === group);
+}
+
 export function fusionEligible(fusion, build) {
   const secondaries = build.secondaries || {};
   const passives = build.passives || {};
   const fusions = build.fusions || {};
   if (fusions[fusion.id]) return false;
+  if (fusion.exclusiveGroup && selectedExclusiveGroup(build, fusion.exclusiveGroup, fusion.requiresPassives || [])) return false;
   if (fusion.requiresFusion && !fusions[fusion.requiresFusion]) return false;
   const allSecondaries = { ...SECONDARIES, ...KUNGFU_SECONDARIES };
   if (!(fusion.requires || []).every(id => allSecondaries[id] && (secondaries[id] || 0) >= allSecondaries[id].max)) return false;
@@ -74,6 +84,7 @@ export function makeUpgradePool(build) {
     const level = passives[item.id] || 0;
     if (level >= item.max) continue;
     if (consumedPassives.has(item.id)) continue;
+    if (level === 0 && item.exclusiveGroup && selectedExclusiveGroup(build, item.exclusiveGroup)) continue;
     const inheritedByFusion = item.requiresSecondary && Object.keys(fusions).some(id => FUSIONS[id]?.requires.includes(item.requiresSecondary));
     if (level === 0 && item.requiresSecondary && !secondaries[item.requiresSecondary] && !inheritedByFusion) continue;
     if (level === 0 && item.requiresPrimaryLevel && (build.primaryLevel || 1) < item.requiresPrimaryLevel) continue;

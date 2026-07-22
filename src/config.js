@@ -51,6 +51,8 @@ export const KUNGFU_SECONDARIES = {
   ironBell: { id: 'ironBell', icon: 'assets/icons/iron-bell.svg', name: '金鐘罩', max: 3, color: '#facc15', description: '週期性恢復一層有時限、可抵擋一次攻擊的護罩。' },
   afterimage: { id: 'afterimage', icon: 'assets/icons/afterimage.svg', name: '殘影', max: 3, color: '#c084fc', description: '每秒在中距離內 1／2／3 名敵人身上留下撞擊殘影。' },
   ironMountain: { id: 'ironMountain', icon: 'assets/icons/iron-mountain.svg', name: '鐵山靠', max: 3, color: '#fb923c', description: '提高撞擊傷害；每 5 秒可使目標停止攻擊 0.8／1／1.5 秒。' },
+  fajin: { id: 'fajin', icon: 'assets/icons/fajin.svg', name: '發勁', max: 3, color: '#60a5fa', description: '朝最近敵人方向打出中距離貫通氣勁；距離越近傷害越高，最大射程仍保留 50% 傷害。' },
+  cloudHand: { id: 'cloudHand', icon: 'assets/icons/cloud-hand.svg', name: '穿雲手', max: 3, color: '#38bdf8', description: '低頻瞄準最遠敵人，發射低傷害的長距離貫通氣勁。' },
 };
 
 export const PASSIVES = {
@@ -66,6 +68,11 @@ export const PASSIVES = {
   payload: { id: 'payload', icon: 'assets/icons/payload.webp', name: '聚能彈頭', max: 3, description: '提高爆炸與範圍攻擊傷害；功夫範圍技亦會擴大判定。' },
   flux: { id: 'flux', icon: 'assets/icons/flux.webp', name: '相位穩流', max: 3, description: '延長一次性護盾觸發後的無敵時間。' },
   harvester: { id: 'harvester', icon: 'assets/icons/harvester.webp', name: '經驗收割器', max: 3, description: '提高所有經驗值取得量。' },
+  directCore: { id: 'directCore', icon: 'assets/icons/direct-core.svg', name: '直擊核心', max: 3, exclusiveGroup: 'damageCore', description: '直擊類傷害提高 10%／15%／20%；與貫穿核心、擴散核心互斥。' },
+  pierceCore: { id: 'pierceCore', icon: 'assets/icons/pierce-core.svg', name: '貫穿核心', max: 3, exclusiveGroup: 'damageCore', description: '貫穿類傷害提高 10%／15%／20%；與直擊核心、擴散核心互斥。' },
+  areaCore: { id: 'areaCore', icon: 'assets/icons/area-core.svg', name: '擴散核心', max: 3, exclusiveGroup: 'damageCore', description: '範圍類傷害提高 10%／15%／20%；全畫面炸彈除外，並與另外兩種核心互斥。' },
+  siege: { id: 'siege', icon: 'assets/icons/siege-protocol.svg', name: '攻城協定', max: 3, description: '對正式 BOSS 傷害提高 15%／20%／25%；不影響中型首領與召喚物，不開放融合。' },
+  fieldAmp: { id: 'fieldAmp', icon: 'assets/icons/field-amplifier.svg', name: '場域增幅器', max: 3, description: '影響範圍提高 5%／10%／15%；不影響拳法碰撞、投射物、射程與全畫面效果。' },
 };
 
 export const FUSIONS = {
@@ -79,6 +86,11 @@ export const FUSIONS = {
   luckyStar: { id: 'luckyStar', icon: 'assets/icons/lucky-star.svg', name: '幸運星', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['salvage', 'magnet', 'harvester'], description: '戰場回收、磁力核心與經驗收割器效果合併；源晶礦獲取基數 +2。' },
   taijiMaster: { id: 'taijiMaster', icon: 'assets/icons/taiji-master.svg', name: '太極宗', category: 'fusion', set: 'kungfu', requires: ['pushHands', 'ironMountain'], description: '異色推手可清除範圍內敵彈，並具備滿級鐵山靠效果。' },
   sixHarmony: { id: 'sixHarmony', icon: 'assets/icons/six-harmony.svg', name: '六合拳', category: 'fusion', set: 'kungfu', requires: ['afterimage', 'jointStrike'], description: '殘影優先分散攻擊；單一目標承受全部殘影，並附帶關節緩速。' },
+  sixMeridians: { id: 'sixMeridians', icon: 'assets/icons/six-meridians.svg', name: '六脈神劍', category: 'fusion', set: 'kungfu', requires: ['fajin', 'cloudHand'], description: '每 5 秒瞄準最遠的最多五名敵人發射長距離貫通劍氣；近距離傷害較高。' },
+  overclockDirect: { id: 'overclockDirect', icon: 'assets/icons/overclock-direct.svg', name: '超頻核心（直擊）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'directCore'], description: '保留滿級超頻模組效果，直擊類傷害提高至 25%。' },
+  overclockPierce: { id: 'overclockPierce', icon: 'assets/icons/overclock-pierce.svg', name: '超頻核心（貫穿）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'pierceCore'], description: '保留滿級超頻模組效果，貫穿類傷害提高至 25%。' },
+  overclockArea: { id: 'overclockArea', icon: 'assets/icons/overclock-area.svg', name: '超頻核心（擴散）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'areaCore'], description: '保留滿級超頻模組效果，範圍類傷害提高至 25%；全畫面炸彈除外。' },
+  world: { id: 'world', icon: 'assets/icons/world.svg', name: '世界', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['fieldAmp', 'capacitor'], description: '保留兩者滿級效果；每 10 秒停止世界 1 秒，敵人與敵方子彈停止，玩家側時間繼續。' },
 };
 
 export const STAGES = [

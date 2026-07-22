@@ -979,7 +979,9 @@ test('new passive modules alter cooldown, area damage, shield window, and XP gai
   game.player.shield = 1;
   game.player.invincible = 0;
   game.hitPlayer();
-  assert.equal(game.player.invincible, 200);
+  assert.equal(game.player.invincible, 110);
+  assert.equal(game.player.phaseClearTimer, 120);
+  assert.ok(game.player.phaseClearRadius > 125);
 });
 
 test('maxed loadouts automatically stack ten-percent attack upgrades and keep a MAX primary token', () => {

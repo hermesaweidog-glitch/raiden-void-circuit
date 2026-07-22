@@ -116,7 +116,7 @@ test('a fusion occupies one secondary slot and reopens exactly one weapon slot',
   assert.ok(!filledPool.some(item => item.id === 'rail'));
 });
 
-test('kungfu builds offer basic fist ranks and only six martial secondary techniques', () => {
+test('kungfu builds offer basic fist ranks and eight martial secondary techniques', () => {
   const build = {
     primaryLevel: 1,
     secondarySet: 'kungfu',
@@ -130,7 +130,7 @@ test('kungfu builds offer basic fist ranks and only six martial secondary techni
   const techniques = pool.filter(item => item.category === 'secondary');
 
   assert.equal(primary.name, '基本拳法');
-  assert.deepEqual(new Set(techniques.map(item => item.id)), new Set(['kiai', 'jointStrike', 'pushHands', 'ironBell', 'afterimage', 'ironMountain']));
+  assert.deepEqual(new Set(techniques.map(item => item.id)), new Set(['kiai', 'jointStrike', 'pushHands', 'ironBell', 'afterimage', 'ironMountain', 'fajin', 'cloudHand']));
   assert.ok(!pool.some(item => ['homing', 'guidance', 'seekerOrbit', 'lanceOrbit'].includes(item.id)));
 });
 
@@ -282,4 +282,17 @@ test('route progress reaches and holds explicit midboss and boss nodes', () => {
   assert.equal(stageProgress(stage, 7, 'playing'), 8 / 9);
   assert.equal(stageProgress(stage, 7, 'bossWarning'), 1);
   assert.equal(stageProgress(stage, 7, 'stageClear'), 1);
+});
+
+
+test('damage cores are mutually exclusive and consumed fusion parts never return', () => {
+  const build = { primaryLevel: 3, secondarySet: 'standard', secondaries: {}, passives: { directCore: 1 }, fusions: {}, secondarySlots: 4, passiveSlots: 8 };
+  let pool = makeUpgradePool(build);
+  assert.ok(pool.some(item => item.id === 'directCore'));
+  assert.ok(!pool.some(item => ['pierceCore', 'areaCore', 'overclockPierce', 'overclockArea'].includes(item.id)));
+
+  build.passives = {};
+  build.fusions = { overclockDirect: true };
+  pool = makeUpgradePool(build);
+  assert.ok(!pool.some(item => ['directCore', 'pierceCore', 'areaCore', 'overclock', 'overclockDirect', 'overclockPierce', 'overclockArea'].includes(item.id)));
 });
