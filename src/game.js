@@ -1113,9 +1113,9 @@ export class Game {
         const hitCounts = new Map();
         for (const target of targets) {
           const angle = Math.atan2(target.y-p.y,target.x-p.x);
-          this.addPlayerBullet({ id:this.entityId++, x:p.x, y:p.y, vx:Math.cos(angle)*14, vy:Math.sin(angle)*14, radius:5, damage:4, life:100, color:'#7dd3fc', kind:'sixMeridians', pierce:99, splash:0, distanceScale:{near:1.5,far:1,min:0,max:Math.hypot(this.w,this.h)}, hitCounts, maxHitsPerTarget:2, damageType:'pierce', damageSource:'fusion:六脈神劍' });
+          this.addPlayerBullet({ id:this.entityId++, x:p.x, y:p.y, vx:Math.cos(angle)*16, vy:Math.sin(angle)*16, radius:5, damage:4, life:92, color:'#7dd3fc', kind:'sixMeridians', trailLength: 56, pierce:99, splash:0, distanceScale:{near:1.5,far:1,min:0,max:Math.hypot(this.w,this.h)}, hitCounts, maxHitsPerTarget:2, damageType:'pierce', damageSource:'fusion:六脈神劍' });
         }
-        p.secondaryCooldowns[key]=300;
+        p.secondaryCooldowns[key]=240;
       }
     }
     if (p.build.fusions?.taijiMaster) {
@@ -1205,8 +1205,8 @@ export class Game {
       } else if (id === 'cloudHand') {
         const targets=this.enemies.filter(e=>e.alive&&e.y+e.radius>=0);
         const target=targets.sort((a,b)=>distanceSq(p,b)-distanceSq(p,a))[0];
-        if(target){ const angle=Math.atan2(target.y-p.y,target.x-p.x); this.addPlayerBullet({id:this.entityId++,x:p.x,y:p.y,vx:Math.cos(angle)*15,vy:Math.sin(angle)*15,radius:[0,6,7.5,9][rank],damage:[0,3,4,5.2][rank],life:100,color:'#38bdf8',kind:'cloudHand',pierce:99,splash:0,damageType:'pierce',damageSource:'secondary:穿雲手'});}
-        this.setSecondaryCooldown(id, [0,270,240,210][rank]);
+        if(target){ const angle=Math.atan2(target.y-p.y,target.x-p.x); this.addPlayerBullet({id:this.entityId++,x:p.x,y:p.y,vx:Math.cos(angle)*18,vy:Math.sin(angle)*18,radius:[0,6,7.5,9][rank],damage:[0,3,4,5.2][rank],life:90,color:'#38bdf8',kind:'cloudHand',trailLength:[0,44,52,60][rank],pierce:99,splash:0,damageType:'pierce',damageSource:'secondary:穿雲手'});}
+        this.setSecondaryCooldown(id, [0,240,210,180][rank]);
       } else if (id === 'ironBell') {
         p.kungfuShield = 1;
         p.kungfuShieldTimer = [0, 120, 180, 240][rank];
@@ -2575,46 +2575,88 @@ export class Game {
     ctx.translate(p.x, p.y);
     ctx.scale?.(p.scale || 1, p.scale || 1);
     const craftImage = this.craftImages?.[p.craft.id];
-    const useFalconSprite = p.craft.id === 'falcon' && craftImage?.complete && craftImage.naturalWidth > 0;
-    if (useFalconSprite) {
+    const spriteVisuals = {
+      falcon: {
+        size: 76,
+        aura: 'rgba(255,49,88,.13)',
+        thrusters: [
+          { x: -23.5, y: 22, len: 13, spread: 4.2, glowX: 11, glowY: 17 },
+          { x: 23.5, y: 22, len: 13, spread: 4.2, glowX: 11, glowY: 17 },
+        ],
+        flame: {
+          glowStops: ['rgba(255,255,230,.95)', 'rgba(255,196,64,.75)', 'rgba(255,76,24,.3)', 'rgba(255,40,10,0)'],
+          bodyStops: ['rgba(255,255,235,.98)', 'rgba(255,210,90,.92)', 'rgba(255,88,24,.68)', 'rgba(255,45,12,0)'],
+          core: 'rgba(255,252,220,.9)',
+        },
+      },
+      lancer: {
+        size: 82,
+        aura: 'rgba(66,232,255,.12)',
+        thrusters: [
+          { x: -30, y: 25, len: 15, spread: 4.4, glowX: 11, glowY: 18 },
+          { x: 30, y: 25, len: 15, spread: 4.4, glowX: 11, glowY: 18 },
+        ],
+        flame: {
+          glowStops: ['rgba(230,250,255,.95)', 'rgba(102,228,255,.8)', 'rgba(24,135,255,.34)', 'rgba(18,120,255,0)'],
+          bodyStops: ['rgba(240,252,255,.98)', 'rgba(120,236,255,.94)', 'rgba(58,168,255,.7)', 'rgba(22,110,255,0)'],
+          core: 'rgba(230,250,255,.92)',
+        },
+      },
+      wasp: {
+        size: 82,
+        aura: 'rgba(255,209,102,.12)',
+        thrusters: [
+          { x: -24, y: 26, len: 18, spread: 5.8, glowX: 13, glowY: 21 },
+          { x: 24, y: 26, len: 18, spread: 5.8, glowX: 13, glowY: 21 },
+        ],
+        flame: {
+          glowStops: ['rgba(255,245,220,.95)', 'rgba(255,208,96,.8)', 'rgba(255,120,24,.36)', 'rgba(255,96,24,0)'],
+          bodyStops: ['rgba(255,250,232,.98)', 'rgba(255,214,96,.94)', 'rgba(255,132,36,.74)', 'rgba(255,84,18,0)'],
+          core: 'rgba(255,246,220,.9)',
+        },
+      },
+    };
+    const spriteVisual = spriteVisuals[p.craft.id];
+    const useCraftSprite = !!(spriteVisual && craftImage?.complete && craftImage.naturalWidth > 0);
+    if (useCraftSprite) {
       // Scheme C: the hull is a static transparent sprite; thrust is drawn every frame in Canvas.
       const pulse = .5 + .5 * Math.sin(this.frame * .55);
       const jitter = Math.sin(this.frame * 1.37) * 2 + Math.sin(this.frame * .73) * 1.2;
-      const thrustLength = 13 + pulse * 7 + jitter;
-      const thrustPoints = [-23.5, 23.5];
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      for (const x of thrustPoints) {
-        const y = 22;
-        const glow = ctx.createRadialGradient(x, y, 1, x, y + 6, 15 + pulse * 4);
-        glow.addColorStop(0, 'rgba(255,255,230,.95)');
-        glow.addColorStop(.18, 'rgba(255,196,64,.75)');
-        glow.addColorStop(.55, 'rgba(255,76,24,.3)');
-        glow.addColorStop(1, 'rgba(255,40,10,0)');
+      for (const nozzle of spriteVisual.thrusters) {
+        const { x, y, len, spread, glowX, glowY } = nozzle;
+        const thrustLength = len + pulse * 7 + jitter;
+        const glow = ctx.createRadialGradient(x, y, 1, x, y + 6, glowY - 2 + pulse * 4);
+        glow.addColorStop(0, spriteVisual.flame.glowStops[0]);
+        glow.addColorStop(.18, spriteVisual.flame.glowStops[1]);
+        glow.addColorStop(.55, spriteVisual.flame.glowStops[2]);
+        glow.addColorStop(1, spriteVisual.flame.glowStops[3]);
         ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.ellipse(x, y + 7, 11 + pulse * 2, 17 + pulse * 4, 0, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x, y + 7, glowX + pulse * 2, glowY + pulse * 4, 0, 0, TAU); ctx.fill();
         const flame = ctx.createLinearGradient(x, y, x, y + thrustLength);
-        flame.addColorStop(0, 'rgba(255,255,235,.98)');
-        flame.addColorStop(.22, 'rgba(255,210,90,.92)');
-        flame.addColorStop(.58, 'rgba(255,88,24,.68)');
-        flame.addColorStop(1, 'rgba(255,45,12,0)');
+        flame.addColorStop(0, spriteVisual.flame.bodyStops[0]);
+        flame.addColorStop(.22, spriteVisual.flame.bodyStops[1]);
+        flame.addColorStop(.58, spriteVisual.flame.bodyStops[2]);
+        flame.addColorStop(1, spriteVisual.flame.bodyStops[3]);
         ctx.fillStyle = flame;
         ctx.beginPath();
-        ctx.moveTo(x - 4.2, y);
-        ctx.quadraticCurveTo(x - 5.5 - pulse * 1.5, y + thrustLength * .45, x + jitter * .18, y + thrustLength);
-        ctx.quadraticCurveTo(x + 5.5 + pulse * 1.5, y + thrustLength * .45, x + 4.2, y);
+        ctx.moveTo(x - spread, y);
+        ctx.quadraticCurveTo(x - (spread + 1.3) - pulse * 1.5, y + thrustLength * .45, x + jitter * .18, y + thrustLength);
+        ctx.quadraticCurveTo(x + (spread + 1.3) + pulse * 1.5, y + thrustLength * .45, x + spread, y);
         ctx.closePath(); ctx.fill();
-        ctx.fillStyle = 'rgba(255,252,220,.9)';
+        ctx.fillStyle = spriteVisual.flame.core;
         ctx.beginPath();
-        ctx.moveTo(x - 1.6, y + 1);
-        ctx.quadraticCurveTo(x - 2.2, y + thrustLength * .38, x, y + thrustLength * .7);
-        ctx.quadraticCurveTo(x + 2.2, y + thrustLength * .38, x + 1.6, y + 1);
+        ctx.moveTo(x - spread * .38, y + 1);
+        ctx.quadraticCurveTo(x - spread * .52, y + thrustLength * .38, x, y + thrustLength * .7);
+        ctx.quadraticCurveTo(x + spread * .52, y + thrustLength * .38, x + spread * .38, y + 1);
         ctx.closePath(); ctx.fill();
       }
       ctx.restore();
-      ctx.fillStyle = 'rgba(255,49,88,.13)';
+      ctx.fillStyle = spriteVisual.aura;
       ctx.beginPath(); ctx.ellipse(0, 3, 33, 37, 0, 0, TAU); ctx.fill();
-      ctx.drawImage(craftImage, -38, -38, 76, 76);
+      const half = spriteVisual.size / 2;
+      ctx.drawImage(craftImage, -half, -half, spriteVisual.size, spriteVisual.size);
     } else {
       ctx.fillStyle='rgba(66,232,255,.16)'; ctx.beginPath(); ctx.ellipse(0,4,30,36,0,0,TAU); ctx.fill();
       ctx.fillStyle=p.craft.color; ctx.beginPath(); ctx.moveTo(0,-27); ctx.lineTo(-13,7); ctx.lineTo(-29,15); ctx.lineTo(-12,20); ctx.lineTo(0,12); ctx.lineTo(12,20); ctx.lineTo(29,15); ctx.lineTo(13,7); ctx.closePath(); ctx.fill();
@@ -2826,6 +2868,42 @@ export class Game {
             ctx.fill();
           }
         }
+        ctx.restore();
+        continue;
+      }
+      if(b.kind==='cloudHand'||b.kind==='sixMeridians'){
+        const a=Math.atan2(b.vy,b.vx);
+        const len=b.trailLength||48;
+        const beamHalf=Math.max(2.5,b.radius*.55);
+        ctx.save();
+        ctx.translate(b.x,b.y);
+        ctx.rotate(a);
+        ctx.globalCompositeOperation='lighter';
+        const glow=ctx.createLinearGradient(-len,0,0,0);
+        if(b.kind==='cloudHand'){
+          glow.addColorStop(0,'rgba(56,189,248,0)');
+          glow.addColorStop(.28,'rgba(56,189,248,.16)');
+          glow.addColorStop(.72,'rgba(125,211,252,.5)');
+          glow.addColorStop(1,'rgba(240,249,255,.98)');
+        }else{
+          glow.addColorStop(0,'rgba(125,211,252,0)');
+          glow.addColorStop(.24,'rgba(125,211,252,.18)');
+          glow.addColorStop(.68,'rgba(196,181,253,.52)');
+          glow.addColorStop(1,'rgba(255,255,255,.98)');
+        }
+        ctx.strokeStyle=glow;
+        ctx.lineCap='round';
+        ctx.shadowColor=b.kind==='cloudHand' ? '#38bdf8' : '#c4b5fd';
+        ctx.shadowBlur=10;
+        ctx.lineWidth=beamHalf*2.15;
+        ctx.beginPath(); ctx.moveTo(-len,0); ctx.lineTo(0,0); ctx.stroke();
+        ctx.shadowBlur=0;
+        ctx.strokeStyle=b.kind==='cloudHand' ? 'rgba(255,255,255,.96)' : 'rgba(240,249,255,.98)';
+        ctx.lineWidth=Math.max(1.5,beamHalf*.72);
+        ctx.beginPath(); ctx.moveTo(-len+4,0); ctx.lineTo(2,0); ctx.stroke();
+        ctx.globalAlpha=.45;
+        ctx.fillStyle=b.kind==='cloudHand' ? '#7dd3fc' : '#ddd6fe';
+        ctx.beginPath(); ctx.ellipse(0,0,beamHalf*1.6,beamHalf*1.2,0,0,TAU); ctx.fill();
         ctx.restore();
         continue;
       }
