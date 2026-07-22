@@ -2494,11 +2494,11 @@ export class Game {
       const primaryIcon = kungfu ? 'assets/icons/basic-fist.svg' : PRIMARY_ICON;
       const primaryToken = p ? token(primaryIcon, `${primaryBadge} · +${firepowerBonus}%`, `${primaryName} · 超頻火力 +${firepowerBonus}%`, p.build.primaryLevel) : '';
       const extraPrimaryToken = !p ? ''
-        : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `MAX · ${p.build.evasion ?? 10}%`, `唯快不破 · 迴避 ${p.build.evasion ?? 10}%`, 'MAX')
+        : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `${p.build.evasion ?? 10}%`, `唯快不破 · 迴避 ${p.build.evasion ?? 10}%`, `${p.build.evasion ?? 10}%`)
         : p.pilotId === 'gambler' ? token('assets/icons/frenzy.svg', `+${Math.round((p.grazeBonus || 0) * 100)}%`, `狂熱 · 傷害 +${Math.round((p.grazeBonus || 0) * 100)}%`)
         : p.pilotId === 'reaper' ? token('assets/icons/soul-taker.svg', `${p.build.soulTaker || 1}%`, `奪魂者 · 主武器即死 ${p.build.soulTaker || 1}%`)
         : p.pilotId === 'imperial' ? token('assets/icons/battlefield-cleanup.svg', `+${p.build.battlefieldCleanup || 0}%`, `戰場清理 · 源晶礦結算 +${p.build.battlefieldCleanup || 0}%`)
-        : p.pilotId === 'rambo' ? token('assets/icons/supply-chain.svg', 'MAX', '補給鏈 · 擊倒 BOSS 補滿炸彈', 'MAX')
+        : p.pilotId === 'rambo' ? token('assets/icons/supply-chain.svg', '+50%', '補給鏈 · 炸彈對大型目標傷害 +50%', '+50%')
         : '';
       const emptyToken = (locked = false) => `<span class="skill-token empty${locked ? ' locked' : ''}" aria-hidden="true"><i></i><b></b></span>`;
       const fillSlots = (tokens, visibleSlots, unlockedSlots) => Array.from({ length: visibleSlots }, (_, index) => tokens[index] || emptyToken(index >= unlockedSlots)).join('');

@@ -60,7 +60,7 @@ test('a new run opens one starter upgrade before stage movement begins', () => {
 
   assert.equal(game.mode, 'levelup');
   assert.equal(game.player.pendingLevels, 1);
-  assert.equal(game.player.build.secondarySlots, 3);
+  assert.equal(game.player.build.secondarySlots, 4);
   assert.equal(game.player.build.passiveSlots, 6);
   assert.equal(game.currentChoices.length, 3);
   assert.equal(game.dom['upgrade-kicker'].textContent, 'PRE-FLIGHT UPGRADE');
@@ -520,7 +520,7 @@ test('passive fusions render in the passive strip instead of the secondary strip
   assert.match(game.dom['pause-passive'].textContent, /朗基努斯之槍/);
 
   game.endRun(false);
-  assert.match(game.dom['run-summary'].innerHTML, /SECONDARY　2\/3/, 'the end screen counts the weapon fusion as an occupied secondary slot');
+  assert.match(game.dom['run-summary'].innerHTML, /SECONDARY　2\/4/, 'the end screen counts the weapon fusion as an occupied secondary slot');
   assert.match(game.dom['run-summary'].innerHTML, /PASSIVE　4\/6/, 'the end screen counts passive fusions as occupied passive slots');
 });
 
@@ -1420,7 +1420,7 @@ test('test deployment enforces pilot slot caps and can start directly at the sel
   assert.equal(game.enemies.length, 1, 'boss deployment must not also spawn wave one');
 });
 
-test('kungfu deployment keeps only three martial techniques and marks its dedicated build', () => {
+test('kungfu deployment keeps up to four martial techniques and marks its dedicated build', () => {
   const { game } = makeGame();
   game.start({
     runMode: 'test', craftId: 'falcon', pilotId: 'kungfu',
@@ -1429,9 +1429,9 @@ test('kungfu deployment keeps only three martial techniques and marks its dedica
   });
 
   assert.equal(game.player.build.secondarySet, 'kungfu');
-  assert.deepEqual(game.player.build.secondaries, { kiai: 3, jointStrike: 3, pushHands: 3 });
+  assert.deepEqual(game.player.build.secondaries, { kiai: 3, jointStrike: 3, pushHands: 3, ironBell: 3 });
   assert.deepEqual(game.player.build.passives, { overclock: 3 });
-  assert.equal(game.player.build.secondarySlots, 3);
+  assert.equal(game.player.build.secondarySlots, 4);
 });
 
 test('kungfu alone reaches the upper combat lane and basic fist ranks increase collision damage', () => {
@@ -1474,7 +1474,7 @@ test('kungfu primary HUD shows total overclock firepower and MAX dodge while dod
   assert.match(game.dom['primary-build'].innerHTML, /唯快不破/);
   assert.match(game.dom['primary-build'].innerHTML, /10%/);
   assert.match(game.dom['primary-build'].innerHTML, /<b>MAX · \+30%<\/b>/);
-  assert.match(game.dom['primary-build'].innerHTML, /<b>MAX · 10%<\/b>/);
+  assert.match(game.dom['primary-build'].innerHTML, /<b>10%<\/b>/);
 
   game.currentChoices = [{ id: 'evasion-boost', category: 'evasion' }];
   game.upgradeReturnMode = 'playing';
@@ -2157,7 +2157,7 @@ test('fresh meta state halves firepower, sets 25 base hp, and starts with no liv
   assert.equal(maxed.baseHp, 50);
   assert.equal(maxed.lives, 1);
   assert.equal(maxed.bombs, 3);
-  assert.equal(maxed.secondarySlots, 3);
+  assert.equal(maxed.secondarySlots, 4);
   assert.equal(maxed.passiveSlots, 6);
   assert.ok(Math.abs(maxed.xpMultiplier - 1) < 1e-9);
   assert.equal(maxed.overdriveStep, 10, 'maxed overdrive boost reaches 10% per pick');

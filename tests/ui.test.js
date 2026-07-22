@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=44"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=45"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -64,7 +64,7 @@ test('generated icons are centered and clipped inside their token frames', () =>
 
 test('build strip uses two fixed rows with two primary, four secondary, and eight passive cells', () => {
   assert.match(css, /grid-template-areas:"primary secondary" "passive passive"/);
-  assert.match(css, /nth-child\(1\)>span\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /nth-child\(1\)>span\{grid-template-columns:minmax\(88px,1\.35fr\) minmax\(0,\.65fr\)/);
   assert.match(css, /nth-child\(2\)>span\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(css, /nth-child\(3\)>span\{grid-template-columns:repeat\(8,minmax\(0,1fr\)\)/);
   assert.match(css, /skill-token\.empty/);
@@ -109,7 +109,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.44/);
+  assert.match(html, /ver\.45/);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {
