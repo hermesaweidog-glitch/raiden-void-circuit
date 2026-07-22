@@ -43,6 +43,13 @@ const renderModeSelect = () => {
   for (const button of modeSelect.querySelectorAll('[data-run-mode]')) button.addEventListener('click', () => showLoadout(button.dataset.runMode));
 };
 
+const craftAbility = craft => {
+  if (craft.id === 'falcon') return '最大 HP +10';
+  if (craft.id === 'lancer') return '副武器傷害 +10%';
+  if (craft.id === 'wasp') return '被動槽位 +1　·　炸彈上限 +1';
+  return '—';
+};
+
 const renderAircraft = () => {
   const meta = isMaxMode() ? { unlocks: Object.keys(META_UNLOCKS) } : game.meta;
   aircraftSelect.innerHTML = Object.values(AIRCRAFT).map(craft => {
@@ -50,7 +57,7 @@ const renderAircraft = () => {
     const weapon = PRIMARY_DESCRIPTIONS[craft.primary] || { name: '主武器', type: '標準', text: craft.description };
     return `
   <button class="aircraft-card${craft.id === selectedCraft ? ' selected' : ''}${unlocked ? '' : ' locked'}" data-craft="${craft.id}" ${unlocked ? '' : 'disabled'} style="--craft:${craft.color}">
-    <img class="aircraft-art" src="${craft.art}" alt="${craft.name} ${craft.subtitle}" draggable="false"><strong>${craft.name}</strong><small>${craft.subtitle}</small><p>${unlocked ? craft.description : `🔒 需要 ◆${META_UNLOCKS[craft.id]?.cost ?? '—'} 解鎖`}</p>${unlocked ? `<div class="weapon-info"><b>主武器｜${weapon.name}</b><small>${weapon.type}</small><span>${weapon.text}</span></div>` : ''}
+    <img class="aircraft-art" src="${craft.art}" alt="${craft.name} ${craft.subtitle}" draggable="false"><strong>${craft.name}</strong><small>${craft.subtitle}</small>${unlocked ? `<div class="craft-ability"><b>機體能力</b><span>${craftAbility(craft)}</span></div>` : ''}<p>${unlocked ? craft.description : `🔒 需要 ◆${META_UNLOCKS[craft.id]?.cost ?? '—'} 解鎖`}</p>${unlocked ? `<div class="weapon-info"><b>主武器｜${weapon.name}</b><small>${weapon.type}</small><span>${weapon.text}</span></div>` : ''}
   </button>`;
   }).join('');
   for (const button of aircraftSelect.querySelectorAll('[data-craft]')) button.addEventListener('click', () => {

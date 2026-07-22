@@ -1319,7 +1319,7 @@ test('shadow periodically enters a two-second invulnerable phase', () => {
   assert.ok(game.player.invincible > 0);
 });
 
-test('shadow takes a two-second invulnerability window and retaliates for two seconds of primary DPS', () => {
+test('shadow keeps the extended hit invulnerability without a retaliation attack', () => {
   const { game } = makeGame();
   game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'shadow' });
   game.mode = 'playing';
@@ -1327,16 +1327,13 @@ test('shadow takes a two-second invulnerability window and retaliates for two se
   game.player.x = 240;
   game.player.y = 600;
   const near = { id: 801, type: 'scout', x: 280, y: 560, radius: 10, hp: 10000, maxHp: 10000, alive: true, score: 0, xp: 0, color: '#fff' };
-  const far = { ...near, id: 802, x: 20, y: 100 };
-  game.enemies = [near, far];
-  const expectedDamage = game.primaryDamagePerSecond() * 2 * 10;
+  game.enemies = [near];
 
   game.hitPlayer(5);
 
   assert.equal(game.player.invincible, 120);
-  assert.equal(near.hp, 10000 - expectedDamage);
-  assert.equal(far.hp, 10000);
-  assert.ok(game.effects.some(effect => effect.type === 'shadowRetaliation'));
+  assert.equal(near.hp, 10000, 'taking damage no longer triggers a retaliation attack');
+  assert.ok(!game.effects.some(effect => effect.type === 'shadowRetaliation'));
 });
 
 test('DPS tracks rolling one-second, ten-second, and current-stage values plus peaks', () => {
@@ -2342,7 +2339,7 @@ test('max mode and test mode runs never bank ore into the meta wallet', () => {
   assert.equal(testSetup.game.meta.ore, beforeTest, 'test mode ore is never banked');
 });
 
-test('spare lives respawn the craft from the bottom with a free bomb blast instead of ending the run', () => {
+test('spare lives trigger a frozen three-second replacement-airframe sequence', () => {
   const { game } = makeGame();
   game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
   game.chooseUpgrade(0);
@@ -2356,12 +2353,20 @@ test('spare lives respawn the craft from the bottom with a free bomb blast inste
 
   game.hitPlayer(5);
 
-  assert.notEqual(game.mode, 'gameover', 'the run continues on a spare life');
+  assert.equal(game.mode, 'respawning');
   assert.equal(game.runLives, 0);
-  assert.equal(game.player.hp, game.player.maxHp, 'respawn restores full hp');
-  assert.ok(game.player.y > game.h, 'the craft re-enters from below the screen');
-  assert.ok(game.player.invincible >= 210, 'respawn grants a long invulnerability window');
-  assert.equal(game.enemyBullets.length, 0, 'the respawn bomb clears enemy bullets');
+  assert.equal(game.player.hp, game.player.maxHp);
+  assert.equal(game.player.respawnVisible, false);
+  assert.equal(game.respawnTransition.timer, 180);
+  assert.equal(game.enemies[0].hp, 10, 'replacement sequence does not bomb enemies');
+
+  for (let i = 0; i < 120; i += 1) game.update();
+  assert.equal(game.player.respawnVisible, true);
+  assert.equal(game.enemyBullets.length, 0, 'enemy bullets clear when the replacement enters');
+  for (let i = 0; i < 60; i += 1) game.update();
+  assert.equal(game.mode, 'playing');
+  assert.equal(game.player.x, game.w / 2);
+  assert.equal(game.player.y, game.h - 120);
 
   game.player.invincible = 0;
   game.player.hp = 1;

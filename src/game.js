@@ -198,6 +198,7 @@ export class Game {
     this.effects = [];
     this.floaters = [];
     this.kungfuFreezeTimer = 0;
+    this.respawnTransition = null;
     this.runFrames = 0;
     this.stageFrames = 0;
     this.damageTotal = 0;
@@ -209,7 +210,7 @@ export class Game {
       x: this.w / 2, y: this.h - 92, targetX: this.w / 2, targetY: this.h - 92,
       radius: 15 * (pilot.id === 'gemini' ? 1.2 : 1), hitRadius: pilot.id === 'gambler' ? 2 : 5 * (pilot.id === 'gemini' ? 1.2 : 1), scale: pilot.id === 'gemini' ? 1.2 : 1,
       craftId, craft, pilotId: pilot.id, pilot, hp: maxHp, maxHp,
-      bombs: isTest ? maxBombs : Math.min(maxBombs, this.metaCombat.bombs + bombBonus + (craft.bombCapBonus || 0)), maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0,
+      bombs: isTest ? maxBombs : Math.min(maxBombs, this.metaCombat.bombs + bombBonus + (craft.bombCapBonus || 0)), maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0, respawnVisible: true,
       shadowCooldown: 360, shadowTimer: 0, grazeBonus: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
       build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, overdriveStep: this.metaCombat?.overdriveStep ?? 1, revision: 0 },
@@ -450,6 +451,7 @@ export class Game {
     }
     this.updateParticles();
     if (!this.player || this.mode === 'title' || this.mode === 'paused' || this.mode === 'levelup' || this.mode === 'gameover' || this.mode === 'victory') return;
+    if (this.mode === 'respawning') { this.updateRespawnTransition(); return; }
     this.updateRouteProgress();
     if (this.mode === 'finale') {
       this.updateFinale();
@@ -723,13 +725,13 @@ export class Game {
       if (player.shadowTimer > 0) {
         player.shadowTimer -= 1;
         player.invincible = Math.max(player.invincible, 2);
-        const clearRadius = 70;
+        const clearRadius = 90;
         this.enemyBullets = this.enemyBullets.filter(bullet => distanceSq(bullet, player) > clearRadius ** 2);
-        // Ten pulses over the two-second phase; total damage equals two seconds of primary DPS.
+        // Ten pulses over the two-second phase; total damage equals three seconds of primary DPS.
         if (player.shadowTimer % 12 === 0) {
-          const pulseDamage = this.primaryDamagePerSecond(player) * .2;
+          const pulseDamage = this.primaryDamagePerSecond(player) * .3;
           for (const enemy of this.enemies) {
-            if (enemy.alive && distanceSq(enemy, player) <= clearRadius ** 2) this.damageEnemy(enemy, pulseDamage, false, 'pilot:陰影｜相位範圍傷害');
+            if (enemy.alive && distanceSq(enemy, player) <= clearRadius ** 2) this.damageEnemy(enemy, pulseDamage, false, 'pilot:陰影｜相位領域');
           }
         }
       } else {
@@ -2132,15 +2134,6 @@ export class Game {
       this.detonateBomb();
       this.announce('SUICIDE SQUAD', 'AUTO BOMB TRIGGERED', 900);
     }
-    if (this.player.pilotId === 'shadow') {
-      const radius = 135;
-      const damage = this.primaryDamagePerSecond() * 2;
-      for (const enemy of this.enemies) {
-        if (enemy.alive && distanceSq(enemy, this.player) <= radius ** 2) this.damageEnemy(enemy, damage, false, 'pilot:陰影｜反擊範圍傷害');
-      }
-      this.addEffect({ type: 'shadowRetaliation', x: this.player.x, y: this.player.y, radius: 12, maxRadius: radius, life: 28, maxLife: 28 });
-      this.spawnBurst(this.player.x, this.player.y, 36, ['#090612', '#6b21a8', '#c084fc']);
-    }
     this.spawnBurst(this.player.x, this.player.y, 40, '#ff3158');
     this.sound('hit'); navigator.vibrate?.([25, 30, 25]);
     if (this.player.hp <= 0) {
@@ -2153,13 +2146,56 @@ export class Game {
   respawnPlayer() {
     this.runLives -= 1;
     const p = this.player;
+    const deathX = p.x; const deathY = p.y;
     p.hp = p.maxHp;
-    p.x = this.w / 2; p.targetX = this.w / 2;
-    p.y = this.h + 64; p.targetY = this.h - 92;
-    p.invincible = 210;
     p.shield = 0; p.kungfuShield = 0; p.kungfuShieldTimer = 0;
-    this.detonateBomb();
-    this.announce('BACKUP AIRFRAME', `REMAINING LIVES ${this.runLives}`, 1600);
+    p.respawnVisible = false;
+    p.invincible = 0;
+    p.inputLock = 999;
+    this.pointer.active = false;
+    this.keys.clear();
+    this.mode = 'respawning';
+    this.respawnTransition = { timer: 180, total: 180, entryStart: 60, targetX: this.w / 2, targetY: this.h - 120 };
+    this.playerBullets = [];
+    this.spawnBurst(deathX, deathY, 80, ['#fff', '#ff3158', '#ffd166']);
+    this.addEffect({ type: 'ring', x: deathX, y: deathY, radius: 10, maxRadius: 130, life: 70, maxLife: 70, color: '#ff3158' });
+    this.announce('AIRFRAME LOST', `BACKUP UNIT INBOUND · ${this.runLives} REMAINING`, 2500);
+    this.updateHud();
+  }
+
+  updateRespawnTransition() {
+    this.updateEffects();
+    const transition = this.respawnTransition;
+    const p = this.player;
+    if (!transition || !p) return;
+    transition.timer -= 1;
+    // Keep the battlefield fully frozen until the replacement reaches its fixed rally point.
+    if (transition.timer === transition.entryStart) {
+      this.enemyBullets = [];
+      p.x = transition.targetX;
+      p.targetX = transition.targetX;
+      p.y = this.h + 72;
+      p.targetY = transition.targetY;
+      p.respawnVisible = true;
+      p.invincible = 240;
+      this.spawnBurst(p.x, this.h - 8, 32, '#42e8ff');
+      this.announce('BACKUP AIRFRAME', 'RE-ENTERING COMBAT ZONE', 900);
+    }
+    if (transition.timer <= transition.entryStart && p.respawnVisible) {
+      const progress = 1 - transition.timer / transition.entryStart;
+      const eased = 1 - (1 - clamp(progress, 0, 1)) ** 3;
+      p.y = (this.h + 72) + (transition.targetY - (this.h + 72)) * eased;
+      p.x = transition.targetX;
+    }
+    if (transition.timer <= 0) {
+      p.x = transition.targetX; p.targetX = transition.targetX;
+      p.y = transition.targetY; p.targetY = transition.targetY;
+      p.inputLock = 0;
+      p.respawnVisible = true;
+      this.respawnTransition = null;
+      this.mode = 'playing';
+      this.announce('COMBAT RESTORED', 'BACKUP AIRFRAME ONLINE', 700);
+    }
     this.updateHud();
   }
 
@@ -2414,8 +2450,9 @@ export class Game {
 
   drawPlayer(ctx) {
     if (!this.player) return; const p = this.player;
+    if (p.respawnVisible === false) return;
     if (p.shadowTimer > 0) {
-      const radius = 70;
+      const radius = 90;
       ctx.save();
       const gradient = ctx.createRadialGradient(p.x, p.y, 8, p.x, p.y, radius);
       gradient.addColorStop(0, 'rgba(0,0,0,.88)');
@@ -2681,7 +2718,6 @@ export class Game {
       else if(e.type==='clusterLock'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(t*2.4);ctx.globalAlpha=1-t;ctx.strokeStyle='#f0abfc';ctx.lineWidth=2.5;const r=18-t*8;for(let n=0;n<4;n+=1){const a=n/4*TAU;ctx.beginPath();ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r);ctx.lineTo(Math.cos(a)*(r-6),Math.sin(a)*(r-6));ctx.stroke();}ctx.strokeStyle='rgba(240,171,252,.5)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,r,0,TAU);ctx.stroke();ctx.restore();}
       else if(e.type==='clusterFlash'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.globalAlpha=1-t;ctx.shadowColor='#f0abfc';ctx.shadowBlur=18;for(let n=0;n<6;n+=1){const a=n/6*TAU+t*1.2;ctx.strokeStyle=n%2?'#fff':'#f0abfc';ctx.lineWidth=3-t*2;ctx.beginPath();ctx.moveTo(Math.cos(a)*4,Math.sin(a)*4);ctx.lineTo(Math.cos(a)*(14+t*26),Math.sin(a)*(14+t*26));ctx.stroke();}ctx.restore();}
       else if(e.type==='hammer'){const t=1-e.life/e.maxLife;const radius=8+(e.maxRadius-8)*t;ctx.save();ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#facc15';ctx.lineWidth=2;for(let n=0;n<4;n+=1){const a=n/4*TAU+Math.PI/4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
-      else if(e.type==='shadowRetaliation'){const t=1-e.life/e.maxLife;const radius=12+(e.maxRadius-12)*(1-(1-t)**3);ctx.save();ctx.globalAlpha=1-t;ctx.fillStyle='rgba(34,8,56,.3)';ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=5-3*t;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.stroke();ctx.strokeStyle='#6b21a8';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,radius*.72,0,TAU);ctx.stroke();for(let n=0;n<4;n+=1){const a=n/4*TAU+t*1.8;ctx.beginPath();ctx.moveTo(e.x+Math.cos(a)*radius*.2,e.y+Math.sin(a)*radius*.2);ctx.lineTo(e.x+Math.cos(a)*radius,e.y+Math.sin(a)*radius);ctx.stroke();}ctx.restore();}
       else if(e.type==='ring'){const t=1-e.life/e.maxLife;e.radius+=(e.maxRadius-e.radius)*.12;ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=4;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       else if(e.type==='supply'){const style=this.supplyStyle(e.supply);const color=style.color;const radius=e.radius||16;ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.4;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,radius+5+Math.sin(this.frame*.16)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.shadowColor=color;ctx.shadowBlur=12;ctx.fillStyle=color;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#07111d';ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(style.label,e.x,e.y+1);ctx.restore();}
       else if(e.type==='ore'){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(this.frame*.04);ctx.shadowColor='#67e8f9';ctx.shadowBlur=10;ctx.fillStyle='#0e7490';ctx.beginPath();ctx.moveTo(0,-e.radius);ctx.lineTo(e.radius*.85,0);ctx.lineTo(0,e.radius);ctx.lineTo(-e.radius*.85,0);ctx.closePath();ctx.fill();ctx.strokeStyle='#67e8f9';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#cffafe';ctx.fillRect(-1.5,-e.radius*.5,3,e.radius);ctx.restore();}
