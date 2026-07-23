@@ -66,6 +66,7 @@ export class Game {
     this.particles = [];
     this.effects = [];
     this.healDropsThisStage = 0;
+    this.bossHealOpportunityRestored = false;
     this.floaters = [];
     this.keys = new Set();
     this.pointer = { active: false, id: null, x: 0, y: 0, startX: 0, startY: 0, playerX: 0, playerY: 0 };
@@ -208,6 +209,7 @@ export class Game {
     this.kungfuFreezeTimer = 0;
     this.worldFreezeTimer = 0;
     this.worldCooldown = 600;
+    this.bossHealOpportunityRestored = false;
     this.respawnTransition = null;
     this.runFrames = 0;
     this.stageFrames = 0;
@@ -223,7 +225,7 @@ export class Game {
       bombs: isTest ? maxBombs : Math.min(maxBombs, this.metaCombat.bombs + bombBonus + (craft.bombCapBonus || 0)), maxBombs, shield: 0, kungfuShield: 0, kungfuShieldTimer: 0, phaseClearTimer: 0, phaseClearRadius: 0, shieldsDropped: 0, invincible: 150, fireCooldown: 0, secondaryCooldowns: {}, inputLock: 0, respawnVisible: true,
       shadowCooldown: 360, shadowTimer: 0, grazeBonus: 0,
       level: 1, xp: 0, xpNeed: xpForLevel(1), pendingLevels: isTest ? 0 : 1,
-      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 10 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, overdriveStep: this.metaCombat?.overdriveStep ?? 1, revision: 0 },
+      build: { pilotId: pilot.id, primaryLevel: isTest ? WORLD.maxUpgradeRank : 1, secondarySet: pilot.id === 'kungfu' ? 'kungfu' : 'standard', secondaries: selectedSecondaries, passives: selectedPassives, fusions: {}, secondarySlots, passiveSlots, evasion: pilot.id === 'kungfu' ? 20 : 0, soulTaker: pilot.id === 'reaper' ? 1 : 0, battlefieldCleanup: 0, overdrive: 0, overdriveStep: this.metaCombat?.overdriveStep ?? 1, revision: 0 },
       bombLock: 0,
     };
     this.hudBuildRevision = -1;
@@ -418,6 +420,8 @@ export class Game {
     this.player.targetX = clamp(this.player.x, 24, this.w - 24);
     this.player.invincible = Math.max(this.player.invincible, 120);
     this.player.shieldsDropped = 0;
+    this.healDropsThisStage = 0;
+    this.bossHealOpportunityRestored = false;
     const stage = STAGES[this.stageIndex];
     this.announce(`STAGE ${stage.id} — ${stage.name}`, stage.subtitle, 1900);
     // Keep the menu track through the initial pre-flight upgrade. Actual combat
@@ -500,14 +504,14 @@ export class Game {
       if (this.worldFreezeTimer > 0) this.worldFreezeTimer -= 1;
       this.worldCooldown -= 1;
       if (this.worldCooldown <= 0) {
-        this.worldFreezeTimer = 60; this.worldCooldown = 600;
-        this.addEffect({ type: 'worldStop', x: this.w / 2, y: this.h / 2, life: 60, maxLife: 60 });
+        this.worldFreezeTimer = 120; this.worldCooldown = 600;
+        this.addEffect({ type: 'worldStop', x: this.w / 2, y: this.h / 2, life: 120, maxLife: 120 });
         this.announce('世界', 'TIME HAS STOPPED', 700);
       }
     }
     const enemiesFrozen = this.kungfuFreezeTimer > 0 || this.worldFreezeTimer > 0;
     if (this.kungfuFreezeTimer > 0) this.kungfuFreezeTimer -= 1;
-    else {
+    if (!enemiesFrozen) {
       this.updateEnemies();
       this.updateEnemyBullets();
     }
@@ -708,6 +712,10 @@ export class Game {
     const depth = this.endlessStageDepth();
     const bossHpGrowth = this.endlessHpGrowth('boss');
     const hp = data.baseHp * stage.bossHp * bossHpGrowth * STAT_SCALE;
+    if (!this.bossHealOpportunityRestored) {
+      this.healDropsThisStage = Math.max(0, this.healDropsThisStage - 1);
+      this.bossHealOpportunityRestored = true;
+    }
     this.enemies.push({
       id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
@@ -1100,6 +1108,44 @@ export class Game {
     }
   }
 
+  beamEndBeyondScreen(origin, target) {
+    const dx = target.x - origin.x;
+    const dy = target.y - origin.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const scale = Math.hypot(this.w, this.h) * 1.35 / length;
+    return { x: origin.x + dx * scale, y: origin.y + dy * scale };
+  }
+
+  distanceToSegmentSquared(point, start, end) {
+    const vx = end.x - start.x;
+    const vy = end.y - start.y;
+    const wx = point.x - start.x;
+    const wy = point.y - start.y;
+    const lengthSq = vx * vx + vy * vy || 1;
+    const t = clamp((wx * vx + wy * vy) / lengthSq, 0, 1);
+    const dx = point.x - (start.x + vx * t);
+    const dy = point.y - (start.y + vy * t);
+    return dx * dx + dy * dy;
+  }
+
+  fireKungfuBeam(target, { width, damage, source, near = 1, far = 1, hitCounts = null, maxHitsPerTarget = 1, color = '#38bdf8' }) {
+    const start = { x: this.player.x, y: this.player.y };
+    const end = this.beamEndBeyondScreen(start, target);
+    const maxDistance = Math.hypot(this.w, this.h);
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || enemy.y + enemy.radius < 0) continue;
+      const hitRadius = width / 2 + enemy.radius;
+      if (this.distanceToSegmentSquared(enemy, start, end) > hitRadius * hitRadius) continue;
+      const count = hitCounts?.get(enemy.id) || 0;
+      if (count >= maxHitsPerTarget) continue;
+      const distanceRatio = clamp(Math.hypot(enemy.x - start.x, enemy.y - start.y) / maxDistance, 0, 1);
+      const distanceMultiplier = near + (far - near) * distanceRatio;
+      this.damageEnemy(enemy, this.rollDamage(damage * distanceMultiplier), true, source, 'pierce', true);
+      hitCounts?.set(enemy.id, count + 1);
+    }
+    this.addEffect({ type: 'kungfuBeam', x1: start.x, y1: start.y, x2: end.x, y2: end.y, width, color, life: 30, maxLife: 30 });
+  }
+
   updateKungfuFusions() {
     const p = this.player;
     const payloadPower = upgradePower(p.build.passives.payload || 0);
@@ -1112,10 +1158,9 @@ export class Game {
         const targets = this.enemies.filter(e => e.alive && e.y + e.radius >= 0).sort((a,b) => distanceSq(p,b)-distanceSq(p,a)).slice(0,5);
         const hitCounts = new Map();
         for (const target of targets) {
-          const angle = Math.atan2(target.y-p.y,target.x-p.x);
-          this.addPlayerBullet({ id:this.entityId++, x:p.x, y:p.y, vx:Math.cos(angle)*16, vy:Math.sin(angle)*16, radius:5, damage:4, life:92, color:'#7dd3fc', kind:'sixMeridians', trailLength: 56, pierce:99, splash:0, distanceScale:{near:1.5,far:1,min:0,max:Math.hypot(this.w,this.h)}, hitCounts, maxHitsPerTarget:2, damageType:'pierce', damageSource:'fusion:六脈神劍' });
+          this.fireKungfuBeam(target, { width: 10, damage: 4, source: 'fusion:六脈神劍', near: 1.5, far: 1, hitCounts, maxHitsPerTarget: 2, color: '#c4b5fd' });
         }
-        p.secondaryCooldowns[key]=240;
+        p.secondaryCooldowns[key]=90;
       }
     }
     if (p.build.fusions?.taijiMaster) {
@@ -1123,8 +1168,10 @@ export class Game {
       if (p.secondaryCooldowns.taijiMaster <= 0) {
         const range = 125 * areaScale;
         const width = 122 * areaScale;
-        const inPushArea = object => object.y + (object.radius || 0) >= p.y - range
-          && object.y - (object.radius || 0) <= p.y - range / 2
+        const nearEdge = p.y - 28;
+        const farEdge = nearEdge - range;
+        const inPushArea = object => object.y + (object.radius || 0) >= farEdge
+          && object.y - (object.radius || 0) <= nearEdge
           && Math.abs(object.x - p.x) <= width / 2 + (object.radius || 0);
         this.enemyBullets = this.enemyBullets.filter(bullet => !inPushArea(bullet));
         for (const enemy of this.enemies) {
@@ -1136,7 +1183,7 @@ export class Game {
             this.addEffect({ type: 'ironMountain', x: enemy.x, y: enemy.y, life: 20, maxLife: 20 });
           }
         }
-        this.addEffect({ type: 'pushHands', x: p.x, y: p.y - range / 2, range: range / 2, width, color: '#facc15', strokeColor: '#fef3c7', life: 14, maxLife: 14 });
+        this.addEffect({ type: 'pushHands', x: p.x, y: nearEdge, range, width, color: '#facc15', strokeColor: '#fef3c7', life: 14, maxLife: 14 });
         this.setSecondaryCooldown('taijiMaster', 14);
       }
     }
@@ -1205,8 +1252,8 @@ export class Game {
       } else if (id === 'cloudHand') {
         const targets=this.enemies.filter(e=>e.alive&&e.y+e.radius>=0);
         const target=targets.sort((a,b)=>distanceSq(p,b)-distanceSq(p,a))[0];
-        if(target){ const angle=Math.atan2(target.y-p.y,target.x-p.x); this.addPlayerBullet({id:this.entityId++,x:p.x,y:p.y,vx:Math.cos(angle)*18,vy:Math.sin(angle)*18,radius:[0,6,7.5,9][rank],damage:[0,3,4,5.2][rank],life:90,color:'#38bdf8',kind:'cloudHand',trailLength:[0,44,52,60][rank],pierce:99,splash:0,damageType:'pierce',damageSource:'secondary:穿雲手'});}
-        this.setSecondaryCooldown(id, [0,240,210,180][rank]);
+        if(target) this.fireKungfuBeam(target, { width: [0, 7, 9, 11][rank], damage: [0, 3, 4, 5.2][rank], source: 'secondary:穿雲手', color: '#38bdf8' });
+        this.setSecondaryCooldown(id, [0,180,150,120][rank]);
       } else if (id === 'ironBell') {
         p.kungfuShield = 1;
         p.kungfuShieldTimer = [0, 120, 180, 240][rank];
@@ -1417,7 +1464,7 @@ export class Game {
       if (distanceSq(enemy, this.player) < rr * rr) {
         if (kungfu && (enemy.kungfuHitCooldown || 0) <= 0) {
           const ironMountain = this.player.build.secondaries.ironMountain || 0;
-          const fistDamage = 2 * (1 + KUNGFU_FIST_DAMAGE_BONUS[this.player.build.primaryLevel] / 100);
+          const fistDamage = 2.4 * (1 + KUNGFU_FIST_DAMAGE_BONUS[this.player.build.primaryLevel] / 100);
           this.damageEnemy(enemy, this.rollDamage(fistDamage * [1, 1.3, 1.55, 1.85][ironMountain]), true, 'pilot:功夫｜撞擊傷害');
           if (ironMountain && (enemy.ironMountainCooldown || 0) <= 0) {
             enemy.kungfuAttackLock = [0, 48, 60, 90][ironMountain];
@@ -1935,9 +1982,9 @@ export class Game {
     this.currentChoices.forEach((choice, index) => {
       const button = document.createElement('button');
       button.className = 'upgrade-card';
-      const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.category === 'overdrive' ? this.player.build.overdrive || 0 : choice.category === 'evasion' ? this.player.build.evasion ?? 10 : choice.category === 'soulTaker' ? this.player.build.soulTaker || 1 : choice.category === 'battlefieldCleanup' ? this.player.build.battlefieldCleanup || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
+      const current = choice.category === 'secondary' ? this.player.build.secondaries[choice.id] || 0 : choice.category === 'passive' ? this.player.build.passives[choice.id] || 0 : choice.category === 'overdrive' ? this.player.build.overdrive || 0 : choice.category === 'evasion' ? this.player.build.evasion ?? 20 : choice.category === 'soulTaker' ? this.player.build.soulTaker || 1 : choice.category === 'battlefieldCleanup' ? this.player.build.battlefieldCleanup || 0 : choice.id === 'primary' ? this.player.build.primaryLevel : 0;
       const next = current + 1 >= WORLD.maxUpgradeRank && ['primary', 'secondary', 'passive'].includes(choice.category) ? 'MAX' : current + 1;
-      const progress = choice.category === 'overdrive' ? `火力 +${current * (this.player.build.overdriveStep ?? 1)}% → +${(current + 1) * (this.player.build.overdriveStep ?? 1)}%` : choice.category === 'evasion' ? `${current}% → ${Math.min(20, current + 2)}%` : choice.category === 'soulTaker' ? `${current}% → ${Math.min(5, current + .5)}%` : choice.category === 'battlefieldCleanup' ? `+${current}% → +${current + 1}%` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
+      const progress = choice.category === 'overdrive' ? `火力 +${current * (this.player.build.overdriveStep ?? 1)}% → +${(current + 1) * (this.player.build.overdriveStep ?? 1)}%` : choice.category === 'evasion' ? `${current}% → ${Math.min(30, current + 2)}%` : choice.category === 'soulTaker' ? `${current}% → ${Math.min(5, current + .5)}%` : choice.category === 'battlefieldCleanup' ? `+${current}% → +${current + 1}%` : choice.category === 'fusion' ? 'FUSION · UNLOCK' : `LV ${current} → ${next}`;
       button.innerHTML = `<span class="upgrade-icon" aria-hidden="true">${skillIconMarkup(choice.icon)}</span><span class="key">${index + 1}</span><small>${choice.category.toUpperCase()} · ${progress}</small><strong>${choice.name}</strong><p>${choice.description}</p>`;
       button.addEventListener('click', () => this.chooseUpgrade(index));
       holder.append(button);
@@ -1951,7 +1998,7 @@ export class Game {
     const choice = this.currentChoices[index];
     const p = this.player;
     if (choice.id === 'overdrive-boost') p.build.overdrive = (p.build.overdrive || 0) + 1;
-    else if (choice.id === 'evasion-boost') p.build.evasion = Math.min(20, (p.build.evasion ?? 10) + 2);
+    else if (choice.id === 'evasion-boost') p.build.evasion = Math.min(30, (p.build.evasion ?? 20) + 2);
     else if (choice.id === 'soul-taker-boost') p.build.soulTaker = Math.min(5, (p.build.soulTaker || 1) + .5);
     else if (choice.id === 'battlefield-cleanup-boost') p.build.battlefieldCleanup = (p.build.battlefieldCleanup || 0) + 1;
     else if (choice.category === 'fusion') {
@@ -2178,7 +2225,7 @@ export class Game {
 
   hitPlayer(damage = STAT_SCALE) {
     if (!this.player || this.player.invincible > 0 || this.testFlags?.playerInvincible) return;
-    if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion ?? 10) / 100) {
+    if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion ?? 20) / 100) {
       this.player.invincible = 18;
       this.addEffect({ type: 'kungfuDodge', x: this.player.x, y: this.player.y, life: 18, maxLife: 18 });
       this.spawnBurst(this.player.x, this.player.y, 12, '#e0f2fe');
@@ -2215,7 +2262,7 @@ export class Game {
     }
     this.player.hp -= damage;
     const armor = upgradePower(this.player.build.passives.armor || 0);
-    const armorExtension = armor * 15 * (this.player.pilotId === 'kungfu' ? .5 : 1);
+    const armorExtension = armor * 15;
     this.player.invincible = this.player.pilotId === 'shadow' ? Math.max(120, 95 + armorExtension) : 95 + armorExtension;
     this.enemyBullets = this.enemyBullets.filter(b => distanceSq(b, this.player) > 90 ** 2);
     if (this.player.build.fusions?.suicideSquad && this.player.bombs > 0) {
@@ -2352,7 +2399,7 @@ export class Game {
     const modeLabel = { normal: '一般模式', endless: `無限模式 · 循環 ${this.endlessCycle + 1}`, test: '測試模式' }[this.runMode] || '一般模式';
     const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
     this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
-    this.dom['pause-primary'].textContent = `${kungfu ? `基本拳法 · 傷害 +${KUNGFU_FIST_DAMAGE_BONUS[p.build.primaryLevel]}% · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}　/　唯快不破 · 迴避 ${p.build.evasion ?? 10}% · MAX` : `${p.craft.name} · ${p.craft.primary.toUpperCase()} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}`}${mastery}${overdrive}`;
+    this.dom['pause-primary'].textContent = `${kungfu ? `基本拳法 · 傷害 +${KUNGFU_FIST_DAMAGE_BONUS[p.build.primaryLevel]}% · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}　/　唯快不破 · 迴避 ${p.build.evasion ?? 20}%` : `${p.craft.name} · ${p.craft.primary.toUpperCase()} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}`}${mastery}${overdrive}`;
     const fusionNames = kind => Object.keys(p.build.fusions || {}).filter(id => (FUSIONS[id]?.kind === 'passive') === (kind === 'passive')).map(id => FUSIONS[id].name).join('　/　');
     const weaponFusions = fusionNames('secondary');
     const passiveFusions = fusionNames('passive');
@@ -2501,7 +2548,7 @@ export class Game {
       const primaryIcon = kungfu ? 'assets/icons/basic-fist.svg' : PRIMARY_ICON;
       const primaryToken = p ? token(primaryIcon, `${primaryBadge} · +${firepowerBonus}%`, `${primaryName} · 超頻火力 +${firepowerBonus}%`, p.build.primaryLevel) : '';
       const extraPrimaryToken = !p ? ''
-        : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `${p.build.evasion ?? 10}%`, `唯快不破 · 迴避 ${p.build.evasion ?? 10}%`, `${p.build.evasion ?? 10}%`)
+        : p.pilotId === 'kungfu' ? token('assets/icons/swift-defense.svg', `${p.build.evasion ?? 20}%`, `唯快不破 · 迴避 ${p.build.evasion ?? 20}%`, `${p.build.evasion ?? 20}%`)
         : p.pilotId === 'gambler' ? token('assets/icons/frenzy.svg', `+${Math.round((p.grazeBonus || 0) * 100)}%`, `狂熱 · 傷害 +${Math.round((p.grazeBonus || 0) * 100)}%`)
         : p.pilotId === 'reaper' ? token('assets/icons/soul-taker.svg', `${p.build.soulTaker || 1}%`, `奪魂者 · 主武器即死 ${p.build.soulTaker || 1}%`)
         : p.pilotId === 'imperial' ? token('assets/icons/battlefield-cleanup.svg', `+${p.build.battlefieldCleanup || 0}%`, `戰場清理 · 源晶礦結算 +${p.build.battlefieldCleanup || 0}%`)
@@ -2526,9 +2573,53 @@ export class Game {
     const ctx = this.ctx; const stage = STAGES[this.stageIndex] || STAGES[0];
     const gradient = ctx.createLinearGradient(0, 0, 0, this.h); gradient.addColorStop(0, stage.theme[0]); gradient.addColorStop(1, stage.theme[1]); ctx.fillStyle = gradient; ctx.fillRect(0, 0, this.w, this.h);
     this.drawBackground(ctx, stage);
-    this.drawXp(ctx); this.drawEffects(ctx); this.drawEnemies(ctx); this.drawBullets(ctx); this.drawPlayer(ctx); this.drawParticles(ctx); this.drawSkillGauge(ctx);
+    this.drawXp(ctx); this.drawEffects(ctx); this.drawEnemies(ctx); this.drawBullets(ctx); this.drawPlayer(ctx); this.drawParticles(ctx); this.drawSkillGauge(ctx); this.drawWorldOverlay(ctx);
     if (this.finaleFlash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(this.finaleFlash, 0, 1)})`; ctx.fillRect(0,0,this.w,this.h); }
     if (this.mode === 'paused') { ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0,0,this.w,this.h); ctx.fillStyle='#ffd166'; ctx.font='900 38px monospace'; ctx.textAlign='center'; ctx.fillText('PAUSED',this.w/2,this.h/2); }
+  }
+
+  drawWorldOverlay(ctx) {
+    if (!this.player?.build.fusions?.world) return;
+    const x = this.w / 2;
+    const y = this.h * .44;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (this.worldFreezeTimer > 0) {
+      const elapsed = 120 - this.worldFreezeTimer;
+      const phase = (elapsed % 30) / 30;
+      const beat = Math.exp(-Math.pow((phase - .08) / .07, 2)) + .55 * Math.exp(-Math.pow((phase - .28) / .09, 2));
+      const scale = 1 + beat * .22;
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.shadowColor = '#f472b6';
+      ctx.shadowBlur = 18 + beat * 18;
+      ctx.fillStyle = `rgba(255,235,245,${.42 + beat * .28})`;
+      ctx.font = '900 104px monospace';
+      ctx.fillText('0.0', 0, 0);
+      ctx.strokeStyle = `rgba(244,114,182,${.5 + beat * .35})`;
+      ctx.lineWidth = 3;
+      ctx.strokeText('0.0', 0, 0);
+      ctx.restore();
+      return;
+    }
+    if (this.worldCooldown > 0 && this.worldCooldown <= 180) {
+      const seconds = (this.worldCooldown / 60).toFixed(1);
+      const fade = .55 + .25 * Math.sin(this.frame * .18);
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = '#e0f2fe';
+      ctx.font = '900 82px monospace';
+      ctx.shadowColor = '#67e8f9';
+      ctx.shadowBlur = 12;
+      ctx.fillText(seconds, x, y);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = Math.min(1, fade + .2);
+      ctx.strokeStyle = '#67e8f9';
+      ctx.lineWidth = 2;
+      ctx.strokeText(seconds, x, y);
+    }
+    ctx.restore();
   }
 
   drawBackground(ctx, stage) {
@@ -2938,6 +3029,9 @@ export class Game {
       else if(e.type==='ring'){const t=1-e.life/e.maxLife;e.radius+=(e.maxRadius-e.radius)*.12;ctx.strokeStyle=e.color;ctx.globalAlpha=1-t;ctx.lineWidth=4;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
       else if(e.type==='supply'){const style=this.supplyStyle(e.supply);const color=style.color;const radius=e.radius||16;ctx.save();ctx.strokeStyle=color;ctx.globalAlpha=.4;ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,radius+5+Math.sin(this.frame*.16)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.shadowColor=color;ctx.shadowBlur=12;ctx.fillStyle=color;ctx.beginPath();ctx.arc(e.x,e.y,radius,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#07111d';ctx.font='bold 17px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(style.label,e.x,e.y+1);ctx.restore();}
       else if(e.type==='ore'){ctx.save();ctx.translate(e.x,e.y);ctx.rotate(this.frame*.04);ctx.shadowColor='#67e8f9';ctx.shadowBlur=10;ctx.fillStyle='#0e7490';ctx.beginPath();ctx.moveTo(0,-e.radius);ctx.lineTo(e.radius*.85,0);ctx.lineTo(0,e.radius);ctx.lineTo(-e.radius*.85,0);ctx.closePath();ctx.fill();ctx.strokeStyle='#67e8f9';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#cffafe';ctx.fillRect(-1.5,-e.radius*.5,3,e.radius);ctx.restore();}
+      else if(e.type==='kungfuBeam'){const alpha=clamp(e.life/e.maxLife,0,1);ctx.save();ctx.globalCompositeOperation='lighter';ctx.globalAlpha=alpha;ctx.lineCap='round';ctx.shadowColor=e.color;ctx.shadowBlur=14;ctx.strokeStyle=e.color;ctx.lineWidth=e.width;ctx.beginPath();ctx.moveTo(e.x1,e.y1);ctx.lineTo(e.x2,e.y2);ctx.stroke();ctx.shadowBlur=5;ctx.strokeStyle='#fff';ctx.lineWidth=Math.max(1.5,e.width*.28);ctx.beginPath();ctx.moveTo(e.x1,e.y1);ctx.lineTo(e.x2,e.y2);ctx.stroke();ctx.restore();}
+      else if(e.type==='worldCountdown'){const alpha=Math.sin(Math.PI*clamp(e.life/e.maxLife,0,1));ctx.save();ctx.globalAlpha=.38*alpha;ctx.fillStyle='#e0f2fe';ctx.font='900 92px monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(e.text,e.x,e.y);ctx.globalAlpha=.75*alpha;ctx.strokeStyle='#67e8f9';ctx.lineWidth=2;ctx.strokeText(e.text,e.x,e.y);ctx.restore();}
+      else if(e.type==='worldStop'){const alpha=clamp(e.life/e.maxLife,0,1);ctx.save();ctx.globalAlpha=.12*alpha;ctx.fillStyle='#dbeafe';ctx.fillRect(0,0,this.w,this.h);ctx.globalAlpha=.45*alpha;ctx.strokeStyle='#bfdbfe';ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,(1-alpha)*this.w*.55,0,TAU);ctx.stroke();ctx.restore();}
       else if(e.type==='floatingText'){ctx.save();ctx.globalAlpha=clamp(e.life/e.maxLife,0,1);ctx.fillStyle=e.color||'#fff';ctx.font='900 18px monospace';ctx.textAlign='center';ctx.fillText(e.text,e.x,e.y);ctx.restore();}
     }
   }

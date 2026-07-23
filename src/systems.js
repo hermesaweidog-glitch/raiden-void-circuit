@@ -97,9 +97,9 @@ export function makeUpgradePool(build) {
   }
   if (isBuildMaxed(build)) {
     pool.push({ id: 'overdrive-boost', category: 'overdrive', icon: 'assets/icons/overdrive.webp', name: '超頻：火力', description: `所有攻擊永久增加 ${build.overdriveStep ?? 1}%；目前總加成 +${(build.overdrive || 0) * (build.overdriveStep ?? 1)}%。` });
-    if (kungfu && (build.evasion ?? 10) < 20) {
-      const current = build.evasion ?? 10;
-      pool.push({ id: 'evasion-boost', category: 'evasion', icon: 'assets/icons/swift-defense.svg', name: '唯快不破', description: `迴避機率由 ${current}% 提升至 ${Math.min(20, current + 2)}%；最高 20%。` });
+    if (kungfu && (build.evasion ?? 20) < 30) {
+      const current = build.evasion ?? 20;
+      pool.push({ id: 'evasion-boost', category: 'evasion', icon: 'assets/icons/swift-defense.svg', name: '唯快不破', description: `迴避機率由 ${current}% 提升至 ${Math.min(30, current + 2)}%；最高 30%。` });
     }
     if (build.pilotId === 'reaper' && (build.soulTaker || 1) < 5) {
       const current = build.soulTaker || 1;
@@ -131,7 +131,20 @@ export function isBuildMaxed(build) {
 }
 
 export function makeUpgradeChoices(build, random = Math.random, count = 3) {
-  return seededShuffle(makeUpgradePool(build), random).slice(0, count);
+  const pool = makeUpgradePool(build);
+  const primary = pool.find(item => item.category === 'primary');
+  const weighted = primary ? [...pool, primary] : pool;
+  const shuffled = seededShuffle(weighted, random);
+  const unique = [];
+  const seen = new Set();
+  for (const item of shuffled) {
+    const key = `${item.category}:${item.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+    if (unique.length >= count) break;
+  }
+  return unique;
 }
 
 export function updateGuidance(missile, enemies, position) {

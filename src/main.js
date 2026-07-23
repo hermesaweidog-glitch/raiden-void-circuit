@@ -101,7 +101,7 @@ const renderPassiveOptions = () => {
   for (const input of holder.querySelectorAll('input')) input.checked = selected.has(input.value);
 };
 
-const testMeta = () => isMaxMode() ? { firepower: 10, fuelTank: 5, lives: 1, bombPants: 1, secondarySlot: 1, passiveSlot: 2, oreGain: 10, xpGain: 3 } : game.meta.upgrades;
+const testMeta = () => isMaxMode() ? { firepower: 10, fuelTank: 5, lives: 1, bombPants: 1, secondarySlot: 2, passiveSlot: 2, oreGain: 10, xpGain: 3 } : game.meta.upgrades;
 
 const syncTestLimits = () => {
   const bonus = selectedPilot === 'joker' ? 1 : 0;

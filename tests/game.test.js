@@ -1448,7 +1448,7 @@ test('kungfu alone reaches the upper combat lane and basic fist ranks increase c
   setup.game.player.build.primaryLevel = 3;
   setup.game.enemies = [target];
   setup.game.updateEnemies();
-  assert.equal(target.hp, 950);
+  assert.equal(target.hp, 940);
 
   setup = makeGame();
   setup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
@@ -1460,27 +1460,27 @@ test('kungfu alone reaches the upper combat lane and basic fist ranks increase c
   assert.equal(setup.game.player.targetY, setup.game.h * .28);
 });
 
-test('kungfu primary HUD shows total overclock firepower and MAX dodge while dodge upgrades prevent enemy damage', () => {
+test('kungfu primary HUD shows total overclock firepower and dodge while dodge upgrades prevent enemy damage', () => {
   const { game } = makeGame();
   game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'kungfu' });
   game.player.build.overdrive = 3;
   game.player.build.revision += 1;
   game.updateHud();
 
-  assert.equal(game.player.build.evasion, 10);
+  assert.equal(game.player.build.evasion, 20);
   assert.match(game.dom['primary-build'].innerHTML, /基本拳法/);
   assert.match(game.dom['primary-build'].innerHTML, /火力 \+30%/);
   assert.doesNotMatch(game.dom['primary-build'].innerHTML, /\+110%/);
   assert.match(game.dom['primary-build'].innerHTML, /唯快不破/);
-  assert.match(game.dom['primary-build'].innerHTML, /10%/);
+  assert.match(game.dom['primary-build'].innerHTML, /20%/);
   assert.match(game.dom['primary-build'].innerHTML, /<b>MAX · \+30%<\/b>/);
-  assert.match(game.dom['primary-build'].innerHTML, /<b>10%<\/b>/);
+  assert.match(game.dom['primary-build'].innerHTML, /<b>20%<\/b>/);
 
   game.currentChoices = [{ id: 'evasion-boost', category: 'evasion' }];
   game.upgradeReturnMode = 'playing';
   game.mode = 'levelup';
   game.chooseUpgrade(0);
-  assert.equal(game.player.build.evasion, 12);
+  assert.equal(game.player.build.evasion, 22);
 
   game.player.hp = game.player.maxHp;
   game.player.shield = 1;

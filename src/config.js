@@ -90,7 +90,7 @@ export const FUSIONS = {
   overclockDirect: { id: 'overclockDirect', icon: 'assets/icons/overclock-direct.svg', name: '超頻核心（直擊）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'directCore'], description: '保留滿級超頻模組效果，直擊類傷害提高至 25%。' },
   overclockPierce: { id: 'overclockPierce', icon: 'assets/icons/overclock-pierce.svg', name: '超頻核心（貫穿）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'pierceCore'], description: '保留滿級超頻模組效果，貫穿類傷害提高至 25%。' },
   overclockArea: { id: 'overclockArea', icon: 'assets/icons/overclock-area.svg', name: '超頻核心（擴散）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'areaCore'], description: '保留滿級超頻模組效果，範圍類傷害提高至 25%；全畫面炸彈除外。' },
-  world: { id: 'world', icon: 'assets/icons/world.svg', name: '世界', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['fieldAmp', 'capacitor'], description: '保留兩者滿級效果；每 10 秒停止世界 1 秒，敵人與敵方子彈停止，玩家側時間繼續。' },
+  world: { id: 'world', icon: 'assets/icons/world.svg', name: '世界', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['fieldAmp', 'capacitor'], description: '保留兩者滿級效果；每 10 秒停止世界 2 秒，敵人與敵方子彈停止，玩家側時間繼續。' },
 };
 
 export const STAGES = [
