@@ -2743,23 +2743,22 @@ export class Game {
 
   drawNeonOutskirts(ctx) {
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
-    const horizonY = 78;
+    const horizonY = 72;
     const boundary = (side, y) => {
       const t = clamp((y - horizonY) / Math.max(1, this.h - horizonY), 0, 1);
-      const inset = 176 + (54 - 176) * t;
+      // Steeper corridor than v60: narrow at the horizon and opening rapidly toward the player.
+      const inset = 188 + (50 - 188) * Math.pow(t, .82);
       return side < 0 ? inset : this.w - inset;
     };
     const ready = image => image?.complete && image.naturalWidth > 0;
-    const drawCover = (image, x, y, w, h, alpha = 1) => {
+    const drawAsset = (image, x, y, w, h, alpha = 1) => {
       if (!ready(image)) return false;
-      const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
-      const sw = w / scale;
-      const sh = h / scale;
-      const sx = Math.max(0, (image.naturalWidth - sw) * .5);
-      const sy = Math.max(0, (image.naturalHeight - sh) * .5);
+      const scale = Math.min(w / image.naturalWidth, h / image.naturalHeight);
+      const dw = image.naturalWidth * scale;
+      const dh = image.naturalHeight * scale;
       ctx.save();
       ctx.globalAlpha *= alpha;
-      ctx.drawImage(image, sx, sy, Math.min(sw, image.naturalWidth), Math.min(sh, image.naturalHeight), x, y, w, h);
+      ctx.drawImage(image, x + (w - dw) * .5, y + (h - dh) * .5, dw, dh);
       ctx.restore();
       return true;
     };
@@ -2782,52 +2781,61 @@ export class Game {
       ctx.closePath();
       ctx.clip();
 
-      // A restrained dark phase field keeps the real-world assets integrated with the abstract arena.
       const field = ctx.createLinearGradient(0, 0, 0, this.h);
-      field.addColorStop(0, bossLocked ? 'rgba(10,8,18,.24)' : 'rgba(2,20,32,.18)');
-      field.addColorStop(.55, bossLocked ? 'rgba(18,5,12,.34)' : 'rgba(2,14,24,.24)');
-      field.addColorStop(1, 'rgba(1,7,13,.62)');
+      field.addColorStop(0, bossLocked ? 'rgba(10,8,18,.22)' : 'rgba(2,20,32,.15)');
+      field.addColorStop(.58, bossLocked ? 'rgba(18,5,12,.32)' : 'rgba(2,14,24,.20)');
+      field.addColorStop(1, 'rgba(1,7,13,.56)');
       ctx.fillStyle = field;
       ctx.fillRect(0, 0, this.w, this.h);
 
       const images = this.neonSceneImages || {};
-      const sideWidthTop = boundary(side, horizonY) + 18;
-      const topW = Math.max(142, sideWidthTop + 26);
-      const topX = isLeft ? 0 : this.w - topW;
-      drawCover(images[isLeft ? 'upperLeft' : 'upperRight'], topX, 4, topW, 208, bossLocked ? .30 : .48);
+      const farImage = images[isLeft ? 'upperLeft' : 'upperRight'];
+      const midImage = images[isLeft ? 'midLeft' : 'midRight'];
+      const nearImage = images[isLeft ? 'lowerLeft' : 'lowerRight'];
 
-      // Main city facade: lightly parallax-shifted while gameplay advances.
-      const midShift = bossLocked ? 0 : (this.sceneScroll % 260) * .08;
-      const midY = 142 + midShift;
-      const midH = 460;
-      const midW = Math.max(132, boundary(side, Math.min(this.h, midY + midH)) + 36);
-      const midX = isLeft ? -8 : this.w - midW + 8;
-      drawCover(images[isLeft ? 'midLeft' : 'midRight'], midX, midY, midW, midH, bossLocked ? .48 : .72);
+      // Continuous perspective stream. Each scene fragment advances every frame,
+      // grows non-linearly toward the player, then wraps invisibly at the horizon.
+      const speed = this.sceneScroll * .00155;
+      const slots = 9;
+      for (let i = 0; i < slots; i += 1) {
+        const depth = (speed + i / slots + (isLeft ? 0 : .045)) % 1;
+        const eased = Math.pow(depth, 1.72);
+        const y = horizonY - 82 + eased * (this.h - horizonY + 190);
+        const perspective = .17 + Math.pow(depth, 1.48) * 1.12;
+        const edge = boundary(side, clamp(y, horizonY, this.h));
+        const wedgeWidth = isLeft ? edge : this.w - edge;
+        const baseWidth = 122 + perspective * 118;
+        const w = Math.max(72, Math.min(wedgeWidth + 78, baseWidth));
+        const h = w * 1.48;
+        const x = isLeft ? -w * .18 : this.w - w * .82;
+        const alphaIn = clamp((depth - .015) / .12, 0, 1);
+        const alpha = (bossLocked ? .50 : .78) * alphaIn;
+        const image = depth < .25 ? farImage : depth < .67 ? midImage : nearImage;
+        drawAsset(image, x, y - h * .46, w, h, alpha);
+      }
 
-      // Second copy provides continuous side-world motion without revealing an empty seam.
-      const repeatY = midY - 430;
-      drawCover(images[isLeft ? 'midLeft' : 'midRight'], midX, repeatY, midW * .86, 410, bossLocked ? .24 : .38);
+      // Extra distant haze, continuously breathing but not stepping.
+      if (ready(farImage)) {
+        const hazePulse = .82 + Math.sin(this.frame * .018 + (isLeft ? 0 : 1.2)) * .08;
+        const topW = boundary(side, horizonY) + 34;
+        const topX = isLeft ? -10 : this.w - topW + 10;
+        drawAsset(farImage, topX, -18, topW, 220, (bossLocked ? .18 : .28) * hazePulse);
+      }
 
-      // Lower structures remain solid and enlarge toward the player.
-      const lowerY = this.h * .57;
-      const lowerH = this.h - lowerY + 34;
-      const lowerW = Math.max(116, boundary(side, this.h) + 72);
-      const lowerX = isLeft ? -16 : this.w - lowerW + 16;
-      drawCover(images[isLeft ? 'lowerLeft' : 'lowerRight'], lowerX, lowerY, lowerW, lowerH, bossLocked ? .60 : .88);
-
-      // Phase-overlap veil: subtle scan displacement and cyan edge glow, no readable stage information.
+      // Phase-overlap edge and scan accents.
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = bossLocked ? .10 : .13;
+      ctx.globalAlpha = bossLocked ? .09 : .12;
       ctx.strokeStyle = bossLocked ? '#ff5275' : '#61efff';
-      ctx.lineWidth = 1.2;
-      for (let y = 24; y < this.h; y += 34) {
+      ctx.lineWidth = 1.15;
+      const scanOffset = bossLocked ? 0 : (this.sceneScroll * 1.8) % 34;
+      for (let y = -34 + scanOffset; y < this.h; y += 34) {
         const edge = boundary(side, y);
         ctx.beginPath();
-        ctx.moveTo(isLeft ? Math.max(0, edge - 26) : edge, y);
-        ctx.lineTo(isLeft ? edge : Math.min(this.w, edge + 26), y + 2);
+        ctx.moveTo(isLeft ? Math.max(0, edge - 28) : edge, y);
+        ctx.lineTo(isLeft ? edge : Math.min(this.w, edge + 28), y + 2);
         ctx.stroke();
       }
-      ctx.globalAlpha = bossLocked ? .38 : .45;
+      ctx.globalAlpha = bossLocked ? .38 : .46;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(boundary(side, horizonY), horizonY);
