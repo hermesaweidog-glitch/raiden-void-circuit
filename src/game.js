@@ -6,6 +6,7 @@ import { MusicController } from './audio.js';
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
 const choose = items => items[(Math.random() * items.length) | 0];
+const lerp = (a, b, t) => a + (b - a) * t;
 const skillIconMarkup = icon => icon.startsWith('assets/') ? `<img src="${icon}" alt="" draggable="false">` : icon;
 const isLargeEnemyType = type => type === 'elite' || type === 'midboss' || type === 'boss';
 const enemyDamage = type => isLargeEnemyType(type) ? 10 : 5;
@@ -2743,109 +2744,150 @@ export class Game {
 
   drawNeonOutskirts(ctx) {
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
-    const horizonY = 72;
-    const boundary = (side, y) => {
-      const t = clamp((y - horizonY) / Math.max(1, this.h - horizonY), 0, 1);
-      // Steeper corridor than v60: narrow at the horizon and opening rapidly toward the player.
-      const inset = 188 + (50 - 188) * Math.pow(t, .82);
-      return side < 0 ? inset : this.w - inset;
-    };
     const ready = image => image?.complete && image.naturalWidth > 0;
-    const drawAsset = (image, x, y, w, h, alpha = 1) => {
+    const drawAsset = (image, x, y, w, h, alpha = 1, align = .5) => {
       if (!ready(image)) return false;
       const scale = Math.min(w / image.naturalWidth, h / image.naturalHeight);
       const dw = image.naturalWidth * scale;
       const dh = image.naturalHeight * scale;
       ctx.save();
       ctx.globalAlpha *= alpha;
-      ctx.drawImage(image, x + (w - dw) * .5, y + (h - dh) * .5, dw, dh);
+      ctx.drawImage(image, x + (w - dw) * align, y + (h - dh) * .5, dw, dh);
       ctx.restore();
       return true;
     };
 
-    const drawSide = side => {
-      const isLeft = side < 0;
-      ctx.save();
+    const yTopKnee = this.h * .12;
+    const yMidKnee = this.h * .48;
+    const yBottomKnee = this.h * .78;
+    const leftInner = y => {
+      if (y <= yTopKnee) return lerp(this.w * .40, this.w * .36, y / Math.max(1, yTopKnee));
+      if (y <= yMidKnee) return lerp(this.w * .36, this.w * .18, (y - yTopKnee) / Math.max(1, yMidKnee - yTopKnee));
+      if (y <= yBottomKnee) return lerp(this.w * .18, this.w * .06, (y - yMidKnee) / Math.max(1, yBottomKnee - yMidKnee));
+      return lerp(this.w * .06, this.w * .02, (y - yBottomKnee) / Math.max(1, this.h - yBottomKnee));
+    };
+    const rightInner = y => this.w - leftInner(y);
+    const sidePoly = side => {
+      const right = side > 0;
+      const inner = right ? rightInner : leftInner;
+      return right
+        ? [[this.w, 0], [inner(0), 0], [inner(yTopKnee), yTopKnee], [inner(yMidKnee), yMidKnee], [inner(yBottomKnee), yBottomKnee], [inner(this.h), this.h], [this.w, this.h]]
+        : [[0, 0], [inner(0), 0], [inner(yTopKnee), yTopKnee], [inner(yMidKnee), yMidKnee], [inner(yBottomKnee), yBottomKnee], [inner(this.h), this.h], [0, this.h]];
+    };
+    const clipPoly = pts => {
       ctx.beginPath();
-      if (isLeft) {
-        ctx.moveTo(0, 0);
-        ctx.lineTo(boundary(side, 0), 0);
-        ctx.lineTo(boundary(side, this.h), this.h);
-        ctx.lineTo(0, this.h);
-      } else {
-        ctx.moveTo(boundary(side, 0), 0);
-        ctx.lineTo(this.w, 0);
-        ctx.lineTo(this.w, this.h);
-        ctx.lineTo(boundary(side, this.h), this.h);
-      }
+      pts.forEach(([x, y], idx) => idx ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
       ctx.closePath();
       ctx.clip();
+    };
+    const images = this.neonSceneImages || {};
 
-      const field = ctx.createLinearGradient(0, 0, 0, this.h);
-      field.addColorStop(0, bossLocked ? 'rgba(10,8,18,.22)' : 'rgba(2,20,32,.15)');
-      field.addColorStop(.58, bossLocked ? 'rgba(18,5,12,.32)' : 'rgba(2,14,24,.20)');
-      field.addColorStop(1, 'rgba(1,7,13,.56)');
-      ctx.fillStyle = field;
-      ctx.fillRect(0, 0, this.w, this.h);
-
-      const images = this.neonSceneImages || {};
+    const drawSide = side => {
+      const isLeft = side < 0;
+      const poly = sidePoly(side);
+      const innerAt = y => isLeft ? leftInner(y) : rightInner(y);
       const farImage = images[isLeft ? 'upperLeft' : 'upperRight'];
       const midImage = images[isLeft ? 'midLeft' : 'midRight'];
       const nearImage = images[isLeft ? 'lowerLeft' : 'lowerRight'];
 
-      // Continuous perspective stream. Each scene fragment advances every frame,
-      // grows non-linearly toward the player, then wraps invisibly at the horizon.
-      const speed = this.sceneScroll * .00155;
-      const slots = 9;
-      for (let i = 0; i < slots; i += 1) {
-        const depth = (speed + i / slots + (isLeft ? 0 : .045)) % 1;
-        const eased = Math.pow(depth, 1.72);
-        const y = horizonY - 82 + eased * (this.h - horizonY + 190);
-        const perspective = .17 + Math.pow(depth, 1.48) * 1.12;
-        const edge = boundary(side, clamp(y, horizonY, this.h));
-        const wedgeWidth = isLeft ? edge : this.w - edge;
-        const baseWidth = 122 + perspective * 118;
-        const w = Math.max(72, Math.min(wedgeWidth + 78, baseWidth));
-        const h = w * 1.48;
-        const x = isLeft ? -w * .18 : this.w - w * .82;
-        const alphaIn = clamp((depth - .015) / .12, 0, 1);
-        const alpha = (bossLocked ? .50 : .78) * alphaIn;
-        const image = depth < .25 ? farImage : depth < .67 ? midImage : nearImage;
-        drawAsset(image, x, y - h * .46, w, h, alpha);
-      }
+      ctx.save();
+      clipPoly(poly);
 
-      // Extra distant haze, continuously breathing but not stepping.
+      // subtle atmospheric fill
+      const field = ctx.createLinearGradient(0, 0, 0, this.h);
+      field.addColorStop(0, bossLocked ? 'rgba(16,10,18,.20)' : 'rgba(6,20,34,.10)');
+      field.addColorStop(.55, bossLocked ? 'rgba(10,8,14,.18)' : 'rgba(4,14,24,.12)');
+      field.addColorStop(1, bossLocked ? 'rgba(4,6,10,.08)' : 'rgba(2,10,18,.06)');
+      ctx.fillStyle = field;
+      ctx.fillRect(0, 0, this.w, this.h);
+
+      // Static, faded far background in the upper boxed region.
+      const farTopH = this.h * .34;
+      const farW = this.w * .34;
+      const farX = isLeft ? -this.w * .02 : this.w - farW + this.w * .02;
+      drawAsset(farImage, farX, -6, farW, farTopH, bossLocked ? .18 : .28, isLeft ? 0 : 1);
       if (ready(farImage)) {
-        const hazePulse = .82 + Math.sin(this.frame * .018 + (isLeft ? 0 : 1.2)) * .08;
-        const topW = boundary(side, horizonY) + 34;
-        const topX = isLeft ? -10 : this.w - topW + 10;
-        drawAsset(farImage, topX, -18, topW, 220, (bossLocked ? .18 : .28) * hazePulse);
+        ctx.save();
+        ctx.globalAlpha = bossLocked ? .08 : .10;
+        ctx.filter = 'blur(10px)';
+        drawAsset(farImage, farX + (isLeft ? -12 : 12), 8, farW * 1.06, farTopH * 1.04, 1, isLeft ? 0 : 1);
+        ctx.restore();
       }
 
-      // Phase-overlap edge and scan accents.
+      // Moving solid near/mid layers sorted by depth: nearer drawn on top.
+      const base = (this.sceneScroll * .00185 + (isLeft ? 0 : .11)) % 1;
+      const layers = [];
+      for (let i = 0; i < 6; i += 1) {
+        const d = (base + i / 6) % 1;
+        const eased = Math.pow(d, 1.35);
+        const y = lerp(this.h * .12, this.h * .90, eased);
+        const image = d < .45 ? midImage : nearImage;
+        layers.push({ depth: d, y, image, kind: d < .45 ? 'mid' : 'near' });
+      }
+      layers.sort((a, b) => a.depth - b.depth);
+      for (const layer of layers) {
+        const y = layer.y;
+        const depth = layer.depth;
+        const inner = innerAt(y);
+        const available = isLeft ? inner : this.w - inner;
+        const nearBias = layer.kind === 'near' ? 1.0 : .72;
+        const w = Math.max(72, available * (layer.kind === 'near' ? 1.18 : .92));
+        const h = w * (layer.kind === 'near' ? 1.7 : 1.5);
+        const x = isLeft ? -w * .04 : this.w - w * .96;
+        const alpha = (bossLocked ? .52 : .90) * (.35 + depth * .65) * nearBias;
+        drawAsset(layer.image, x, y - h * .55, w, h, alpha, isLeft ? 0 : 1);
+      }
+
+      // Lower corner solids keep the extension feeling without filling the whole side lane.
+      const cornerY = this.h * .80;
+      const cornerInner = innerAt(cornerY);
+      const cornerBase = innerAt(this.h);
+      ctx.save();
+      ctx.globalAlpha = bossLocked ? .44 : .72;
+      ctx.fillStyle = 'rgba(6,12,18,.92)';
+      ctx.beginPath();
+      if (isLeft) {
+        ctx.moveTo(0, cornerY);
+        ctx.lineTo(cornerInner, cornerY - this.h * .10);
+        ctx.lineTo(cornerBase, this.h);
+        ctx.lineTo(0, this.h);
+      } else {
+        ctx.moveTo(this.w, cornerY);
+        ctx.lineTo(cornerInner, cornerY - this.h * .10);
+        ctx.lineTo(cornerBase, this.h);
+        ctx.lineTo(this.w, this.h);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Abstract edge guides for phase-overlap feeling.
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = bossLocked ? .09 : .12;
+      ctx.globalAlpha = bossLocked ? .10 : .14;
       ctx.strokeStyle = bossLocked ? '#ff5275' : '#61efff';
-      ctx.lineWidth = 1.15;
-      const scanOffset = bossLocked ? 0 : (this.sceneScroll * 1.8) % 34;
-      for (let y = -34 + scanOffset; y < this.h; y += 34) {
-        const edge = boundary(side, y);
+      ctx.lineWidth = 1.2;
+      const scanOffset = bossLocked ? 0 : (this.sceneScroll * 1.4) % 34;
+      for (let y = -10 + scanOffset; y < this.h; y += 34) {
+        const edge = innerAt(clamp(y, 0, this.h));
         ctx.beginPath();
-        ctx.moveTo(isLeft ? Math.max(0, edge - 28) : edge, y);
-        ctx.lineTo(isLeft ? edge : Math.min(this.w, edge + 28), y + 2);
+        ctx.moveTo(isLeft ? Math.max(0, edge - 24) : edge, y);
+        ctx.lineTo(isLeft ? edge : Math.min(this.w, edge + 24), y + 2);
         ctx.stroke();
       }
-      ctx.globalAlpha = bossLocked ? .38 : .46;
+      ctx.globalAlpha = bossLocked ? .34 : .44;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(boundary(side, horizonY), horizonY);
-      ctx.lineTo(boundary(side, this.h), this.h);
+      ctx.moveTo(innerAt(0), 0);
+      ctx.lineTo(innerAt(yTopKnee), yTopKnee);
+      ctx.lineTo(innerAt(yMidKnee), yMidKnee);
+      ctx.lineTo(innerAt(yBottomKnee), yBottomKnee);
+      ctx.lineTo(innerAt(this.h), this.h);
       ctx.stroke();
 
       if (bossLocked) {
         const pulse = .5 + .5 * Math.sin(this.frame * .08);
         ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = `rgba(255,35,72,${.035 + pulse * .035})`;
+        ctx.fillStyle = `rgba(255,35,72,${.03 + pulse * .03})`;
         ctx.fillRect(0, 0, this.w, this.h);
       }
       ctx.restore();
@@ -2857,33 +2899,32 @@ export class Game {
 
   drawNeonOutskirtsParticles(ctx) {
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
-    const scroll = this.sceneScroll;
-    const horizonY = 88;
-    const sideBoundary = (side, y) => {
-      const t = clamp((y - horizonY) / Math.max(1, this.h - horizonY), 0, 1);
-      const topInset = 176;
-      const bottomInset = 54;
-      const inset = topInset + (bottomInset - topInset) * t;
-      return side < 0 ? inset : this.w - inset;
+    const yTopKnee = this.h * .12;
+    const yMidKnee = this.h * .48;
+    const yBottomKnee = this.h * .78;
+    const leftInner = y => {
+      if (y <= yTopKnee) return lerp(this.w * .40, this.w * .36, y / Math.max(1, yTopKnee));
+      if (y <= yMidKnee) return lerp(this.w * .36, this.w * .18, (y - yTopKnee) / Math.max(1, yMidKnee - yTopKnee));
+      if (y <= yBottomKnee) return lerp(this.w * .18, this.w * .06, (y - yMidKnee) / Math.max(1, yBottomKnee - yMidKnee));
+      return lerp(this.w * .06, this.w * .02, (y - yBottomKnee) / Math.max(1, this.h - yBottomKnee));
     };
+    const rightInner = y => this.w - leftInner(y);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 30; i += 1) {
+    for (let i = 0; i < 22; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
-      const y = horizonY - 24 + ((i * 74 + scroll * (.5 + (i % 5) * .11)) % (this.h - horizonY + 40));
-      if (y < horizonY - 8) continue;
-      const limit = sideBoundary(side, y);
-      const band = side < 0 ? limit - 8 : this.w - limit - 8;
-      const offset = 10 + ((i * 19) % Math.max(12, Math.floor(band)));
-      const x = side < 0 ? limit - offset : limit + offset;
-      // soft in the top emergence zone, stronger in the middle and lower wedges.
-      const emergence = y < horizonY + 62 ? clamp((y - (horizonY - 12)) / 74, 0, 1) * .45 : 1;
-      const alpha = (bossLocked ? .04 : .11 + (i % 4) * .02) * emergence;
+      const y = ((i * 66 + this.sceneScroll * (.55 + (i % 4) * .09)) % (this.h + 40)) - 20;
+      const inner = side < 0 ? leftInner(clamp(y, 0, this.h)) : rightInner(clamp(y, 0, this.h));
+      const maxBand = side < 0 ? inner - 12 : this.w - inner - 12;
+      if (maxBand <= 10) continue;
+      const x = side < 0 ? inner - (10 + ((i * 17) % Math.floor(maxBand))) : inner + (10 + ((i * 17) % Math.floor(maxBand)));
+      const topSoft = y < this.h * .20 ? clamp((y + 10) / (this.h * .20), 0, 1) * .35 : 1;
+      const alpha = (bossLocked ? .035 : .10 + (i % 4) * .015) * topSoft;
       ctx.strokeStyle = `rgba(${i % 3 === 0 ? '126,250,255' : '64,190,255'},${alpha})`;
-      ctx.lineWidth = i % 8 === 0 ? 2 : 1;
+      ctx.lineWidth = i % 7 === 0 ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x + side * (bossLocked ? 1 : 8), y + (bossLocked ? 5 : 22));
+      ctx.lineTo(x + side * (bossLocked ? 1 : 7), y + (bossLocked ? 5 : 18));
       ctx.stroke();
     }
     ctx.restore();
