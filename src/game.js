@@ -39,6 +39,7 @@ export class Game {
     this.hudBuildRevision = -1;
     this.frame = 0;
     this.worldScroll = 0;
+    this.sceneScroll = 0;
     this.score = 0;
     this.best = Number(readStorage('void-circuit-best', '0'));
     this.meta = loadMetaState();
@@ -197,6 +198,7 @@ export class Game {
     this.lastCraftId = craft.id;
     this.frame = 0;
     this.worldScroll = 0;
+    this.sceneScroll = 0;
     this.score = 0;
     this.stageIndex = 0;
     this.waveIndex = -1;
@@ -354,6 +356,7 @@ export class Game {
     this.mode = 'title';
     this.frame = 0;
     this.worldScroll = 0;
+    this.sceneScroll = 0;
     this.score = 0;
     this.stageIndex = 0;
     this.waveIndex = -1;
@@ -404,6 +407,7 @@ export class Game {
 
   startStage(index) {
     this.stageIndex = clamp(index, 0, STAGES.length - 1);
+    this.sceneScroll = 0;
     this.stageFrames = 0;
     this.stageDamageTotal = 0;
     this.damageLog = [];
@@ -462,6 +466,8 @@ export class Game {
     const runActive = this.player && (this.mode === 'stageIntro' || this.mode === 'bossWarning' || this.mode === 'playing' || this.mode === 'stageClear');
     if (runActive) {
       this.worldScroll += this.worldScrollSpeed();
+      const bossSceneLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
+      if (!bossSceneLocked) this.sceneScroll += this.worldScrollSpeed();
       this.runFrames += 1;
       this.stageFrames += 1;
       this.updateDps();
@@ -2695,11 +2701,110 @@ export class Game {
 
   drawBackground(ctx, stage) {
     const scroll = this.worldScroll;
+    if (stage.id === 1) this.drawNeonOutskirts(ctx, stage);
     ctx.save(); ctx.globalAlpha = .24; ctx.strokeStyle = stage.id % 2 ? '#42e8ff' : '#ff8a4c'; ctx.lineWidth = 1;
     for (let y = -80 + scroll % 80; y < this.h + 80; y += 80) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(this.w,y); ctx.stroke(); }
     for (let x = 0; x <= this.w; x += 60) { ctx.beginPath(); ctx.moveTo(this.w/2 + (x-this.w/2)*.25,0); ctx.lineTo(x,this.h); ctx.stroke(); }
     ctx.restore();
     for (const star of this.stars) { const y = (star.y + scroll * star.speed) % this.h; ctx.fillStyle = `rgba(210,250,255,${.18 + star.speed * .16})`; ctx.fillRect(star.x,y,star.size,star.size); }
+    if (stage.id === 1) this.drawNeonOutskirtsParticles(ctx);
+  }
+
+  drawNeonOutskirts(ctx) {
+    const scroll = this.sceneScroll;
+    const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
+    const horizonY = 115;
+    const leftRoad = y => 240 - 180 * (y / this.h);
+    const rightRoad = y => this.w - leftRoad(y);
+    ctx.save();
+
+    // A distant city remains outside the central flight corridor.
+    const skylineAlpha = bossLocked ? .18 : .28;
+    ctx.globalAlpha = skylineAlpha;
+    for (let i = 0; i < 22; i += 1) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const slot = (i >> 1);
+      const x = side < 0 ? 8 + (slot * 29) % 128 : this.w - 8 - (slot * 29) % 128;
+      const w = 10 + (i * 7) % 18;
+      const h = 30 + (i * 19) % 92;
+      const y = horizonY - h;
+      const grad = ctx.createLinearGradient(x, y, x, horizonY);
+      grad.addColorStop(0, bossLocked ? 'rgba(8,20,30,.2)' : 'rgba(12,49,66,.35)');
+      grad.addColorStop(1, 'rgba(2,12,22,.95)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(side < 0 ? x : x - w, y, w, h);
+      ctx.fillStyle = bossLocked ? 'rgba(255,66,96,.28)' : 'rgba(66,232,255,.42)';
+      for (let wy = y + 8; wy < horizonY - 5; wy += 13) {
+        if ((wy + i * 3) % 4 < 2) ctx.fillRect(side < 0 ? x + 3 : x - w + 3, wy, Math.max(2, w - 7), 1);
+      }
+    }
+
+    // Perspective rails define a road without covering the gameplay lane.
+    ctx.globalAlpha = bossLocked ? .34 : .48;
+    ctx.strokeStyle = bossLocked ? '#ff496d' : '#4cf4ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(leftRoad(horizonY), horizonY); ctx.lineTo(leftRoad(this.h), this.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rightRoad(horizonY), horizonY); ctx.lineTo(rightRoad(this.h), this.h); ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.globalAlpha *= .55;
+    ctx.beginPath(); ctx.moveTo(leftRoad(horizonY) - 12, horizonY); ctx.lineTo(leftRoad(this.h) - 26, this.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rightRoad(horizonY) + 12, horizonY); ctx.lineTo(rightRoad(this.h) + 26, this.h); ctx.stroke();
+
+    // Repeating roadside pylons move with sceneScroll and freeze during the boss encounter.
+    for (let i = 0; i < 9; i += 1) {
+      const y = ((i * 112 + scroll * 1.35) % (this.h + 180)) - 90;
+      if (y < horizonY - 20) continue;
+      const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
+      const scale = .25 + t * 1.05;
+      const lx = leftRoad(y) - 18 - 20 * t;
+      const rx = rightRoad(y) + 18 + 20 * t;
+      for (const x of [lx, rx]) {
+        ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+        ctx.globalAlpha = bossLocked ? .42 : .62;
+        ctx.fillStyle = 'rgba(3,14,24,.92)';
+        ctx.fillRect(-7, -26, 14, 52);
+        ctx.strokeStyle = bossLocked ? '#ff496d' : '#42e8ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-7, -26, 14, 52);
+        ctx.fillStyle = bossLocked ? '#ff3158' : '#9cf9ff';
+        ctx.fillRect(-3, -19, 6, 18);
+        ctx.restore();
+      }
+    }
+
+    // Boss state: the city dims and a cold horizon pulse remains behind the grid.
+    if (bossLocked) {
+      const pulse = .5 + .5 * Math.sin(this.frame * .075);
+      const glow = ctx.createRadialGradient(this.w / 2, horizonY, 4, this.w / 2, horizonY, 220);
+      glow.addColorStop(0, `rgba(80,220,255,${.06 + pulse * .05})`);
+      glow.addColorStop(.55, `rgba(255,49,88,${.025 + pulse * .025})`);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, this.w, 300);
+    }
+    ctx.restore();
+  }
+
+  drawNeonOutskirtsParticles(ctx) {
+    const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
+    const scroll = this.sceneScroll;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 30; i += 1) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const laneX = 18 + (i * 37) % 92;
+      const x = side < 0 ? laneX : this.w - laneX;
+      const speed = .35 + (i % 5) * .13;
+      const y = ((i * 83 + scroll * speed) % (this.h + 60)) - 30;
+      const alpha = bossLocked ? .08 : .16 + (i % 4) * .025;
+      ctx.strokeStyle = i % 3 === 0 ? `rgba(124,249,255,${alpha})` : `rgba(70,190,255,${alpha})`;
+      ctx.lineWidth = i % 7 === 0 ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + side * (bossLocked ? 2 : 7), y + (bossLocked ? 5 : 17));
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   drawPlayer(ctx) {
