@@ -2783,27 +2783,22 @@ export class Game {
       const normalized = ((index % pool.length) + pool.length) % pool.length;
       return pool[normalized];
     };
-    const hash01 = value => {
-      const raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
-      return raw - Math.floor(raw);
-    };
 
-    const yTopKnee = this.h * .12;
-    const yMidKnee = this.h * .48;
-    const yBottomKnee = this.h * .78;
+    const yTop = this.h * .12;
+    const yMid = this.h * .56;
+    const yBottom = this.h * .84;
     const leftInner = y => {
-      if (y <= yTopKnee) return lerp(this.w * .40, this.w * .36, y / Math.max(1, yTopKnee));
-      if (y <= yMidKnee) return lerp(this.w * .36, this.w * .18, (y - yTopKnee) / Math.max(1, yMidKnee - yTopKnee));
-      if (y <= yBottomKnee) return lerp(this.w * .18, this.w * .06, (y - yMidKnee) / Math.max(1, yBottomKnee - yMidKnee));
-      return lerp(this.w * .06, this.w * .02, (y - yBottomKnee) / Math.max(1, this.h - yBottomKnee));
+      if (y <= yTop) return lerp(this.w * .42, this.w * .36, y / Math.max(1, yTop));
+      if (y <= yMid) return lerp(this.w * .36, this.w * .15, (y - yTop) / Math.max(1, yMid - yTop));
+      if (y <= yBottom) return lerp(this.w * .15, this.w * .045, (y - yMid) / Math.max(1, yBottom - yMid));
+      return lerp(this.w * .045, this.w * .015, (y - yBottom) / Math.max(1, this.h - yBottom));
     };
     const rightInner = y => this.w - leftInner(y);
     const sidePoly = side => {
-      const right = side > 0;
-      const inner = right ? rightInner : leftInner;
-      return right
-        ? [[this.w, 0], [inner(0), 0], [inner(yTopKnee), yTopKnee], [inner(yMidKnee), yMidKnee], [inner(yBottomKnee), yBottomKnee], [inner(this.h), this.h], [this.w, this.h]]
-        : [[0, 0], [inner(0), 0], [inner(yTopKnee), yTopKnee], [inner(yMidKnee), yMidKnee], [inner(yBottomKnee), yBottomKnee], [inner(this.h), this.h], [0, this.h]];
+      const inner = side < 0 ? leftInner : rightInner;
+      return side < 0
+        ? [[0, 0], [inner(0), 0], [inner(yTop), yTop], [inner(yMid), yMid], [inner(yBottom), yBottom], [inner(this.h), this.h], [0, this.h]]
+        : [[this.w, 0], [inner(0), 0], [inner(yTop), yTop], [inner(yMid), yMid], [inner(yBottom), yBottom], [inner(this.h), this.h], [this.w, this.h]];
     };
     const clipPoly = points => {
       ctx.beginPath();
@@ -2819,149 +2814,113 @@ export class Game {
       const farPool = images[isLeft ? 'farLeft' : 'farRight'] || [];
       const midPool = images[isLeft ? 'midLeft' : 'midRight'] || [];
       const nearPool = images[isLeft ? 'nearLeft' : 'nearRight'] || [];
-      const shardPool = images[isLeft ? 'shardLeft' : 'shardRight'] || [];
-
       ctx.save();
       clipPoly(sidePoly(side));
 
+      // light atmospheric bed only; keep the route clean.
       const field = ctx.createLinearGradient(0, 0, 0, this.h);
-      field.addColorStop(0, bossLocked ? 'rgba(16,10,18,.20)' : 'rgba(6,20,34,.11)');
-      field.addColorStop(.55, bossLocked ? 'rgba(10,8,14,.17)' : 'rgba(4,14,24,.10)');
-      field.addColorStop(1, bossLocked ? 'rgba(4,6,10,.06)' : 'rgba(2,10,18,.04)');
+      field.addColorStop(0, bossLocked ? 'rgba(12,8,16,.10)' : 'rgba(4,14,24,.06)');
+      field.addColorStop(1, bossLocked ? 'rgba(8,6,10,.03)' : 'rgba(2,8,14,.02)');
       ctx.fillStyle = field;
       ctx.fillRect(0, 0, this.w, this.h);
 
-      // Three static far layers fill the upper region without participating in the scroll.
+      // Static far background fills the upper area but fades out toward the lower edge so roots are hidden.
+      const farBandBottom = this.h * .34;
       const farLayouts = [
-        { y: -34, w: .40, h: .38, alpha: .13, offset: -8 },
-        { y: -2, w: .36, h: .35, alpha: .19, offset: 4 },
-        { y: 28, w: .32, h: .31, alpha: .24, offset: -2 },
+        { index: 0, y: -16, w: this.w * .34, h: this.h * .28, alpha: bossLocked ? .10 : .16, shift: 0 },
+        { index: 1, y: 20,  w: this.w * .30, h: this.h * .24, alpha: bossLocked ? .16 : .24, shift: 10 },
       ];
-      for (let i = 0; i < farLayouts.length; i += 1) {
-        const layout = farLayouts[i];
-        const w = this.w * layout.w;
-        const h = this.h * layout.h;
-        const x = isLeft ? -this.w * .025 + layout.offset : this.w - w + this.w * .025 - layout.offset;
-        drawAsset(imageAt(farPool, i), x, layout.y, w, h, (bossLocked ? .62 : 1) * layout.alpha, isLeft ? 0 : 1);
+      for (const layout of farLayouts) {
+        const x = isLeft ? -this.w * .01 + layout.shift : this.w - layout.w + this.w * .01 - layout.shift;
+        drawAsset(imageAt(farPool, layout.index), x, layout.y, layout.w, layout.h, layout.alpha, isLeft ? 0 : 1);
       }
+      // fog / mask band to avoid exposed image roots in the far layer.
+      const fog = ctx.createLinearGradient(0, this.h * .18, 0, farBandBottom);
+      fog.addColorStop(0, 'rgba(0,0,0,0)');
+      fog.addColorStop(.55, bossLocked ? 'rgba(12,8,16,.16)' : 'rgba(6,16,28,.10)');
+      fog.addColorStop(1, bossLocked ? 'rgba(16,10,18,.34)' : 'rgba(8,18,30,.26)');
+      ctx.fillStyle = fog;
+      ctx.fillRect(0, this.h * .16, this.w, farBandBottom - this.h * .16);
 
-      // Moving structures use a pool. Asset choice changes only when a slot wraps,
-      // so motion stays continuous while consecutive structures alternate visually.
-      const progress = this.sceneScroll * .00172 + (isLeft ? 0 : .113);
-      const layers = [];
-      const slots = 8;
-      for (let i = 0; i < slots; i += 1) {
-        const absolute = progress + i / slots;
-        const cycle = Math.floor(absolute);
-        const depth = absolute - cycle;
-        const eased = Math.pow(depth, 1.34);
-        const y = lerp(this.h * .10, this.h * .96, eased);
-        const kind = depth < .53 ? 'mid' : 'near';
-        const pool = kind === 'mid' ? midPool : nearPool;
-        const index = cycle + i + (isLeft ? 0 : 1);
-        const variation = hash01(cycle * 31 + i * 17 + (isLeft ? 3 : 11));
-        layers.push({
-          depth,
-          y,
-          kind,
-          image: imageAt(pool, index),
-          variation,
-          z: depth + (kind === 'near' ? .018 : 0),
-        });
+      // Larger, cleaner moving structure layers. Farther first, nearer later.
+      const structures = [];
+      const midBase = (this.sceneScroll * .00105 + (isLeft ? 0 : .19)) % 1;
+      for (let i = 0; i < 2; i += 1) {
+        const absolute = midBase + i * .5;
+        const depth = absolute % 1;
+        const cycle = Math.floor(this.sceneScroll * .00105) + i + (isLeft ? 0 : 2);
+        structures.push({ kind: 'mid', depth, image: imageAt(midPool, cycle) });
       }
-
-      // Spectral fragments are a separate moving phase layer and also follow depth order.
-      for (let i = 0; i < 3; i += 1) {
-        const absolute = progress * .78 + i / 3 + (isLeft ? .07 : .19);
-        const cycle = Math.floor(absolute);
-        const depth = absolute - cycle;
-        const y = lerp(this.h * .16, this.h * .88, Math.pow(depth, 1.28));
-        layers.push({
-          depth,
-          y,
-          kind: 'shard',
-          image: imageAt(shardPool, cycle + i),
-          variation: hash01(cycle * 19 + i * 29 + (isLeft ? 5 : 13)),
-          z: depth + .009,
-        });
+      const nearBase = (this.sceneScroll * .00172 + (isLeft ? .06 : .29)) % 1;
+      for (let i = 0; i < 2; i += 1) {
+        const absolute = nearBase + i * .5;
+        const depth = absolute % 1;
+        const cycle = Math.floor(this.sceneScroll * .00172) + i + (isLeft ? 1 : 3);
+        structures.push({ kind: 'near', depth, image: imageAt(nearPool, cycle) });
       }
-
-      layers.sort((a, b) => a.z - b.z);
-      for (const layer of layers) {
-        const inner = innerAt(layer.y);
-        const available = isLeft ? inner : this.w - inner;
-        const v = layer.variation;
-        let w;
-        let h;
-        let alpha;
-        if (layer.kind === 'near') {
-          w = Math.max(88, available * (1.06 + v * .20));
-          h = w * (1.56 + v * .16);
-          alpha = (bossLocked ? .54 : .94) * (.70 + layer.depth * .30);
-        } else if (layer.kind === 'mid') {
-          w = Math.max(72, available * (.78 + v * .16));
-          h = w * (1.48 + v * .14);
-          alpha = (bossLocked ? .44 : .82) * (.60 + layer.depth * .34);
+      structures.sort((a, b) => a.depth - b.depth);
+      for (const s of structures) {
+        if (s.kind === 'mid') {
+          const y = lerp(this.h * .22, this.h * .70, Math.pow(s.depth, 1.14));
+          const inner = innerAt(y);
+          const span = isLeft ? inner : this.w - inner;
+          const w = Math.max(150, span * 1.12);
+          const h = w * 1.36;
+          const x = isLeft ? inner - w * .92 : inner - w * .08;
+          const alpha = (bossLocked ? .40 : .72) * (.72 + s.depth * .20);
+          drawAsset(s.image, x, y - h * .56, w, h, alpha, isLeft ? 0 : 1);
         } else {
-          w = Math.max(62, available * (.62 + v * .18));
-          h = w * (1.42 + v * .20);
-          alpha = (bossLocked ? .12 : .20) * (.55 + layer.depth * .45);
+          const y = lerp(this.h * .48, this.h * .98, Math.pow(s.depth, 1.06));
+          const inner = innerAt(y);
+          const span = isLeft ? inner : this.w - inner;
+          const w = Math.max(210, span * 1.52);
+          const h = w * 1.28;
+          const x = isLeft ? inner - w * .98 : inner - w * .02;
+          drawAsset(s.image, x, y - h * .60, w, h, bossLocked ? .54 : .98, isLeft ? 0 : 1);
         }
-        const xShift = (v - .5) * 9;
-        const x = isLeft ? -w * .035 + xShift : this.w - w * .965 - xShift;
-        const y = layer.y - h * (.52 + (v - .5) * .06);
-        drawAsset(layer.image, x, y, w, h, alpha, isLeft ? 0 : 1);
       }
 
-      // Small physical corner mass keeps the nearest road edge grounded.
-      const cornerY = this.h * .83;
-      const cornerInner = innerAt(cornerY);
-      const cornerBase = innerAt(this.h);
+      // Simple solid lower mass to ground the nearest layer.
+      const massTop = this.h * .82;
+      const massApexY = this.h * .70;
+      const massInnerTop = innerAt(massApexY);
+      const massInnerBottom = innerAt(this.h);
       ctx.save();
-      ctx.globalAlpha = bossLocked ? .34 : .52;
-      ctx.fillStyle = 'rgba(6,12,18,.90)';
+      ctx.globalAlpha = bossLocked ? .42 : .70;
+      ctx.fillStyle = 'rgba(8,12,18,.96)';
       ctx.beginPath();
       if (isLeft) {
-        ctx.moveTo(0, cornerY);
-        ctx.lineTo(cornerInner, cornerY - this.h * .075);
-        ctx.lineTo(cornerBase, this.h);
+        ctx.moveTo(0, massTop);
+        ctx.lineTo(massInnerTop, massApexY);
+        ctx.lineTo(massInnerBottom, this.h);
         ctx.lineTo(0, this.h);
       } else {
-        ctx.moveTo(this.w, cornerY);
-        ctx.lineTo(cornerInner, cornerY - this.h * .075);
-        ctx.lineTo(cornerBase, this.h);
+        ctx.moveTo(this.w, massTop);
+        ctx.lineTo(massInnerTop, massApexY);
+        ctx.lineTo(massInnerBottom, this.h);
         ctx.lineTo(this.w, this.h);
       }
       ctx.closePath();
       ctx.fill();
       ctx.restore();
 
+      // restrained phase edge guide only.
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = bossLocked ? .09 : .12;
+      ctx.globalAlpha = bossLocked ? .22 : .30;
       ctx.strokeStyle = bossLocked ? '#ff5275' : '#61efff';
-      ctx.lineWidth = 1.15;
-      const scanOffset = bossLocked ? 0 : (this.sceneScroll * 1.4) % 34;
-      for (let y = -10 + scanOffset; y < this.h; y += 34) {
-        const edge = innerAt(clamp(y, 0, this.h));
-        ctx.beginPath();
-        ctx.moveTo(isLeft ? Math.max(0, edge - 24) : edge, y);
-        ctx.lineTo(isLeft ? edge : Math.min(this.w, edge + 24), y + 2);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = bossLocked ? .30 : .40;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.2;
       ctx.beginPath();
       ctx.moveTo(innerAt(0), 0);
-      ctx.lineTo(innerAt(yTopKnee), yTopKnee);
-      ctx.lineTo(innerAt(yMidKnee), yMidKnee);
-      ctx.lineTo(innerAt(yBottomKnee), yBottomKnee);
+      ctx.lineTo(innerAt(yTop), yTop);
+      ctx.lineTo(innerAt(yMid), yMid);
+      ctx.lineTo(innerAt(yBottom), yBottom);
       ctx.lineTo(innerAt(this.h), this.h);
       ctx.stroke();
 
       if (bossLocked) {
         const pulse = .5 + .5 * Math.sin(this.frame * .08);
         ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = `rgba(255,35,72,${.03 + pulse * .03})`;
+        ctx.fillStyle = `rgba(255,35,72,${.025 + pulse * .025})`;
         ctx.fillRect(0, 0, this.w, this.h);
       }
       ctx.restore();
@@ -2973,32 +2932,31 @@ export class Game {
 
   drawNeonOutskirtsParticles(ctx) {
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
-    const yTopKnee = this.h * .12;
-    const yMidKnee = this.h * .48;
-    const yBottomKnee = this.h * .78;
+    const yTop = this.h * .12;
+    const yMid = this.h * .56;
+    const yBottom = this.h * .84;
     const leftInner = y => {
-      if (y <= yTopKnee) return lerp(this.w * .40, this.w * .36, y / Math.max(1, yTopKnee));
-      if (y <= yMidKnee) return lerp(this.w * .36, this.w * .18, (y - yTopKnee) / Math.max(1, yMidKnee - yTopKnee));
-      if (y <= yBottomKnee) return lerp(this.w * .18, this.w * .06, (y - yMidKnee) / Math.max(1, yBottomKnee - yMidKnee));
-      return lerp(this.w * .06, this.w * .02, (y - yBottomKnee) / Math.max(1, this.h - yBottomKnee));
+      if (y <= yTop) return lerp(this.w * .42, this.w * .36, y / Math.max(1, yTop));
+      if (y <= yMid) return lerp(this.w * .36, this.w * .15, (y - yTop) / Math.max(1, yMid - yTop));
+      if (y <= yBottom) return lerp(this.w * .15, this.w * .045, (y - yMid) / Math.max(1, yBottom - yMid));
+      return lerp(this.w * .045, this.w * .015, (y - yBottom) / Math.max(1, this.h - yBottom));
     };
     const rightInner = y => this.w - leftInner(y);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 22; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
-      const y = ((i * 66 + this.sceneScroll * (.55 + (i % 4) * .09)) % (this.h + 40)) - 20;
+      const y = ((i * 92 + this.sceneScroll * (.36 + (i % 3) * .08)) % (this.h + 20)) - 10;
       const inner = side < 0 ? leftInner(clamp(y, 0, this.h)) : rightInner(clamp(y, 0, this.h));
-      const maxBand = side < 0 ? inner - 12 : this.w - inner - 12;
-      if (maxBand <= 10) continue;
-      const x = side < 0 ? inner - (10 + ((i * 17) % Math.floor(maxBand))) : inner + (10 + ((i * 17) % Math.floor(maxBand)));
-      const topSoft = y < this.h * .20 ? clamp((y + 10) / (this.h * .20), 0, 1) * .35 : 1;
-      const alpha = (bossLocked ? .035 : .10 + (i % 4) * .015) * topSoft;
-      ctx.strokeStyle = `rgba(${i % 3 === 0 ? '126,250,255' : '64,190,255'},${alpha})`;
-      ctx.lineWidth = i % 7 === 0 ? 2 : 1;
+      const band = side < 0 ? inner - 14 : this.w - inner - 14;
+      if (band <= 14) continue;
+      const x = side < 0 ? inner - (14 + ((i * 27) % Math.floor(band))) : inner + (14 + ((i * 27) % Math.floor(band)));
+      const alpha = (bossLocked ? .02 : .05 + (i % 3) * .01) * (y < this.h * .20 ? .45 : 1);
+      ctx.strokeStyle = `rgba(${i % 2 === 0 ? '126,250,255' : '64,190,255'},${alpha})`;
+      ctx.lineWidth = i % 4 === 0 ? 1.8 : 1;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x + side * (bossLocked ? 1 : 7), y + (bossLocked ? 5 : 18));
+      ctx.lineTo(x + side * (bossLocked ? 1 : 5), y + (bossLocked ? 4 : 14));
       ctx.stroke();
     }
     ctx.restore();
