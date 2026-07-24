@@ -2714,22 +2714,27 @@ export class Game {
     const scroll = this.sceneScroll;
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     const horizonY = 88;
+    // The playable road is the center corridor. All stage dressing must stay OUTSIDE this wedge.
+    // Wider at the horizon, tighter near the player, matching the red-marked side regions from feedback.
     const sideBoundary = (side, y) => {
       const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
-      return side < 0 ? 42 - t * 30 : this.w - 42 + t * 30;
+      const topInset = 108;
+      const bottomInset = 42;
+      const inset = topInset + (bottomInset - topInset) * t;
+      return side < 0 ? inset : this.w - inset;
     };
 
     const drawSide = side => {
       ctx.save();
       ctx.beginPath();
       if (side < 0) {
-        ctx.moveTo(0, 0);
-        ctx.lineTo(sideBoundary(side, 0), 0);
+        ctx.moveTo(0, horizonY - 12);
+        ctx.lineTo(sideBoundary(side, horizonY - 12), horizonY - 12);
         ctx.lineTo(sideBoundary(side, this.h), this.h);
         ctx.lineTo(0, this.h);
       } else {
-        ctx.moveTo(sideBoundary(side, 0), 0);
-        ctx.lineTo(this.w, 0);
+        ctx.moveTo(sideBoundary(side, horizonY - 12), horizonY - 12);
+        ctx.lineTo(this.w, horizonY - 12);
         ctx.lineTo(this.w, this.h);
         ctx.lineTo(sideBoundary(side, this.h), this.h);
       }
@@ -2737,76 +2742,99 @@ export class Game {
       ctx.clip();
 
       const district = ctx.createLinearGradient(0, horizonY, 0, this.h);
-      district.addColorStop(0, bossLocked ? 'rgba(5,12,20,.16)' : 'rgba(5,30,44,.18)');
-      district.addColorStop(.45, bossLocked ? 'rgba(7,14,22,.52)' : 'rgba(7,34,50,.56)');
-      district.addColorStop(1, bossLocked ? 'rgba(8,12,18,.88)' : 'rgba(7,26,38,.9)');
+      district.addColorStop(0, bossLocked ? 'rgba(5,12,20,.12)' : 'rgba(5,30,44,.15)');
+      district.addColorStop(.4, bossLocked ? 'rgba(7,14,22,.44)' : 'rgba(7,34,50,.48)');
+      district.addColorStop(1, bossLocked ? 'rgba(8,12,18,.92)' : 'rgba(7,26,38,.96)');
       ctx.fillStyle = district;
-      ctx.fillRect(0, 0, this.w, this.h);
+      ctx.fillRect(0, horizonY - 12, this.w, this.h - horizonY + 12);
 
-      // Large buildings occupy the complete outer wedge and continue to the bottom edge.
-      for (let i = 0; i < 7; i += 1) {
-        const y = ((i * 162 + scroll * 1.08) % (this.h + 280)) - 140;
-        if (y < horizonY - 30) continue;
+      // Permanent mega-blocks rising from the bottom edge so the side world clearly starts at the bottom.
+      for (let i = 0; i < 4; i += 1) {
+        const bandTop = horizonY + 26 + i * 108 - (bossLocked ? 0 : (scroll * .22) % 108);
+        const bandBottom = Math.min(this.h + 80, bandTop + 180 + i * 26);
+        const innerTop = sideBoundary(side, bandTop) + (side < 0 ? -8 - i * 10 : 8 + i * 10);
+        const innerBottom = sideBoundary(side, Math.min(this.h, bandBottom)) + (side < 0 ? -2 - i * 5 : 2 + i * 5);
+        const outerTop = side < 0 ? 0 : this.w;
+        const outerBottom = side < 0 ? 0 : this.w;
+        ctx.globalAlpha = bossLocked ? .34 : .52;
+        ctx.fillStyle = 'rgba(2,10,18,.94)';
+        ctx.beginPath();
+        ctx.moveTo(outerTop, bandTop - 18);
+        ctx.lineTo(innerTop, bandTop);
+        ctx.lineTo(innerBottom, bandBottom);
+        ctx.lineTo(outerBottom, bandBottom + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.34)' : 'rgba(66,232,255,.36)';
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+      }
+
+      // Large buildings occupy the complete outer wedge and extend visually down to the bottom edge.
+      for (let i = 0; i < 9; i += 1) {
+        const y = ((i * 138 + scroll * 1.08) % (this.h + 280)) - 140;
+        if (y < horizonY - 24) continue;
         const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
-        const width = 44 + t * 86;
-        const height = 110 + t * 210;
-        const edge = side < 0 ? 0 : this.w - width;
-        const inset = 5 + (i % 3) * 10;
+        const width = 52 + t * 96;
+        const height = 138 + t * 240;
+        const edge = side < 0 ? -6 : this.w - width + 6;
+        const inset = 4 + (i % 3) * 10;
         const x = side < 0 ? edge - inset : edge + inset;
-        const top = y - height * .52;
+        const top = y - height * .56;
 
-        ctx.globalAlpha = bossLocked ? .48 : .72;
-        ctx.fillStyle = 'rgba(2,10,18,.96)';
+        ctx.globalAlpha = bossLocked ? .5 : .78;
+        ctx.fillStyle = 'rgba(2,10,18,.97)';
         ctx.beginPath();
         if (side < 0) {
-          ctx.moveTo(x, top + 18);
-          ctx.lineTo(x + width * .82, top);
+          ctx.moveTo(x, top + 20);
+          ctx.lineTo(x + width * .78, top);
           ctx.lineTo(x + width, y + height * .48);
           ctx.lineTo(x, y + height * .5);
         } else {
-          ctx.moveTo(x + width, top + 18);
-          ctx.lineTo(x + width * .18, top);
+          ctx.moveTo(x + width, top + 20);
+          ctx.lineTo(x + width * .22, top);
           ctx.lineTo(x, y + height * .48);
           ctx.lineTo(x + width, y + height * .5);
         }
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.72)' : 'rgba(66,232,255,.72)';
+        ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.78)' : 'rgba(66,232,255,.76)';
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        ctx.fillStyle = bossLocked ? 'rgba(255,72,96,.24)' : 'rgba(115,247,255,.24)';
-        for (let row = top + 20; row < y + height * .38; row += 18 + t * 6) {
+        ctx.fillStyle = bossLocked ? 'rgba(255,72,96,.22)' : 'rgba(115,247,255,.22)';
+        for (let row = top + 22; row < y + height * .38; row += 20 + t * 7) {
           const innerX = side < 0 ? x + 8 : x + 12;
-          ctx.fillRect(innerX, row, Math.max(12, width - 20), 2);
+          ctx.fillRect(innerX, row, Math.max(14, width - 22), 2);
         }
 
         // Oversized vertical neon sign facing the route but still clipped outside it.
-        const signW = 18 + t * 24;
-        const signH = 58 + t * 82;
-        const sx = side < 0 ? sideBoundary(side, y) - signW - 5 : sideBoundary(side, y) + 5;
+        const signW = 18 + t * 28;
+        const signH = 62 + t * 88;
+        const sx = side < 0 ? sideBoundary(side, y) - signW - 7 : sideBoundary(side, y) + 7;
         const sy = y - signH * .45;
         ctx.fillStyle = 'rgba(4,18,28,.92)';
         ctx.fillRect(sx, sy, signW, signH);
         ctx.strokeStyle = bossLocked ? '#ff496d' : '#42e8ff';
+        ctx.lineWidth = 2;
         ctx.strokeRect(sx, sy, signW, signH);
         ctx.fillStyle = bossLocked ? 'rgba(255,68,94,.3)' : 'rgba(126,250,255,.34)';
-        ctx.fillRect(sx + 4, sy + 5, Math.max(3, signW - 8), signH - 10);
+        ctx.fillRect(sx + 4, sy + 5, Math.max(4, signW - 8), signH - 10);
       }
 
-      // Continuous outer guide line from the vanishing point to the bottom.
-      ctx.globalAlpha = bossLocked ? .46 : .68;
+      // Continuous inner guide line from horizon to bottom, following the requested steeper diagonal.
+      ctx.globalAlpha = bossLocked ? .5 : .72;
       ctx.strokeStyle = bossLocked ? '#ff496d' : '#58f3ff';
       ctx.lineWidth = 2.2;
       ctx.beginPath();
-      ctx.moveTo(sideBoundary(side, 0), 0);
+      ctx.moveTo(sideBoundary(side, horizonY - 4), horizonY - 4);
       ctx.lineTo(sideBoundary(side, this.h), this.h);
       ctx.stroke();
 
       if (bossLocked) {
         const pulse = .5 + .5 * Math.sin(this.frame * .08);
         ctx.fillStyle = `rgba(255,42,78,${.035 + pulse * .035})`;
-        ctx.fillRect(0, 0, this.w, this.h);
+        ctx.fillRect(0, horizonY - 12, this.w, this.h - horizonY + 12);
       }
       ctx.restore();
     };
@@ -2814,15 +2842,16 @@ export class Game {
     drawSide(-1);
     drawSide(1);
 
-    // Only a distant silhouette is allowed near the horizon; no object enters the floor-grid corridor.
+    // Distant skyline only at the horizon cap, still outside the central road corridor.
     ctx.save();
-    ctx.globalAlpha = bossLocked ? .14 : .24;
-    for (let i = 0; i < 12; i += 1) {
+    ctx.globalAlpha = bossLocked ? .16 : .26;
+    for (let i = 0; i < 14; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
-      const width = 8 + (i * 5) % 15;
-      const height = 20 + (i * 17) % 54;
-      const x = side < 0 ? 4 + (i >> 1) * 6 : this.w - 4 - (i >> 1) * 6 - width;
-      ctx.fillStyle = 'rgba(2,10,18,.9)';
+      const width = 10 + (i * 5) % 17;
+      const height = 22 + (i * 17) % 60;
+      const base = side < 0 ? sideBoundary(side, horizonY - 4) - 10 - (i >> 1) * 10 : sideBoundary(side, horizonY - 4) + 10 + (i >> 1) * 10 - width;
+      const x = side < 0 ? Math.max(0, base - width) : Math.min(this.w - width, base);
+      ctx.fillStyle = 'rgba(2,10,18,.92)';
       ctx.fillRect(x, horizonY - height, width, height);
     }
     ctx.restore();
@@ -2832,25 +2861,29 @@ export class Game {
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     const scroll = this.sceneScroll;
     const horizonY = 88;
-    const boundary = (side, y) => {
+    const sideBoundary = (side, y) => {
       const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
-      return side < 0 ? 42 - t * 30 : this.w - 42 + t * 30;
+      const topInset = 108;
+      const bottomInset = 42;
+      const inset = topInset + (bottomInset - topInset) * t;
+      return side < 0 ? inset : this.w - inset;
     };
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 30; i += 1) {
+    for (let i = 0; i < 32; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
       const y = ((i * 86 + scroll * (.55 + (i % 5) * .12)) % (this.h + 100)) - 50;
-      const limit = boundary(side, y);
-      const available = side < 0 ? Math.max(4, limit - 5) : Math.max(4, this.w - limit - 5);
-      const offset = 4 + ((i * 19) % Math.max(5, Math.floor(available)));
+      if (y < horizonY - 6) continue;
+      const limit = sideBoundary(side, y);
+      const band = side < 0 ? limit - 4 : this.w - limit - 4;
+      const offset = 6 + ((i * 19) % Math.max(8, Math.floor(band)));
       const x = side < 0 ? limit - offset : limit + offset;
-      const alpha = bossLocked ? .045 : .1 + (i % 4) * .018;
+      const alpha = bossLocked ? .045 : .11 + (i % 4) * .02;
       ctx.strokeStyle = `rgba(${i % 3 === 0 ? '126,250,255' : '64,190,255'},${alpha})`;
       ctx.lineWidth = i % 8 === 0 ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x + side * (bossLocked ? 1 : 8), y + (bossLocked ? 5 : 20));
+      ctx.lineTo(x + side * (bossLocked ? 1 : 8), y + (bossLocked ? 5 : 22));
       ctx.stroke();
     }
     ctx.restore();
