@@ -91,20 +91,42 @@ export class Game {
       return [craft.id, image];
     }));
     const neonSceneAssets = {
-      upperLeft: './assets/scenes/neon-outskirts/upper-left.webp',
-      upperRight: './assets/scenes/neon-outskirts/upper-right.webp',
-      midLeft: './assets/scenes/neon-outskirts/mid-left.webp',
-      midRight: './assets/scenes/neon-outskirts/mid-right.webp',
-      lowerLeft: './assets/scenes/neon-outskirts/lower-left.webp',
-      lowerRight: './assets/scenes/neon-outskirts/lower-right.webp',
+      farLeft: [
+        './assets/scenes/neon-outskirts/upper-left.webp',
+        './assets/scenes/neon-outskirts/far-left-a.webp',
+        './assets/scenes/neon-outskirts/far-left-b.webp',
+      ],
+      farRight: [
+        './assets/scenes/neon-outskirts/upper-right.webp',
+        './assets/scenes/neon-outskirts/far-right-a.webp',
+        './assets/scenes/neon-outskirts/far-right-b.webp',
+      ],
+      midLeft: [
+        './assets/scenes/neon-outskirts/mid-left.webp',
+        './assets/scenes/neon-outskirts/mid-left-b.webp',
+      ],
+      midRight: [
+        './assets/scenes/neon-outskirts/mid-right.webp',
+        './assets/scenes/neon-outskirts/mid-right-b.webp',
+      ],
+      nearLeft: [
+        './assets/scenes/neon-outskirts/lower-left.webp',
+        './assets/scenes/neon-outskirts/near-left-b.webp',
+      ],
+      nearRight: [
+        './assets/scenes/neon-outskirts/lower-right.webp',
+        './assets/scenes/neon-outskirts/near-right-b.webp',
+      ],
+      shardLeft: ['./assets/scenes/neon-outskirts/shard-left.webp'],
+      shardRight: ['./assets/scenes/neon-outskirts/shard-right.webp'],
     };
-    this.neonSceneImages = Object.fromEntries(Object.entries(neonSceneAssets).map(([key, src]) => {
-      if (typeof Image === 'undefined') return [key, null];
+    this.neonSceneImages = Object.fromEntries(Object.entries(neonSceneAssets).map(([key, sources]) => [key, sources.map(src => {
+      if (typeof Image === 'undefined') return null;
       const image = new Image();
       image.decoding = 'async';
       image.src = src;
-      return [key, image];
-    }));
+      return image;
+    })]));
     this.bindInput();
     document.addEventListener('visibilitychange', () => {
       this.accumulator = 0;
@@ -2756,6 +2778,15 @@ export class Game {
       ctx.restore();
       return true;
     };
+    const imageAt = (pool, index) => {
+      if (!pool?.length) return null;
+      const normalized = ((index % pool.length) + pool.length) % pool.length;
+      return pool[normalized];
+    };
+    const hash01 = value => {
+      const raw = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
+      return raw - Math.floor(raw);
+    };
 
     const yTopKnee = this.h * .12;
     const yMidKnee = this.h * .48;
@@ -2774,9 +2805,9 @@ export class Game {
         ? [[this.w, 0], [inner(0), 0], [inner(yTopKnee), yTopKnee], [inner(yMidKnee), yMidKnee], [inner(yBottomKnee), yBottomKnee], [inner(this.h), this.h], [this.w, this.h]]
         : [[0, 0], [inner(0), 0], [inner(yTopKnee), yTopKnee], [inner(yMidKnee), yMidKnee], [inner(yBottomKnee), yBottomKnee], [inner(this.h), this.h], [0, this.h]];
     };
-    const clipPoly = pts => {
+    const clipPoly = points => {
       ctx.beginPath();
-      pts.forEach(([x, y], idx) => idx ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      points.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
       ctx.closePath();
       ctx.clip();
     };
@@ -2784,76 +2815,120 @@ export class Game {
 
     const drawSide = side => {
       const isLeft = side < 0;
-      const poly = sidePoly(side);
       const innerAt = y => isLeft ? leftInner(y) : rightInner(y);
-      const farImage = images[isLeft ? 'upperLeft' : 'upperRight'];
-      const midImage = images[isLeft ? 'midLeft' : 'midRight'];
-      const nearImage = images[isLeft ? 'lowerLeft' : 'lowerRight'];
+      const farPool = images[isLeft ? 'farLeft' : 'farRight'] || [];
+      const midPool = images[isLeft ? 'midLeft' : 'midRight'] || [];
+      const nearPool = images[isLeft ? 'nearLeft' : 'nearRight'] || [];
+      const shardPool = images[isLeft ? 'shardLeft' : 'shardRight'] || [];
 
       ctx.save();
-      clipPoly(poly);
+      clipPoly(sidePoly(side));
 
-      // subtle atmospheric fill
       const field = ctx.createLinearGradient(0, 0, 0, this.h);
-      field.addColorStop(0, bossLocked ? 'rgba(16,10,18,.20)' : 'rgba(6,20,34,.10)');
-      field.addColorStop(.55, bossLocked ? 'rgba(10,8,14,.18)' : 'rgba(4,14,24,.12)');
-      field.addColorStop(1, bossLocked ? 'rgba(4,6,10,.08)' : 'rgba(2,10,18,.06)');
+      field.addColorStop(0, bossLocked ? 'rgba(16,10,18,.20)' : 'rgba(6,20,34,.11)');
+      field.addColorStop(.55, bossLocked ? 'rgba(10,8,14,.17)' : 'rgba(4,14,24,.10)');
+      field.addColorStop(1, bossLocked ? 'rgba(4,6,10,.06)' : 'rgba(2,10,18,.04)');
       ctx.fillStyle = field;
       ctx.fillRect(0, 0, this.w, this.h);
 
-      // Static, faded far background in the upper boxed region.
-      const farTopH = this.h * .34;
-      const farW = this.w * .34;
-      const farX = isLeft ? -this.w * .02 : this.w - farW + this.w * .02;
-      drawAsset(farImage, farX, -6, farW, farTopH, bossLocked ? .18 : .28, isLeft ? 0 : 1);
-      if (ready(farImage)) {
-        ctx.save();
-        ctx.globalAlpha = bossLocked ? .08 : .10;
-        ctx.filter = 'blur(10px)';
-        drawAsset(farImage, farX + (isLeft ? -12 : 12), 8, farW * 1.06, farTopH * 1.04, 1, isLeft ? 0 : 1);
-        ctx.restore();
+      // Three static far layers fill the upper region without participating in the scroll.
+      const farLayouts = [
+        { y: -34, w: .40, h: .38, alpha: .13, offset: -8 },
+        { y: -2, w: .36, h: .35, alpha: .19, offset: 4 },
+        { y: 28, w: .32, h: .31, alpha: .24, offset: -2 },
+      ];
+      for (let i = 0; i < farLayouts.length; i += 1) {
+        const layout = farLayouts[i];
+        const w = this.w * layout.w;
+        const h = this.h * layout.h;
+        const x = isLeft ? -this.w * .025 + layout.offset : this.w - w + this.w * .025 - layout.offset;
+        drawAsset(imageAt(farPool, i), x, layout.y, w, h, (bossLocked ? .62 : 1) * layout.alpha, isLeft ? 0 : 1);
       }
 
-      // Moving solid near/mid layers sorted by depth: nearer drawn on top.
-      const base = (this.sceneScroll * .00185 + (isLeft ? 0 : .11)) % 1;
+      // Moving structures use a pool. Asset choice changes only when a slot wraps,
+      // so motion stays continuous while consecutive structures alternate visually.
+      const progress = this.sceneScroll * .00172 + (isLeft ? 0 : .113);
       const layers = [];
-      for (let i = 0; i < 6; i += 1) {
-        const d = (base + i / 6) % 1;
-        const eased = Math.pow(d, 1.35);
-        const y = lerp(this.h * .12, this.h * .90, eased);
-        const image = d < .45 ? midImage : nearImage;
-        layers.push({ depth: d, y, image, kind: d < .45 ? 'mid' : 'near' });
-      }
-      layers.sort((a, b) => a.depth - b.depth);
-      for (const layer of layers) {
-        const y = layer.y;
-        const depth = layer.depth;
-        const inner = innerAt(y);
-        const available = isLeft ? inner : this.w - inner;
-        const nearBias = layer.kind === 'near' ? 1.0 : .72;
-        const w = Math.max(72, available * (layer.kind === 'near' ? 1.18 : .92));
-        const h = w * (layer.kind === 'near' ? 1.7 : 1.5);
-        const x = isLeft ? -w * .04 : this.w - w * .96;
-        const alpha = (bossLocked ? .52 : .90) * (.35 + depth * .65) * nearBias;
-        drawAsset(layer.image, x, y - h * .55, w, h, alpha, isLeft ? 0 : 1);
+      const slots = 8;
+      for (let i = 0; i < slots; i += 1) {
+        const absolute = progress + i / slots;
+        const cycle = Math.floor(absolute);
+        const depth = absolute - cycle;
+        const eased = Math.pow(depth, 1.34);
+        const y = lerp(this.h * .10, this.h * .96, eased);
+        const kind = depth < .53 ? 'mid' : 'near';
+        const pool = kind === 'mid' ? midPool : nearPool;
+        const index = cycle + i + (isLeft ? 0 : 1);
+        const variation = hash01(cycle * 31 + i * 17 + (isLeft ? 3 : 11));
+        layers.push({
+          depth,
+          y,
+          kind,
+          image: imageAt(pool, index),
+          variation,
+          z: depth + (kind === 'near' ? .018 : 0),
+        });
       }
 
-      // Lower corner solids keep the extension feeling without filling the whole side lane.
-      const cornerY = this.h * .80;
+      // Spectral fragments are a separate moving phase layer and also follow depth order.
+      for (let i = 0; i < 3; i += 1) {
+        const absolute = progress * .78 + i / 3 + (isLeft ? .07 : .19);
+        const cycle = Math.floor(absolute);
+        const depth = absolute - cycle;
+        const y = lerp(this.h * .16, this.h * .88, Math.pow(depth, 1.28));
+        layers.push({
+          depth,
+          y,
+          kind: 'shard',
+          image: imageAt(shardPool, cycle + i),
+          variation: hash01(cycle * 19 + i * 29 + (isLeft ? 5 : 13)),
+          z: depth + .009,
+        });
+      }
+
+      layers.sort((a, b) => a.z - b.z);
+      for (const layer of layers) {
+        const inner = innerAt(layer.y);
+        const available = isLeft ? inner : this.w - inner;
+        const v = layer.variation;
+        let w;
+        let h;
+        let alpha;
+        if (layer.kind === 'near') {
+          w = Math.max(88, available * (1.06 + v * .20));
+          h = w * (1.56 + v * .16);
+          alpha = (bossLocked ? .54 : .94) * (.70 + layer.depth * .30);
+        } else if (layer.kind === 'mid') {
+          w = Math.max(72, available * (.78 + v * .16));
+          h = w * (1.48 + v * .14);
+          alpha = (bossLocked ? .44 : .82) * (.60 + layer.depth * .34);
+        } else {
+          w = Math.max(62, available * (.62 + v * .18));
+          h = w * (1.42 + v * .20);
+          alpha = (bossLocked ? .12 : .20) * (.55 + layer.depth * .45);
+        }
+        const xShift = (v - .5) * 9;
+        const x = isLeft ? -w * .035 + xShift : this.w - w * .965 - xShift;
+        const y = layer.y - h * (.52 + (v - .5) * .06);
+        drawAsset(layer.image, x, y, w, h, alpha, isLeft ? 0 : 1);
+      }
+
+      // Small physical corner mass keeps the nearest road edge grounded.
+      const cornerY = this.h * .83;
       const cornerInner = innerAt(cornerY);
       const cornerBase = innerAt(this.h);
       ctx.save();
-      ctx.globalAlpha = bossLocked ? .44 : .72;
-      ctx.fillStyle = 'rgba(6,12,18,.92)';
+      ctx.globalAlpha = bossLocked ? .34 : .52;
+      ctx.fillStyle = 'rgba(6,12,18,.90)';
       ctx.beginPath();
       if (isLeft) {
         ctx.moveTo(0, cornerY);
-        ctx.lineTo(cornerInner, cornerY - this.h * .10);
+        ctx.lineTo(cornerInner, cornerY - this.h * .075);
         ctx.lineTo(cornerBase, this.h);
         ctx.lineTo(0, this.h);
       } else {
         ctx.moveTo(this.w, cornerY);
-        ctx.lineTo(cornerInner, cornerY - this.h * .10);
+        ctx.lineTo(cornerInner, cornerY - this.h * .075);
         ctx.lineTo(cornerBase, this.h);
         ctx.lineTo(this.w, this.h);
       }
@@ -2861,11 +2936,10 @@ export class Game {
       ctx.fill();
       ctx.restore();
 
-      // Abstract edge guides for phase-overlap feeling.
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = bossLocked ? .10 : .14;
+      ctx.globalAlpha = bossLocked ? .09 : .12;
       ctx.strokeStyle = bossLocked ? '#ff5275' : '#61efff';
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 1.15;
       const scanOffset = bossLocked ? 0 : (this.sceneScroll * 1.4) % 34;
       for (let y = -10 + scanOffset; y < this.h; y += 34) {
         const edge = innerAt(clamp(y, 0, this.h));
@@ -2874,7 +2948,7 @@ export class Game {
         ctx.lineTo(isLeft ? edge : Math.min(this.w, edge + 24), y + 2);
         ctx.stroke();
       }
-      ctx.globalAlpha = bossLocked ? .34 : .44;
+      ctx.globalAlpha = bossLocked ? .30 : .40;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(innerAt(0), 0);
