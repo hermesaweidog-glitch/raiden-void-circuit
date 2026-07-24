@@ -1268,7 +1268,7 @@ test('endless xp keeps sector-five value into cycle two with a gentler growth cu
   assert.equal(game.xpStageIndex(), 5, 'cycle two sector one reads as the sixth sector for xp');
 });
 
-test('gemini adds primary and secondary projectiles and makes the craft twenty percent larger', () => {
+test('gemini adds only primary projectiles and makes the craft twenty percent larger', () => {
   const { game } = makeGame();
   game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'gemini' });
   game.chooseUpgrade(0);
@@ -1283,7 +1283,7 @@ test('gemini adds primary and secondary projectiles and makes the craft twenty p
   game.player.secondaryCooldowns.rail = 0;
   game.playerBullets = [];
   game.updateSecondaries();
-  assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'rail').length, 2);
+  assert.equal(game.playerBullets.filter(bullet => bullet.kind === 'rail').length, 1, 'Gemini no longer adds secondary projectiles');
 });
 
 test('gemini lancer fires two thick beams and gemini wasp fires a second main shell', () => {

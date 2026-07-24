@@ -805,8 +805,12 @@ export class Game {
     return true;
   }
 
-  projectileBonus() {
+  primaryProjectileBonus() {
     return this.player?.pilotId === 'gemini' ? 1 : 0;
+  }
+
+  projectileBonus() {
+    return 0;
   }
 
   primaryDamagePerSecond(player = this.player) {
@@ -825,7 +829,7 @@ export class Game {
     } else {
       const cooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
       let volleyDamage = (5.2 + level * 1.45) * (1 + projectileBonus);
-      if (level >= 3) volleyDamage += (1.8 + level * .3) * 2;
+      if (level >= 3) volleyDamage += (1.8 + level * .3) * 4;
       baseDps = volleyDamage * 60 / cooldown;
     }
     const critical = upgradePower(player === this.player ? this.passiveRank('critical') : player.build.passives.critical || 0);
@@ -863,14 +867,14 @@ export class Game {
     });
     if (p.craft.primary === 'vulcan') {
       p.fireCooldown = Math.max(4, Math.round((11 - level) / rate));
-      const count = ({ 1: 2, 3: 3, 5: 5 }[level] || Math.max(2, level)) + this.projectileBonus();
+      const count = ({ 1: 2, 3: 3, 5: 5 }[level] || Math.max(2, level)) + this.primaryProjectileBonus();
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
         add(offset * 1.6, -10.8 + Math.abs(offset) * .22, { damage: this.vulcanPelletDamage(level), radius: 3.2, ox: offset * 5, color: '#ff4267' });
       }
     } else if (p.craft.primary === 'laser') {
       p.fireCooldown = 0;
-      const beamCount = 1 + this.projectileBonus();
+      const beamCount = 1 + this.primaryProjectileBonus();
       for (let slot = 0; slot < beamCount; slot += 1) {
         const offsetX = (slot - (beamCount - 1) / 2) * 38;
         const beamData = {
@@ -885,13 +889,18 @@ export class Game {
     } else {
       p.fireCooldown = Math.max(10, Math.round((23 - level * 1.7) / rate));
       const hammer = primaryMaxed ? { thunderHammer: true, hammerRadius: (78 + level * 4) * 1.5, hammerDamage: (6 + level * 1.6) * .5 } : {};
-      const mainShells = 1 + this.projectileBonus();
+      const mainShells = 1 + this.primaryProjectileBonus();
       for (let i = 0; i < mainShells; i += 1) {
         // Gemini (or multi-shell) fires parallel forward shots — position offset only, no sideways vx.
         const lane = mainShells > 1 ? (i - (mainShells - 1) / 2) : 0;
         add(0, -8.9, { damage: 5.2 + level * 1.45, radius: 6.2, splash: 34 + level * 5, ox: lane * 14, kind: 'cannon', color: '#ffd166', ...hammer });
       }
-      if (level >= 3) { add(-1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: -13, kind: 'cannon', color: '#fb923c', ...hammer }); add(1.2, -8.3, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: 13, kind: 'cannon', color: '#fb923c', ...hammer }); }
+      if (level >= 3) {
+        for (const side of [-1, 1]) {
+          add(side * 1.05, -8.45, { damage: 1.8 + level * .3, radius: 4, splash: 22, ox: side * 12, kind: 'cannon', color: '#fb923c', ...hammer });
+          add(side * 1.45, -8.15, { damage: 1.8 + level * .3, radius: 3.6, splash: 20, ox: side * 19, kind: 'cannon', color: '#fb923c', ...hammer });
+        }
+      }
     }
     this.sound('shoot');
   }
@@ -1362,11 +1371,15 @@ export class Game {
 
   rollDamage(base) {
     const level = upgradePower(this.passiveRank('critical'));
-    const criticalDamage = Math.random() < level * .055 ? base * (1.65 + level * .07) : base;
+    const critical = Math.random() < level * .055;
+    this.pendingCriticalEffect = critical;
+    const criticalDamage = critical ? base * (1.65 + level * .07) : base;
     const supportRank = this.passiveRank('support');
     const chance = [0, .02, .03, .04][supportRank];
     const multiplier = [1, 1.5, 2, 3][supportRank];
-    return Math.random() < chance ? criticalDamage * multiplier : criticalDamage;
+    const supportTriggered = Math.random() < chance;
+    this.pendingSupportEffect = supportTriggered;
+    return supportTriggered ? criticalDamage * multiplier : criticalDamage;
   }
 
   applyBulletStatus(bullet, enemy) {
@@ -1604,6 +1617,7 @@ export class Game {
     if (phase !== boss.phase) {
       boss.phase = phase;
       boss.cooldown = 45;
+      this.player.invincible = Math.max(this.player.invincible, 30);
       this.announce(`PHASE ${phase + 1}`, BOSSES[boss.bossId].phases[phase].toUpperCase(), 950);
       this.spawnBurst(boss.x, boss.y, 24, boss.color);
     }
@@ -1690,18 +1704,23 @@ export class Game {
     const categoryNames = { primary: '主武器', secondary: '副武器', pilot: '駕駛員被動', other: '其他' };
     const entries = Object.entries(this.damageSources || {}).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]);
     const total = entries.reduce((sum, [, value]) => sum + value, 0);
-    if (!entries.length) return '<p>本場尚無有效傷害紀錄。</p>';
+    if (!entries.length) return '<p class="damage-empty">本場尚無有效傷害紀錄。</p>';
     const groups = {};
     for (const [key, value] of entries) {
       const [rawCategory, ...labelParts] = key.split(':');
       const category = rawCategory === 'fusion' ? 'secondary' : rawCategory;
       (groups[category] ||= []).push({ label: labelParts.join(':') || '其他傷害', value, hits: this.damageHits?.[key] || 1 });
     }
-    const sections = Object.entries(groups).map(([category, rows]) => {
+    const order = ['primary', 'secondary', 'pilot', 'other'];
+    const sections = order.filter(category => groups[category]?.length).map(category => {
+      const rows = groups[category];
       const subtotal = rows.reduce((sum, row) => sum + row.value, 0);
-      return `<section class="damage-group"><h3>${categoryNames[category] || category}　${Math.round(subtotal).toLocaleString()}</h3>${rows.map(row => `<div class="damage-row"><span>${row.label}</span><b>${Math.round(row.value).toLocaleString()}</b><small>${(row.value / total * 100).toFixed(1)}% · 平均 ${Math.round(row.value / Math.max(1, row.hits)).toLocaleString()}</small></div>`).join('')}</section>`;
+      const subtotalShare = subtotal / total * 100;
+      return `<section class="damage-group"><header class="damage-group-head"><div><h3>${categoryNames[category] || category}</h3><small>${subtotalShare.toFixed(1)}% of total</small></div><b>${Math.round(subtotal).toLocaleString()}</b></header><div class="damage-table-head"><span>傷害來源</span><span>總傷害</span><span>占比</span><span>命中</span><span>平均</span></div>${rows.map(row => { const share = row.value / total * 100; return `<div class="damage-row"><div class="damage-source"><span>${row.label}</span><i style="--damage-share:${Math.max(2, share)}%"></i></div><b>${Math.round(row.value).toLocaleString()}</b><small>${share.toFixed(1)}%</small><small>${row.hits.toLocaleString()}</small><small>${Math.round(row.value / Math.max(1, row.hits)).toLocaleString()}</small></div>`; }).join('')}</section>`;
     }).join('');
-    return `<div class="damage-total">總傷害　${Math.round(total).toLocaleString()}</div>${sections}`;
+    const top = entries[0];
+    const topLabel = top[0].split(':').slice(1).join(':') || '其他傷害';
+    return `<div class="damage-overview"><div><small>總傷害</small><strong>${Math.round(total).toLocaleString()}</strong></div><div><small>最高傷害來源</small><strong>${topLabel}</strong></div><div><small>傷害項目</small><strong>${entries.length}</strong></div></div>${sections}`;
   }
 
   updateDps() {
@@ -1718,10 +1737,21 @@ export class Game {
   }
 
   damageEnemy(enemy, damage, particles = true, source = null, damageType = null, typeCoreEligible = true) {
-    if (!enemy.alive) return;
-    if (enemy.y + enemy.radius < 0) return;
-    if (enemy.type === 'midboss' && !enemy.orbiting) return;
-    if (enemy.type === 'boss' && enemy.arriving) return;
+    if (!enemy.alive) { this.pendingCriticalEffect = false; this.pendingSupportEffect = false; return; }
+    if (enemy.y + enemy.radius < 0) { this.pendingCriticalEffect = false; this.pendingSupportEffect = false; return; }
+    if (enemy.type === 'midboss' && !enemy.orbiting) { this.pendingCriticalEffect = false; this.pendingSupportEffect = false; return; }
+    if (enemy.type === 'boss' && enemy.arriving) { this.pendingCriticalEffect = false; this.pendingSupportEffect = false; return; }
+    // 暴擊矩陣：只顯示獨立的 CRIT! 文字脈衝。
+    if (this.pendingCriticalEffect) {
+      this.addEffect({ type: 'criticalHit', x: enemy.x, y: enemy.y - enemy.radius * .35, life: 24, maxLife: 24 });
+    }
+    // 火力支援：黃色擴散環搭配白／黃／橘火花，與暴擊特效明確區隔。
+    if (this.pendingSupportEffect) {
+      this.addEffect({ type: 'ring', x: enemy.x, y: enemy.y, radius: 4, maxRadius: Math.max(28, enemy.radius + 22), life: 16, maxLife: 16, color: '#fde047' });
+      this.spawnBurst(enemy.x, enemy.y, 9, ['#fff', '#fde047', '#fb923c']);
+    }
+    this.pendingCriticalEffect = false;
+    this.pendingSupportEffect = false;
     const overdrive = this.player?.build?.overdrive || 0;
     const overdriveStep = this.player?.build?.overdriveStep ?? 1;
     const pilotMultiplier = this.player?.pilotId === 'reaper' ? 1.5 : this.player?.pilotId === 'gambler' ? 1 + (this.player.grazeBonus || 0) : 1;
@@ -1977,19 +2007,26 @@ export class Game {
     if (this.mode === 'levelup') return;
     this.upgradeReturnMode = this.mode;
     const choiceCount = 3;
-    this.currentChoices = makeUpgradeChoices(this.player.build, Math.random, choiceCount);
-    const supplies = [];
+    const skillPool = makeUpgradeChoices(this.player.build, Math.random, choiceCount);
+    const firepower = skillPool.find(choice => choice.id === 'overdrive-boost');
+    const pilotOverclocks = skillPool.filter(choice => ['evasion-boost', 'soul-taker-boost', 'battlefield-cleanup-boost'].includes(choice.id));
+    const normalSkills = skillPool.filter(choice => choice.id !== 'overdrive-boost' && !pilotOverclocks.includes(choice));
+    this.currentChoices = [...(firepower ? [firepower] : []), ...pilotOverclocks, ...normalSkills].slice(0, choiceCount);
     const repairAmount = this.repairAmount();
+    const supplies = [];
     if (this.player.hp < this.player.maxHp) supplies.push({ id: 'repair', category: 'supply', icon: '✚', name: '緊急維修', description: `恢復 ${repairAmount} 點生命。` });
     if (this.player.bombs < this.player.maxBombs) supplies.push({ id: 'bomb', category: 'supply', icon: '◈', name: '炸彈補給', description: '補充 1 枚炸彈。' });
-    if (this.player.pilotId === 'kungfu' && supplies.length) {
-      const keepSkills = Math.max(1, choiceCount - supplies.length);
-      this.currentChoices = [...this.currentChoices.filter(choice => choice.category !== 'supply').slice(0, keepSkills), ...supplies.slice(0, choiceCount - keepSkills)];
-    } else {
-      for (const supply of supplies) if (this.currentChoices.length < choiceCount) this.currentChoices.push(supply);
+    // 補給只填補一般技能不足的空位；順序固定為一般技能、治療、炸彈。
+    for (const supply of supplies) {
+      if (this.currentChoices.length >= choiceCount) break;
+      this.currentChoices.push(supply);
     }
+    // 若沒有任何一般技能，仍保證受傷時能看到治療，其次才是炸彈。
+    if (!this.currentChoices.length && supplies.length) this.currentChoices = supplies.slice(0, choiceCount);
     const skillChoices = this.currentChoices.filter(choice => choice.category !== 'supply');
-    if (skillChoices.length === 1 && skillChoices[0].id === 'overdrive-boost') {
+    // 只有畫面上真正只剩火力超頻一項時才自動選擇；
+    // 只要有治療或炸彈補給，就必須開啟升級畫面讓玩家選擇。
+    if (this.currentChoices.length === 1 && skillChoices.length === 1 && skillChoices[0].id === 'overdrive-boost') {
       this.addEffect({ type: 'floatingText', x: this.player.x, y: this.player.y - 34, text: `火力超頻 +${this.player.build.overdriveStep ?? 1}%`, color: '#ffd166', life: 70, maxLife: 70 });
       this.chooseUpgrade(this.currentChoices.indexOf(skillChoices[0]), true);
       return;
@@ -2228,6 +2265,8 @@ export class Game {
           this.effects.splice(i, 1); this.sound('xp'); this.updateHud();
         } else if (effect.life <= 0 || (!effect.attracting && effect.y > this.h + 30)) this.effects.splice(i, 1);
       } else if (effect.type === 'floatingText') { effect.y -= .55; effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
+      else if (effect.type === 'dodgeMiss') { effect.x += effect.vx; effect.y -= .7; effect.vx *= .96; effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
+      else if (effect.type === 'criticalHit') { effect.y -= .35; effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
       else { effect.life -= 1; if (effect.life <= 0) this.effects.splice(i, 1); }
     }
   }
@@ -2258,7 +2297,8 @@ export class Game {
     if (!this.player || this.player.invincible > 0 || this.testFlags?.playerInvincible) return;
     if (this.player.pilotId === 'kungfu' && Math.random() < (this.player.build.evasion ?? 20) / 100) {
       this.player.invincible = 18;
-      this.addEffect({ type: 'kungfuDodge', x: this.player.x, y: this.player.y, life: 18, maxLife: 18 });
+      this.addEffect({ type: 'kungfuDodge', x: this.player.x, y: this.player.y, life: 24, maxLife: 24 });
+      this.addEffect({ type: 'dodgeMiss', x: this.player.x, y: this.player.y - 10, vx: Math.random() < .5 ? -1.7 : 1.7, life: 32, maxLife: 32 });
       this.spawnBurst(this.player.x, this.player.y, 12, '#e0f2fe');
       return;
     }
@@ -3051,6 +3091,8 @@ export class Game {
       else if(e.type==='afterimage'){const t=1-e.life/e.maxLife;const strike=e.strike??1;ctx.save();ctx.translate(e.x+(strike-1)*10,e.y-strike*4);ctx.globalAlpha=(1-t)*.42;ctx.fillStyle=e.color||'#c084fc';ctx.beginPath();ctx.moveTo(0,-28);ctx.lineTo(-13,7);ctx.lineTo(-29,15);ctx.lineTo(-12,20);ctx.lineTo(0,12);ctx.lineTo(12,20);ctx.lineTo(29,15);ctx.lineTo(13,7);ctx.closePath();ctx.fill();ctx.strokeStyle='#f3e8ff';ctx.lineWidth=2;ctx.stroke();ctx.restore();}
       else if(e.type==='ironMountain'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(t*.5);ctx.globalAlpha=1-t;ctx.strokeStyle='#fb923c';ctx.lineWidth=6-3*t;for(let n=0;n<8;n+=1){const a=n/8*TAU;ctx.beginPath();ctx.moveTo(Math.cos(a)*12,Math.sin(a)*12);ctx.lineTo(Math.cos(a)*(30+t*35),Math.sin(a)*(30+t*35));ctx.stroke();}ctx.restore();}
       else if(e.type==='kungfuDodge'){const t=1-e.life/e.maxLife;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle='#e0f2fe';ctx.lineWidth=3;for(let n=-1;n<=1;n+=1){ctx.beginPath();ctx.moveTo(e.x-16+n*12-t*28,e.y+20);ctx.quadraticCurveTo(e.x+n*12,e.y-24,e.x+16+n*12+t*28,e.y-4);ctx.stroke();}ctx.restore();}
+      else if(e.type==='dodgeMiss'){const t=1-e.life/e.maxLife;ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.vx*.08);ctx.globalAlpha=Math.sin(Math.min(1,t)*Math.PI)*.95;ctx.fillStyle='#e0f2fe';ctx.strokeStyle='rgba(56,189,248,.85)';ctx.lineWidth=3;ctx.font='900 22px monospace';ctx.textAlign='center';ctx.strokeText('MISS',0,0);ctx.fillText('MISS',0,0);ctx.restore();}
+      else if(e.type==='criticalHit'){const t=1-e.life/e.maxLife;const scale=1+Math.sin(Math.min(1,t)*Math.PI)*.55;ctx.save();ctx.translate(e.x,e.y);ctx.scale(scale,scale);ctx.globalAlpha=1-t;ctx.fillStyle='#fde047';ctx.strokeStyle='#fff7b2';ctx.lineWidth=3;ctx.font='900 18px monospace';ctx.textAlign='center';ctx.strokeText('CRIT!',0,0);ctx.fillText('CRIT!',0,0);ctx.restore();}
 
       else if(e.type==='bombard'&&!e.firing){ctx.strokeStyle=`rgba(251,146,60,${.3+Math.sin(this.frame*.3)*.3})`;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.stroke();ctx.beginPath();ctx.moveTo(e.x-e.radius,e.y);ctx.lineTo(e.x+e.radius,e.y);ctx.moveTo(e.x,e.y-e.radius);ctx.lineTo(e.x,e.y+e.radius);ctx.stroke();}
       else if(e.type==='gravity'){const inner=12+Math.sin(this.frame*.18)*5;if(e.blackHole){ctx.save();const halo=ctx.createRadialGradient(e.x,e.y,inner,e.x,e.y,e.radius);halo.addColorStop(0,'rgba(163,230,53,.5)');halo.addColorStop(.55,'rgba(101,163,13,.28)');halo.addColorStop(1,'rgba(63,98,18,.05)');ctx.fillStyle=halo;ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='rgba(163,230,53,.85)';ctx.lineWidth=2;ctx.setLineDash([6,7]);ctx.beginPath();ctx.arc(e.x,e.y,e.radius*.82,this.frame*.03,this.frame*.03+TAU);ctx.stroke();ctx.setLineDash([]);ctx.strokeStyle='rgba(217,249,157,.5)';ctx.lineWidth=1.5;ctx.setLineDash([3,9]);ctx.beginPath();ctx.arc(e.x,e.y,e.radius*.55,-this.frame*.05,-this.frame*.05+TAU);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.fill();ctx.shadowColor='#a3e635';ctx.shadowBlur=14;ctx.strokeStyle='#bef264';ctx.lineWidth=3;ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.stroke();ctx.shadowBlur=0;for(let n=0;n<3;n+=1){const a=this.frame*.09+n/3*TAU;ctx.strokeStyle='rgba(217,249,157,.9)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(e.x,e.y,inner+6,a,a+1.4);ctx.stroke();}for(let n=0;n<5;n+=1){const a=this.frame*.06+n/5*TAU;const dist=e.radius*(.9-((this.frame*.011+n*.2)%.62));ctx.fillStyle='#a3e635';ctx.globalAlpha=.75;ctx.fillRect(e.x+Math.cos(a)*dist-1.5,e.y+Math.sin(a)*dist-1.5,3,3);}ctx.globalAlpha=1;ctx.restore();}else{ctx.fillStyle='rgba(192,132,252,.16)';ctx.beginPath();ctx.arc(e.x,e.y,e.radius,0,TAU);ctx.fill();ctx.strokeStyle='#c084fc';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,inner,0,TAU);ctx.stroke();}}

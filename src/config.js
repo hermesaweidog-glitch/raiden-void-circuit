@@ -18,7 +18,7 @@ export const PRIMARY_ICON = 'assets/icons/primary-cannon.webp';
 export const AIRCRAFT = {
   falcon: { id: 'falcon', name: 'FALCON', subtitle: '散射突擊機', art: 'assets/aircraft/falcon.webp', color: '#ff3158', speed: 5.8, hp: 4, hpBonus: 10, primary: 'vulcan', mastery: '熔蝕彈', description: '寬角火力；機體裝甲 +10；滿級追加火焰持續傷害。' },
   lancer: { id: 'lancer', name: 'LANCER', subtitle: '貫通雷射機', art: 'assets/aircraft/lancer.webp', color: '#42e8ff', speed: 5.1, hp: 4, secondaryBoost: .1, primary: 'laser', mastery: '連鎖電擊', description: '連續貫通射線；副武器傷害 +10%；滿級後命中觸發 3 次連鎖電擊。' },
-  wasp: { id: 'wasp', name: 'WASP', subtitle: '重型爆破機', art: 'assets/aircraft/wasp.webp', color: '#ffd166', speed: 4.5, hp: 5, bombCapBonus: 1, passiveSlotBonus: 1, primary: 'cannon', mastery: '雷神之錘', description: '慢速爆破彈；炸彈上限 +1、被動槽 +1；滿級後擊中引發範圍雷爆。' },
+  wasp: { id: 'wasp', name: 'WASP', subtitle: '重型爆破機', art: 'assets/aircraft/wasp.webp', color: '#ffd166', speed: 4.5, hp: 5, bombCapBonus: 1, passiveSlotBonus: 1, primary: 'cannon', mastery: '雷神之錘', description: '慢速爆破彈；三階時左右各追加 2 顆小型爆破彈；炸彈上限 +1、被動槽 +1；滿級後擊中引發範圍雷爆。' },
 };
 
 export const PILOTS = {
@@ -26,7 +26,7 @@ export const PILOTS = {
   rambo: { id: 'rambo', name: '藍波', icon: '✚', art: 'assets/pilots/rambo.webp', subtitle: '生存專家', ability: '生命與炸彈上限增加1階段；擊倒 BOSS 恢復 2 顆炸彈，炸彈對大型目標傷害 +50%。' },
   shadow: { id: 'shadow', name: '陰影', icon: '◐', art: 'assets/pilots/shadow.webp', subtitle: '相位潛行', ability: '每 6 秒潛入陰影 2 秒，持續清除近身敵彈，並以黑潮對範圍內敵人造成傷害。' },
   joker: { id: 'joker', name: '小丑', icon: '♢', art: 'assets/pilots/joker.webp', subtitle: '混沌選牌', ability: '副武器與被動技能裝備上限各 +1；自動選擇升級項目，並有 20% 機率額外再獲得一次升級項目。' },
-  gemini: { id: 'gemini', name: '雙子星', icon: 'Ⅱ', art: 'assets/pilots/gemini.webp', subtitle: '雙重火控', ability: '機體放大 20%；主武器與副武器每次發射數量 +1。' },
+  gemini: { id: 'gemini', name: '雙子星', icon: 'Ⅱ', art: 'assets/pilots/gemini.webp', subtitle: '雙重火控', ability: '機體放大 20%；主武器每次發射數量 +1。' },
   reaper: { id: 'reaper', name: '死神', icon: '☠', art: 'assets/pilots/reaper.webp', subtitle: '致命契約', ability: '初始最大生命 -20 HP；所有傷害 +50%；(超頻)主武器有 1% 機率直接擊殺敵人，最大提升至 5%。' },
   kungfu: { id: 'kungfu', name: '功夫', icon: '拳', art: 'assets/pilots/kungfu.webp', subtitle: '鐵身宗師', ability: '無法射擊；生命與生命提升、恢復效果加倍，以無傷碰撞攻擊敵人，招式隨拳法等級提升。' },
   gambler: { id: 'gambler', name: '賭徒', icon: '◆', art: 'assets/pilots/gambler.webp', subtitle: '極限擦彈', ability: '受擊判定縮小；敵彈接觸機身增加額外 1% 傷害，可累積，被擊中重置效果；初始生命減半。' },
