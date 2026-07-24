@@ -2713,74 +2713,141 @@ export class Game {
   drawNeonOutskirts(ctx) {
     const scroll = this.sceneScroll;
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
-    const horizonY = 115;
-    const leftRoad = y => 240 - 180 * (y / this.h);
+    const horizonY = 104;
+    const centerX = this.w * .5;
+    const leftRoad = y => centerX - 182 * (y / this.h);
     const rightRoad = y => this.w - leftRoad(y);
+    const leftOuter = y => leftRoad(y) - (22 + 56 * ((y - horizonY) / (this.h - horizonY)));
+    const rightOuter = y => rightRoad(y) + (22 + 56 * ((y - horizonY) / (this.h - horizonY)));
     ctx.save();
 
-    // A distant city remains outside the central flight corridor.
-    const skylineAlpha = bossLocked ? .18 : .28;
-    ctx.globalAlpha = skylineAlpha;
-    for (let i = 0; i < 22; i += 1) {
+    // Distant skyline near the vanishing point so the player always reads a city ahead.
+    ctx.globalAlpha = bossLocked ? .18 : .3;
+    for (let i = 0; i < 16; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
-      const slot = (i >> 1);
-      const x = side < 0 ? 8 + (slot * 29) % 128 : this.w - 8 - (slot * 29) % 128;
-      const w = 10 + (i * 7) % 18;
-      const h = 30 + (i * 19) % 92;
-      const y = horizonY - h;
+      const band = (i >> 1);
+      const baseX = centerX + side * (82 + band * 18);
+      const width = 12 + (i * 5) % 16;
+      const height = 28 + (i * 17) % 70;
+      const y = horizonY - height;
+      const x = side < 0 ? baseX - width : baseX;
       const grad = ctx.createLinearGradient(x, y, x, horizonY);
-      grad.addColorStop(0, bossLocked ? 'rgba(8,20,30,.2)' : 'rgba(12,49,66,.35)');
-      grad.addColorStop(1, 'rgba(2,12,22,.95)');
+      grad.addColorStop(0, bossLocked ? 'rgba(10,18,28,.18)' : 'rgba(14,46,66,.36)');
+      grad.addColorStop(1, 'rgba(2,10,18,.92)');
       ctx.fillStyle = grad;
-      ctx.fillRect(side < 0 ? x : x - w, y, w, h);
-      ctx.fillStyle = bossLocked ? 'rgba(255,66,96,.28)' : 'rgba(66,232,255,.42)';
-      for (let wy = y + 8; wy < horizonY - 5; wy += 13) {
-        if ((wy + i * 3) % 4 < 2) ctx.fillRect(side < 0 ? x + 3 : x - w + 3, wy, Math.max(2, w - 7), 1);
+      ctx.fillRect(x, y, width, height);
+      ctx.fillStyle = bossLocked ? 'rgba(255,72,92,.22)' : 'rgba(84,244,255,.36)';
+      for (let wy = y + 6; wy < horizonY - 4; wy += 11) {
+        if (((wy + i * 7) % 23) < 13) ctx.fillRect(x + 2, wy, Math.max(3, width - 4), 1.2);
       }
     }
 
-    // Perspective rails define a road without covering the gameplay lane.
-    ctx.globalAlpha = bossLocked ? .34 : .48;
-    ctx.strokeStyle = bossLocked ? '#ff496d' : '#4cf4ff';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(leftRoad(horizonY), horizonY); ctx.lineTo(leftRoad(this.h), this.h); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(rightRoad(horizonY), horizonY); ctx.lineTo(rightRoad(this.h), this.h); ctx.stroke();
-    ctx.lineWidth = 1;
-    ctx.globalAlpha *= .55;
-    ctx.beginPath(); ctx.moveTo(leftRoad(horizonY) - 12, horizonY); ctx.lineTo(leftRoad(this.h) - 26, this.h); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(rightRoad(horizonY) + 12, horizonY); ctx.lineTo(rightRoad(this.h) + 26, this.h); ctx.stroke();
+    // Large side districts: always outside the maximum road width and extending down to the bottom.
+    const sideFill = ctx.createLinearGradient(0, horizonY, 0, this.h);
+    sideFill.addColorStop(0, bossLocked ? 'rgba(5,22,32,.18)' : 'rgba(4,28,42,.2)');
+    sideFill.addColorStop(.55, bossLocked ? 'rgba(5,18,24,.46)' : 'rgba(5,32,48,.5)');
+    sideFill.addColorStop(1, bossLocked ? 'rgba(6,16,22,.7)' : 'rgba(8,34,48,.72)');
+    ctx.fillStyle = sideFill;
+    ctx.beginPath();
+    ctx.moveTo(0, this.h); ctx.lineTo(0, horizonY + 18); ctx.lineTo(leftOuter(horizonY + 18), horizonY + 18); ctx.lineTo(leftOuter(this.h), this.h); ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(this.w, this.h); ctx.lineTo(this.w, horizonY + 18); ctx.lineTo(rightOuter(horizonY + 18), horizonY + 18); ctx.lineTo(rightOuter(this.h), this.h); ctx.closePath();
+    ctx.fill();
 
-    // Repeating roadside pylons move with sceneScroll and freeze during the boss encounter.
+    // Big roadside structures and neon signboards aligned with the route perspective.
     for (let i = 0; i < 9; i += 1) {
-      const y = ((i * 112 + scroll * 1.35) % (this.h + 180)) - 90;
-      if (y < horizonY - 20) continue;
+      const y = ((i * 132 + scroll * 1.18) % (this.h + 220)) - 110;
+      if (y < horizonY + 10) continue;
       const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
-      const scale = .25 + t * 1.05;
-      const lx = leftRoad(y) - 18 - 20 * t;
-      const rx = rightRoad(y) + 18 + 20 * t;
-      for (const x of [lx, rx]) {
-        ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
-        ctx.globalAlpha = bossLocked ? .42 : .62;
-        ctx.fillStyle = 'rgba(3,14,24,.92)';
-        ctx.fillRect(-7, -26, 14, 52);
-        ctx.strokeStyle = bossLocked ? '#ff496d' : '#42e8ff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(-7, -26, 14, 52);
-        ctx.fillStyle = bossLocked ? '#ff3158' : '#9cf9ff';
-        ctx.fillRect(-3, -19, 6, 18);
+      const scale = .35 + t * 1.35;
+      const towerHeight = 68 + 42 * scale;
+      const towerWidth = 20 + 16 * scale;
+      const panelHeight = 24 + 18 * scale;
+      const offset = 12 + 26 * t;
+      const lx = leftRoad(y) - offset - towerWidth;
+      const rx = rightRoad(y) + offset;
+      for (const [x, side] of [[lx, -1], [rx, 1]]) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.globalAlpha = bossLocked ? .46 : .68;
+        ctx.fillStyle = 'rgba(3,12,20,.94)';
+        ctx.beginPath();
+        ctx.moveTo(0, towerHeight * .5);
+        ctx.lineTo(0, -towerHeight * .58);
+        ctx.lineTo(towerWidth, -towerHeight * .5);
+        ctx.lineTo(towerWidth, towerHeight * .56);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = bossLocked ? 'rgba(255,74,95,.72)' : 'rgba(66,232,255,.82)';
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        // window rows
+        ctx.fillStyle = bossLocked ? 'rgba(255,72,92,.24)' : 'rgba(126,252,255,.24)';
+        for (let wy = -towerHeight * .38; wy < towerHeight * .3; wy += 11 + 2 * t) {
+          ctx.fillRect(3, wy, towerWidth - 6, 1.5);
+        }
+        // floating roadside sign toward the route
+        ctx.translate(side < 0 ? towerWidth + 6 : -10 - (20 + 20 * scale), -towerHeight * .08);
+        const signW = 20 + 20 * scale;
+        const signH = panelHeight;
+        ctx.fillStyle = 'rgba(6,20,30,.88)';
+        ctx.fillRect(0, 0, signW, signH);
+        ctx.strokeStyle = bossLocked ? 'rgba(255,94,110,.78)' : 'rgba(88,244,255,.88)';
+        ctx.strokeRect(0, 0, signW, signH);
+        ctx.fillStyle = bossLocked ? 'rgba(255,92,110,.34)' : 'rgba(133,249,255,.4)';
+        ctx.fillRect(4, 4, signW - 8, signH - 8);
         ctx.restore();
       }
     }
 
-    // Boss state: the city dims and a cold horizon pulse remains behind the grid.
+    // Neon route rails stay close to the road and reinforce the corridor perspective.
+    ctx.globalAlpha = bossLocked ? .34 : .52;
+    ctx.strokeStyle = bossLocked ? '#ff496d' : '#4cf4ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(leftRoad(horizonY), horizonY); ctx.lineTo(leftRoad(this.h), this.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rightRoad(horizonY), horizonY); ctx.lineTo(rightRoad(this.h), this.h); ctx.stroke();
+    ctx.lineWidth = 1.2;
+    ctx.globalAlpha *= .58;
+    ctx.beginPath(); ctx.moveTo(leftOuter(horizonY), horizonY); ctx.lineTo(leftOuter(this.h), this.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rightOuter(horizonY), horizonY); ctx.lineTo(rightOuter(this.h), this.h); ctx.stroke();
+
+    // Navigation pylons beside the road for stronger speed sensation.
+    for (let i = 0; i < 13; i += 1) {
+      const y = ((i * 94 + scroll * 1.55) % (this.h + 180)) - 90;
+      if (y < horizonY + 4) continue;
+      const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
+      const h = 18 + t * 54;
+      const w = 3 + t * 8;
+      const gap = 6 + t * 10;
+      const lx = leftRoad(y) - gap - w;
+      const rx = rightRoad(y) + gap;
+      ctx.globalAlpha = bossLocked ? .5 : .72;
+      ctx.fillStyle = 'rgba(8,18,28,.92)';
+      ctx.strokeStyle = bossLocked ? '#ff4a6f' : '#42e8ff';
+      ctx.lineWidth = 1.6;
+      for (const x of [lx, rx]) {
+        ctx.beginPath();
+        ctx.rect(x, y - h * .5, w, h);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = bossLocked ? 'rgba(255,82,104,.26)' : 'rgba(159,250,255,.32)';
+        ctx.fillRect(x + 1, y - h * .25, Math.max(1, w - 2), h * .16);
+        ctx.fillStyle = 'rgba(8,18,28,.92)';
+      }
+    }
+
+    // Boss state: freeze the side world and tint the city as a warning zone while the grid keeps moving.
     if (bossLocked) {
       const pulse = .5 + .5 * Math.sin(this.frame * .075);
-      const glow = ctx.createRadialGradient(this.w / 2, horizonY, 4, this.w / 2, horizonY, 220);
-      glow.addColorStop(0, `rgba(80,220,255,${.06 + pulse * .05})`);
-      glow.addColorStop(.55, `rgba(255,49,88,${.025 + pulse * .025})`);
+      const glow = ctx.createRadialGradient(centerX, horizonY + 6, 6, centerX, horizonY + 6, 250);
+      glow.addColorStop(0, `rgba(94,220,255,${.05 + pulse * .04})`);
+      glow.addColorStop(.36, `rgba(255,58,92,${.05 + pulse * .04})`);
       glow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, this.w, 300);
+      ctx.fillRect(0, 0, this.w, 320);
+      ctx.fillStyle = `rgba(255,48,84,${.05 + pulse * .04})`;
+      ctx.fillRect(0, horizonY + 8, this.w, 2);
     }
     ctx.restore();
   }
@@ -2788,20 +2855,25 @@ export class Game {
   drawNeonOutskirtsParticles(ctx) {
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     const scroll = this.sceneScroll;
+    const horizonY = 104;
+    const centerX = this.w * .5;
+    const leftRoad = y => centerX - 182 * (y / this.h);
+    const rightRoad = y => this.w - leftRoad(y);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 30; i += 1) {
+    for (let i = 0; i < 34; i += 1) {
+      const y = ((i * 78 + scroll * (.55 + (i % 6) * .14)) % (this.h + 100)) - 50;
+      if (y < horizonY + 6) continue;
+      const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
       const side = i % 2 === 0 ? -1 : 1;
-      const laneX = 18 + (i * 37) % 92;
-      const x = side < 0 ? laneX : this.w - laneX;
-      const speed = .35 + (i % 5) * .13;
-      const y = ((i * 83 + scroll * speed) % (this.h + 60)) - 30;
-      const alpha = bossLocked ? .08 : .16 + (i % 4) * .025;
+      const edgeOffset = 28 + (i % 5) * 10 + t * 36;
+      const x = side < 0 ? leftRoad(y) - edgeOffset : rightRoad(y) + edgeOffset;
+      const alpha = bossLocked ? .06 : .11 + (i % 4) * .02;
       ctx.strokeStyle = i % 3 === 0 ? `rgba(124,249,255,${alpha})` : `rgba(70,190,255,${alpha})`;
-      ctx.lineWidth = i % 7 === 0 ? 2 : 1;
+      ctx.lineWidth = i % 8 === 0 ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x + side * (bossLocked ? 2 : 7), y + (bossLocked ? 5 : 17));
+      ctx.lineTo(x + side * (bossLocked ? 2 : 7), y + (bossLocked ? 6 : 18));
       ctx.stroke();
     }
     ctx.restore();
