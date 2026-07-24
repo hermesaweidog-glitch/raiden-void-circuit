@@ -439,6 +439,21 @@ export class Game {
     this.updateHud();
   }
 
+  ensureTestModeMusic() {
+    if (this.runMode !== 'test' || !this.player || !this.music) return;
+    const active = ['stageIntro', 'bossWarning', 'playing', 'stageClear'].includes(this.mode);
+    if (!active) return;
+    const bossAlive = this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
+    let target = 'stage';
+    if (this.mode === 'bossWarning') target = 'warning';
+    else if (bossAlive) target = 'boss';
+    const retry = this.music.currentKey !== target || this.music.desiredKey !== target;
+    if (retry && (!this.music.unlocked || this.frame % 20 === 0)) {
+      this.music.unlock();
+      this.music.scene(target, { fadeOut: .08, fadeIn: .18, restart: false });
+    }
+  }
+
   loop(time) {
     try {
       if (!this.lastTime) this.lastTime = time;
@@ -471,6 +486,7 @@ export class Game {
       this.runFrames += 1;
       this.stageFrames += 1;
       this.updateDps();
+      this.ensureTestModeMusic();
     }
     this.updateParticles();
     if (!this.player || this.mode === 'title' || this.mode === 'paused' || this.mode === 'levelup' || this.mode === 'gameover' || this.mode === 'victory') return;
@@ -2714,14 +2730,11 @@ export class Game {
     const scroll = this.sceneScroll;
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     const horizonY = 88;
-    const cutoffY = Math.round(this.h * .72);
-    // Outer scenery is limited to two upper side wedges. It must end before the
-    // lower expanding floor grid becomes the dominant horizontal reference.
     const sideBoundary = (side, y) => {
-      const t = clamp((y - horizonY) / Math.max(1, cutoffY - horizonY), 0, 1);
+      const t = clamp((y - horizonY) / Math.max(1, this.h - horizonY), 0, 1);
       const topInset = 176;
-      const cutoffInset = 54;
-      const inset = topInset + (cutoffInset - topInset) * t;
+      const bottomInset = 54;
+      const inset = topInset + (bottomInset - topInset) * t;
       return side < 0 ? inset : this.w - inset;
     };
 
@@ -2729,39 +2742,64 @@ export class Game {
       ctx.save();
       ctx.beginPath();
       if (side < 0) {
-        ctx.moveTo(0, horizonY - 12);
-        ctx.lineTo(sideBoundary(side, horizonY - 12), horizonY - 12);
-        ctx.lineTo(sideBoundary(side, cutoffY), cutoffY);
-        ctx.lineTo(0, cutoffY);
+        ctx.moveTo(0, horizonY - 16);
+        ctx.lineTo(sideBoundary(side, horizonY - 16), horizonY - 16);
+        ctx.lineTo(sideBoundary(side, this.h), this.h);
+        ctx.lineTo(0, this.h);
       } else {
-        ctx.moveTo(sideBoundary(side, horizonY - 12), horizonY - 12);
-        ctx.lineTo(this.w, horizonY - 12);
-        ctx.lineTo(this.w, cutoffY);
-        ctx.lineTo(sideBoundary(side, cutoffY), cutoffY);
+        ctx.moveTo(sideBoundary(side, horizonY - 16), horizonY - 16);
+        ctx.lineTo(this.w, horizonY - 16);
+        ctx.lineTo(this.w, this.h);
+        ctx.lineTo(sideBoundary(side, this.h), this.h);
       }
       ctx.closePath();
       ctx.clip();
 
-      const district = ctx.createLinearGradient(0, horizonY, 0, cutoffY);
-      district.addColorStop(0, bossLocked ? 'rgba(5,12,20,.12)' : 'rgba(5,30,44,.16)');
-      district.addColorStop(.55, bossLocked ? 'rgba(7,14,22,.48)' : 'rgba(7,34,50,.52)');
-      district.addColorStop(.9, bossLocked ? 'rgba(8,12,18,.78)' : 'rgba(7,26,38,.8)');
-      district.addColorStop(1, 'rgba(0,0,0,0)');
+      // Base district tone.
+      const district = ctx.createLinearGradient(0, horizonY - 16, 0, this.h);
+      district.addColorStop(0, bossLocked ? 'rgba(8,14,24,.12)' : 'rgba(7,32,48,.14)');
+      district.addColorStop(.28, bossLocked ? 'rgba(8,14,24,.34)' : 'rgba(8,32,48,.36)');
+      district.addColorStop(.68, bossLocked ? 'rgba(5,12,20,.70)' : 'rgba(6,22,34,.74)');
+      district.addColorStop(1, bossLocked ? 'rgba(3,8,14,.96)' : 'rgba(4,14,24,.98)');
       ctx.fillStyle = district;
-      ctx.fillRect(0, horizonY - 12, this.w, cutoffY - horizonY + 12);
+      ctx.fillRect(0, horizonY - 16, this.w, this.h - horizonY + 16);
 
-      // Large moving buildings remain inside the upper wedge only.
-      const span = cutoffY - horizonY;
+      // Top emergence zone: soft, blurry silhouettes so the upper red-marked area no longer feels empty.
+      for (let i = 0; i < 7; i += 1) {
+        const y = horizonY - 48 + i * 16;
+        const h = 70 + i * 18;
+        const w = 80 + i * 22;
+        const x = side < 0 ? -16 + i * 4 : this.w - w + 16 - i * 4;
+        ctx.save();
+        ctx.globalAlpha = bossLocked ? .08 : .13;
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = bossLocked ? 'rgba(255,82,102,.35)' : 'rgba(94,236,255,.40)';
+        ctx.fillStyle = bossLocked ? 'rgba(255,72,96,.12)' : 'rgba(92,236,255,.12)';
+        ctx.fillRect(x, y, w, h);
+        ctx.restore();
+      }
+
+      // Distant skyline near the horizon.
+      ctx.globalAlpha = bossLocked ? .18 : .28;
+      for (let i = 0; i < 10; i += 1) {
+        const width = 12 + (i * 5) % 18;
+        const height = 22 + (i * 13) % 48;
+        const edge = sideBoundary(side, horizonY - 4);
+        const x = side < 0 ? edge - 18 - (i * 14) - width : edge + 18 + i * 14;
+        ctx.fillStyle = 'rgba(2,10,18,.88)';
+        ctx.fillRect(x, horizonY - height, width, height);
+      }
+
+      // Moving major buildings along the wedge.
       for (let i = 0; i < 8; i += 1) {
-        const y = horizonY - 90 + ((i * 112 + scroll * 1.02) % (span + 210));
-        if (y > cutoffY + 70) continue;
-        const t = clamp((y - horizonY) / Math.max(1, span), 0, 1);
+        const y = ((i * 128 + scroll * 1.0) % (this.h + 220)) - 90;
+        if (y < horizonY - 24) continue;
+        const t = clamp((y - horizonY) / Math.max(1, this.h - horizonY), 0, 1);
         const width = 64 + t * 92;
-        const height = 150 + t * 190;
+        const height = 150 + t * 220;
         const x = side < 0 ? -18 - (i % 3) * 8 : this.w - width + 18 + (i % 3) * 8;
         const top = y - height * .56;
-
-        ctx.globalAlpha = bossLocked ? .5 : .78;
+        ctx.globalAlpha = bossLocked ? .52 : .78;
         ctx.fillStyle = 'rgba(2,10,18,.97)';
         ctx.beginPath();
         if (side < 0) {
@@ -2780,12 +2818,10 @@ export class Game {
         ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.78)' : 'rgba(66,232,255,.76)';
         ctx.lineWidth = 2;
         ctx.stroke();
-
         ctx.fillStyle = bossLocked ? 'rgba(255,72,96,.22)' : 'rgba(115,247,255,.22)';
         for (let row = top + 24; row < y + height * .34; row += 22 + t * 6) {
           ctx.fillRect(x + 10, row, Math.max(16, width - 22), 2);
         }
-
         const signW = 22 + t * 26;
         const signH = 72 + t * 78;
         const sx = side < 0 ? sideBoundary(side, y) - signW - 8 : sideBoundary(side, y) + 8;
@@ -2799,89 +2835,88 @@ export class Game {
         ctx.fillRect(sx + 4, sy + 6, Math.max(4, signW - 8), signH - 12);
       }
 
-      // A large lower facade reaches the final allowed edge, but never enters the lower grid zone.
-      const lowerTop = cutoffY - 190;
-      const innerTop = sideBoundary(side, lowerTop) + (side < 0 ? -18 : 18);
-      const innerBottom = sideBoundary(side, cutoffY) + (side < 0 ? -4 : 4);
-      ctx.globalAlpha = bossLocked ? .42 : .66;
-      ctx.fillStyle = 'rgba(2,10,18,.96)';
+      // Lower solid side mass: keep it physical and larger, not faded out.
+      const lowerTop = this.h * .70;
+      const lowerPeak = this.h * .58;
+      const innerUpper = sideBoundary(side, lowerPeak) + (side < 0 ? -18 : 18);
+      const innerLower = sideBoundary(side, this.h) + (side < 0 ? -3 : 3);
+      ctx.globalAlpha = bossLocked ? .58 : .82;
+      ctx.fillStyle = 'rgba(2,10,18,.98)';
       ctx.beginPath();
       if (side < 0) {
-        ctx.moveTo(0, lowerTop - 12);
-        ctx.lineTo(innerTop, lowerTop);
-        ctx.lineTo(innerBottom, cutoffY);
-        ctx.lineTo(0, cutoffY);
+        ctx.moveTo(0, lowerTop);
+        ctx.lineTo(innerUpper, lowerPeak);
+        ctx.lineTo(innerLower, this.h);
+        ctx.lineTo(0, this.h);
       } else {
-        ctx.moveTo(this.w, lowerTop - 12);
-        ctx.lineTo(innerTop, lowerTop);
-        ctx.lineTo(innerBottom, cutoffY);
-        ctx.lineTo(this.w, cutoffY);
+        ctx.moveTo(this.w, lowerTop);
+        ctx.lineTo(innerUpper, lowerPeak);
+        ctx.lineTo(innerLower, this.h);
+        ctx.lineTo(this.w, this.h);
       }
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.42)' : 'rgba(66,232,255,.44)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.46)' : 'rgba(66,232,255,.44)';
+      ctx.lineWidth = 2.2;
       ctx.stroke();
+      // Structural bands on the lower mass.
+      ctx.globalAlpha = bossLocked ? .24 : .26;
+      ctx.strokeStyle = bossLocked ? 'rgba(255,82,102,.55)' : 'rgba(112,245,255,.55)';
+      ctx.lineWidth = 1.4;
+      for (let yy = lowerPeak + 10; yy < this.h; yy += 16) {
+        const left = side < 0 ? 0 : sideBoundary(side, yy) + 10;
+        const right = side < 0 ? sideBoundary(side, yy) - 10 : this.w;
+        ctx.beginPath();
+        ctx.moveTo(left, yy);
+        ctx.lineTo(right, yy + (side < 0 ? -8 : 8));
+        ctx.stroke();
+      }
 
-      // Steep inner guide ends at the same cutoff as the scenery.
+      // Inner guide line across the whole wedge.
       ctx.globalAlpha = bossLocked ? .5 : .72;
       ctx.strokeStyle = bossLocked ? '#ff496d' : '#58f3ff';
       ctx.lineWidth = 2.2;
       ctx.beginPath();
       ctx.moveTo(sideBoundary(side, horizonY - 4), horizonY - 4);
-      ctx.lineTo(sideBoundary(side, cutoffY), cutoffY);
+      ctx.lineTo(sideBoundary(side, this.h), this.h);
       ctx.stroke();
 
       if (bossLocked) {
         const pulse = .5 + .5 * Math.sin(this.frame * .08);
-        ctx.fillStyle = `rgba(255,42,78,${.035 + pulse * .035})`;
-        ctx.fillRect(0, horizonY - 12, this.w, cutoffY - horizonY + 12);
+        ctx.fillStyle = `rgba(255,42,78,${.03 + pulse * .03})`;
+        ctx.fillRect(0, horizonY - 16, this.w, this.h - horizonY + 16);
       }
       ctx.restore();
     };
 
     drawSide(-1);
     drawSide(1);
-
-    // Small distant skyline at the horizon cap, still outside the center road.
-    ctx.save();
-    ctx.globalAlpha = bossLocked ? .16 : .26;
-    for (let i = 0; i < 14; i += 1) {
-      const side = i % 2 === 0 ? -1 : 1;
-      const width = 10 + (i * 5) % 17;
-      const height = 22 + (i * 17) % 60;
-      const edge = sideBoundary(side, horizonY - 4);
-      const x = side < 0 ? edge - 18 - (i >> 1) * 12 - width : edge + 18 + (i >> 1) * 12;
-      ctx.fillStyle = 'rgba(2,10,18,.92)';
-      ctx.fillRect(x, horizonY - height, width, height);
-    }
-    ctx.restore();
   }
 
   drawNeonOutskirtsParticles(ctx) {
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     const scroll = this.sceneScroll;
     const horizonY = 88;
-    const cutoffY = Math.round(this.h * .72);
     const sideBoundary = (side, y) => {
-      const t = clamp((y - horizonY) / Math.max(1, cutoffY - horizonY), 0, 1);
+      const t = clamp((y - horizonY) / Math.max(1, this.h - horizonY), 0, 1);
       const topInset = 176;
-      const cutoffInset = 54;
-      const inset = topInset + (cutoffInset - topInset) * t;
+      const bottomInset = 54;
+      const inset = topInset + (bottomInset - topInset) * t;
       return side < 0 ? inset : this.w - inset;
     };
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 30; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
-      const y = horizonY - 30 + ((i * 74 + scroll * (.5 + (i % 5) * .11)) % (cutoffY - horizonY + 80));
-      if (y < horizonY - 6 || y >= cutoffY) continue;
+      const y = horizonY - 24 + ((i * 74 + scroll * (.5 + (i % 5) * .11)) % (this.h - horizonY + 40));
+      if (y < horizonY - 8) continue;
       const limit = sideBoundary(side, y);
-      const band = side < 0 ? limit - 6 : this.w - limit - 6;
-      const offset = 8 + ((i * 19) % Math.max(10, Math.floor(band)));
+      const band = side < 0 ? limit - 8 : this.w - limit - 8;
+      const offset = 10 + ((i * 19) % Math.max(12, Math.floor(band)));
       const x = side < 0 ? limit - offset : limit + offset;
-      const fade = clamp((cutoffY - y) / 70, 0, 1);
-      const alpha = (bossLocked ? .045 : .11 + (i % 4) * .02) * fade;
+      // soft in the top emergence zone, stronger in the middle and lower wedges.
+      const emergence = y < horizonY + 62 ? clamp((y - (horizonY - 12)) / 74, 0, 1) * .45 : 1;
+      const alpha = (bossLocked ? .04 : .11 + (i % 4) * .02) * emergence;
       ctx.strokeStyle = `rgba(${i % 3 === 0 ? '126,250,255' : '64,190,255'},${alpha})`;
       ctx.lineWidth = i % 8 === 0 ? 2 : 1;
       ctx.beginPath();
