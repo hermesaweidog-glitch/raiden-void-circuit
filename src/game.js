@@ -2714,13 +2714,14 @@ export class Game {
     const scroll = this.sceneScroll;
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     const horizonY = 88;
-    // The playable road is the center corridor. All stage dressing must stay OUTSIDE this wedge.
-    // Wider at the horizon, tighter near the player, matching the red-marked side regions from feedback.
+    const cutoffY = Math.round(this.h * .72);
+    // Outer scenery is limited to two upper side wedges. It must end before the
+    // lower expanding floor grid becomes the dominant horizontal reference.
     const sideBoundary = (side, y) => {
-      const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
-      const topInset = 108;
-      const bottomInset = 42;
-      const inset = topInset + (bottomInset - topInset) * t;
+      const t = clamp((y - horizonY) / Math.max(1, cutoffY - horizonY), 0, 1);
+      const topInset = 176;
+      const cutoffInset = 54;
+      const inset = topInset + (cutoffInset - topInset) * t;
       return side < 0 ? inset : this.w - inset;
     };
 
@@ -2730,70 +2731,48 @@ export class Game {
       if (side < 0) {
         ctx.moveTo(0, horizonY - 12);
         ctx.lineTo(sideBoundary(side, horizonY - 12), horizonY - 12);
-        ctx.lineTo(sideBoundary(side, this.h), this.h);
-        ctx.lineTo(0, this.h);
+        ctx.lineTo(sideBoundary(side, cutoffY), cutoffY);
+        ctx.lineTo(0, cutoffY);
       } else {
         ctx.moveTo(sideBoundary(side, horizonY - 12), horizonY - 12);
         ctx.lineTo(this.w, horizonY - 12);
-        ctx.lineTo(this.w, this.h);
-        ctx.lineTo(sideBoundary(side, this.h), this.h);
+        ctx.lineTo(this.w, cutoffY);
+        ctx.lineTo(sideBoundary(side, cutoffY), cutoffY);
       }
       ctx.closePath();
       ctx.clip();
 
-      const district = ctx.createLinearGradient(0, horizonY, 0, this.h);
-      district.addColorStop(0, bossLocked ? 'rgba(5,12,20,.12)' : 'rgba(5,30,44,.15)');
-      district.addColorStop(.4, bossLocked ? 'rgba(7,14,22,.44)' : 'rgba(7,34,50,.48)');
-      district.addColorStop(1, bossLocked ? 'rgba(8,12,18,.92)' : 'rgba(7,26,38,.96)');
+      const district = ctx.createLinearGradient(0, horizonY, 0, cutoffY);
+      district.addColorStop(0, bossLocked ? 'rgba(5,12,20,.12)' : 'rgba(5,30,44,.16)');
+      district.addColorStop(.55, bossLocked ? 'rgba(7,14,22,.48)' : 'rgba(7,34,50,.52)');
+      district.addColorStop(.9, bossLocked ? 'rgba(8,12,18,.78)' : 'rgba(7,26,38,.8)');
+      district.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = district;
-      ctx.fillRect(0, horizonY - 12, this.w, this.h - horizonY + 12);
+      ctx.fillRect(0, horizonY - 12, this.w, cutoffY - horizonY + 12);
 
-      // Permanent mega-blocks rising from the bottom edge so the side world clearly starts at the bottom.
-      for (let i = 0; i < 4; i += 1) {
-        const bandTop = horizonY + 26 + i * 108 - (bossLocked ? 0 : (scroll * .22) % 108);
-        const bandBottom = Math.min(this.h + 80, bandTop + 180 + i * 26);
-        const innerTop = sideBoundary(side, bandTop) + (side < 0 ? -8 - i * 10 : 8 + i * 10);
-        const innerBottom = sideBoundary(side, Math.min(this.h, bandBottom)) + (side < 0 ? -2 - i * 5 : 2 + i * 5);
-        const outerTop = side < 0 ? 0 : this.w;
-        const outerBottom = side < 0 ? 0 : this.w;
-        ctx.globalAlpha = bossLocked ? .34 : .52;
-        ctx.fillStyle = 'rgba(2,10,18,.94)';
-        ctx.beginPath();
-        ctx.moveTo(outerTop, bandTop - 18);
-        ctx.lineTo(innerTop, bandTop);
-        ctx.lineTo(innerBottom, bandBottom);
-        ctx.lineTo(outerBottom, bandBottom + 8);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.34)' : 'rgba(66,232,255,.36)';
-        ctx.lineWidth = 1.8;
-        ctx.stroke();
-      }
-
-      // Large buildings occupy the complete outer wedge and extend visually down to the bottom edge.
-      for (let i = 0; i < 9; i += 1) {
-        const y = ((i * 138 + scroll * 1.08) % (this.h + 280)) - 140;
-        if (y < horizonY - 24) continue;
-        const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
-        const width = 52 + t * 96;
-        const height = 138 + t * 240;
-        const edge = side < 0 ? -6 : this.w - width + 6;
-        const inset = 4 + (i % 3) * 10;
-        const x = side < 0 ? edge - inset : edge + inset;
+      // Large moving buildings remain inside the upper wedge only.
+      const span = cutoffY - horizonY;
+      for (let i = 0; i < 8; i += 1) {
+        const y = horizonY - 90 + ((i * 112 + scroll * 1.02) % (span + 210));
+        if (y > cutoffY + 70) continue;
+        const t = clamp((y - horizonY) / Math.max(1, span), 0, 1);
+        const width = 64 + t * 92;
+        const height = 150 + t * 190;
+        const x = side < 0 ? -18 - (i % 3) * 8 : this.w - width + 18 + (i % 3) * 8;
         const top = y - height * .56;
 
         ctx.globalAlpha = bossLocked ? .5 : .78;
         ctx.fillStyle = 'rgba(2,10,18,.97)';
         ctx.beginPath();
         if (side < 0) {
-          ctx.moveTo(x, top + 20);
+          ctx.moveTo(x, top + 22);
           ctx.lineTo(x + width * .78, top);
-          ctx.lineTo(x + width, y + height * .48);
+          ctx.lineTo(x + width, y + height * .46);
           ctx.lineTo(x, y + height * .5);
         } else {
-          ctx.moveTo(x + width, top + 20);
+          ctx.moveTo(x + width, top + 22);
           ctx.lineTo(x + width * .22, top);
-          ctx.lineTo(x, y + height * .48);
+          ctx.lineTo(x, y + height * .46);
           ctx.lineTo(x + width, y + height * .5);
         }
         ctx.closePath();
@@ -2803,38 +2782,60 @@ export class Game {
         ctx.stroke();
 
         ctx.fillStyle = bossLocked ? 'rgba(255,72,96,.22)' : 'rgba(115,247,255,.22)';
-        for (let row = top + 22; row < y + height * .38; row += 20 + t * 7) {
-          const innerX = side < 0 ? x + 8 : x + 12;
-          ctx.fillRect(innerX, row, Math.max(14, width - 22), 2);
+        for (let row = top + 24; row < y + height * .34; row += 22 + t * 6) {
+          ctx.fillRect(x + 10, row, Math.max(16, width - 22), 2);
         }
 
-        // Oversized vertical neon sign facing the route but still clipped outside it.
-        const signW = 18 + t * 28;
-        const signH = 62 + t * 88;
-        const sx = side < 0 ? sideBoundary(side, y) - signW - 7 : sideBoundary(side, y) + 7;
-        const sy = y - signH * .45;
+        const signW = 22 + t * 26;
+        const signH = 72 + t * 78;
+        const sx = side < 0 ? sideBoundary(side, y) - signW - 8 : sideBoundary(side, y) + 8;
+        const sy = y - signH * .44;
         ctx.fillStyle = 'rgba(4,18,28,.92)';
         ctx.fillRect(sx, sy, signW, signH);
         ctx.strokeStyle = bossLocked ? '#ff496d' : '#42e8ff';
         ctx.lineWidth = 2;
         ctx.strokeRect(sx, sy, signW, signH);
         ctx.fillStyle = bossLocked ? 'rgba(255,68,94,.3)' : 'rgba(126,250,255,.34)';
-        ctx.fillRect(sx + 4, sy + 5, Math.max(4, signW - 8), signH - 10);
+        ctx.fillRect(sx + 4, sy + 6, Math.max(4, signW - 8), signH - 12);
       }
 
-      // Continuous inner guide line from horizon to bottom, following the requested steeper diagonal.
+      // A large lower facade reaches the final allowed edge, but never enters the lower grid zone.
+      const lowerTop = cutoffY - 190;
+      const innerTop = sideBoundary(side, lowerTop) + (side < 0 ? -18 : 18);
+      const innerBottom = sideBoundary(side, cutoffY) + (side < 0 ? -4 : 4);
+      ctx.globalAlpha = bossLocked ? .42 : .66;
+      ctx.fillStyle = 'rgba(2,10,18,.96)';
+      ctx.beginPath();
+      if (side < 0) {
+        ctx.moveTo(0, lowerTop - 12);
+        ctx.lineTo(innerTop, lowerTop);
+        ctx.lineTo(innerBottom, cutoffY);
+        ctx.lineTo(0, cutoffY);
+      } else {
+        ctx.moveTo(this.w, lowerTop - 12);
+        ctx.lineTo(innerTop, lowerTop);
+        ctx.lineTo(innerBottom, cutoffY);
+        ctx.lineTo(this.w, cutoffY);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.42)' : 'rgba(66,232,255,.44)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Steep inner guide ends at the same cutoff as the scenery.
       ctx.globalAlpha = bossLocked ? .5 : .72;
       ctx.strokeStyle = bossLocked ? '#ff496d' : '#58f3ff';
       ctx.lineWidth = 2.2;
       ctx.beginPath();
       ctx.moveTo(sideBoundary(side, horizonY - 4), horizonY - 4);
-      ctx.lineTo(sideBoundary(side, this.h), this.h);
+      ctx.lineTo(sideBoundary(side, cutoffY), cutoffY);
       ctx.stroke();
 
       if (bossLocked) {
         const pulse = .5 + .5 * Math.sin(this.frame * .08);
         ctx.fillStyle = `rgba(255,42,78,${.035 + pulse * .035})`;
-        ctx.fillRect(0, horizonY - 12, this.w, this.h - horizonY + 12);
+        ctx.fillRect(0, horizonY - 12, this.w, cutoffY - horizonY + 12);
       }
       ctx.restore();
     };
@@ -2842,15 +2843,15 @@ export class Game {
     drawSide(-1);
     drawSide(1);
 
-    // Distant skyline only at the horizon cap, still outside the central road corridor.
+    // Small distant skyline at the horizon cap, still outside the center road.
     ctx.save();
     ctx.globalAlpha = bossLocked ? .16 : .26;
     for (let i = 0; i < 14; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
       const width = 10 + (i * 5) % 17;
       const height = 22 + (i * 17) % 60;
-      const base = side < 0 ? sideBoundary(side, horizonY - 4) - 10 - (i >> 1) * 10 : sideBoundary(side, horizonY - 4) + 10 + (i >> 1) * 10 - width;
-      const x = side < 0 ? Math.max(0, base - width) : Math.min(this.w - width, base);
+      const edge = sideBoundary(side, horizonY - 4);
+      const x = side < 0 ? edge - 18 - (i >> 1) * 12 - width : edge + 18 + (i >> 1) * 12;
       ctx.fillStyle = 'rgba(2,10,18,.92)';
       ctx.fillRect(x, horizonY - height, width, height);
     }
@@ -2861,24 +2862,26 @@ export class Game {
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     const scroll = this.sceneScroll;
     const horizonY = 88;
+    const cutoffY = Math.round(this.h * .72);
     const sideBoundary = (side, y) => {
-      const t = clamp((y - horizonY) / (this.h - horizonY), 0, 1);
-      const topInset = 108;
-      const bottomInset = 42;
-      const inset = topInset + (bottomInset - topInset) * t;
+      const t = clamp((y - horizonY) / Math.max(1, cutoffY - horizonY), 0, 1);
+      const topInset = 176;
+      const cutoffInset = 54;
+      const inset = topInset + (cutoffInset - topInset) * t;
       return side < 0 ? inset : this.w - inset;
     };
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 32; i += 1) {
+    for (let i = 0; i < 30; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
-      const y = ((i * 86 + scroll * (.55 + (i % 5) * .12)) % (this.h + 100)) - 50;
-      if (y < horizonY - 6) continue;
+      const y = horizonY - 30 + ((i * 74 + scroll * (.5 + (i % 5) * .11)) % (cutoffY - horizonY + 80));
+      if (y < horizonY - 6 || y >= cutoffY) continue;
       const limit = sideBoundary(side, y);
-      const band = side < 0 ? limit - 4 : this.w - limit - 4;
-      const offset = 6 + ((i * 19) % Math.max(8, Math.floor(band)));
+      const band = side < 0 ? limit - 6 : this.w - limit - 6;
+      const offset = 8 + ((i * 19) % Math.max(10, Math.floor(band)));
       const x = side < 0 ? limit - offset : limit + offset;
-      const alpha = bossLocked ? .045 : .11 + (i % 4) * .02;
+      const fade = clamp((cutoffY - y) / 70, 0, 1);
+      const alpha = (bossLocked ? .045 : .11 + (i % 4) * .02) * fade;
       ctx.strokeStyle = `rgba(${i % 3 === 0 ? '126,250,255' : '64,190,255'},${alpha})`;
       ctx.lineWidth = i % 8 === 0 ? 2 : 1;
       ctx.beginPath();
