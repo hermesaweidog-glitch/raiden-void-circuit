@@ -5,7 +5,7 @@ class FakeAudio {
   static instances = [];
   static rejectFirstFor = '';
 
-  constructor(src) {
+  constructor(src = '') {
     this.src = src;
     this.preload = '';
     this.loop = false;
@@ -36,29 +36,37 @@ globalThis.Audio = FakeAudio;
 const { MusicController } = await import('../src/audio.js');
 const flushPromises = async () => { await Promise.resolve(); await Promise.resolve(); };
 
-test('first user gesture starts the prepared menu and primes later music tracks', async () => {
+test('music uses one persistent media element across menu, stage, warning, and boss scenes', async () => {
   FakeAudio.instances = [];
   FakeAudio.rejectFirstFor = '';
   const music = new MusicController();
-  music.fade = (track, target) => { track.audio.volume = target; };
+  music.fade = (target, _duration, stopAtEnd = false, onComplete = null) => {
+    music.audio.volume = target;
+    if (stopAtEnd && target <= 0) music.audio.pause();
+    onComplete?.();
+  };
   music.prepare('menu');
 
   music.unlock();
   await flushPromises();
+  assert.equal(FakeAudio.instances.length, 1);
+  assert.match(music.audio.src, /menu\.mp3/);
+  assert.equal(music.audio.paused, false);
 
-  const menu = FakeAudio.instances.find(audio => audio.src.includes('/menu.mp3'));
-  assert.equal(menu.playCalls, 1);
-  assert.equal(menu.paused, false);
-  for (const audio of FakeAudio.instances.filter(item => item !== menu)) {
-    assert.equal(audio.playCalls, 1, `${audio.src} should be primed during the gesture`);
-  }
+  music.scene('stage');
+  assert.match(music.audio.src, /stage\.mp3/);
+  music.scene('warning');
+  assert.match(music.audio.src, /boss-warning\.mp3/);
+  music.scene('boss');
+  assert.match(music.audio.src, /boss\.mp3/);
+  assert.equal(FakeAudio.instances.length, 1);
 });
 
 test('a blocked first play remains queued and succeeds on the next gesture', async () => {
   FakeAudio.instances = [];
   FakeAudio.rejectFirstFor = 'menu.mp3';
   const music = new MusicController();
-  music.fade = (track, target) => { track.audio.volume = target; };
+  music.fade = (target) => { music.audio.volume = target; };
   music.prepare('menu');
 
   music.unlock();
@@ -67,8 +75,7 @@ test('a blocked first play remains queued and succeeds on the next gesture', asy
 
   music.unlock();
   await flushPromises();
-  const menu = FakeAudio.instances.find(audio => audio.src.includes('/menu.mp3'));
-  assert.equal(menu.playCalls, 2);
-  assert.equal(menu.paused, false);
+  assert.equal(music.audio.playCalls, 2);
+  assert.equal(music.audio.paused, false);
   assert.equal(music.unlocked, true);
 });

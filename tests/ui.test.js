@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=55"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=56"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -109,7 +109,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.55/);
+  assert.match(html, /ver\.56/);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {

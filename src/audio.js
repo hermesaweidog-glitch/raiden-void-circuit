@@ -7,6 +7,9 @@ export const MUSIC_SCENES = Object.freeze({
   boss: { src: './assets/audio/boss.mp3', loop: true, volume: .58 },
 });
 
+// One persistent HTMLAudio element is used for every music scene. Mobile Safari
+// can suspend or replace playback when several media elements are primed during
+// the same gesture; keeping one unlocked player makes later scene changes stable.
 export class MusicController {
   constructor({ muted = false } = {}) {
     this.muted = Boolean(muted);
@@ -14,24 +17,23 @@ export class MusicController {
     this.pausedByGame = false;
     this.currentKey = null;
     this.desiredKey = null;
-    this.tracks = Object.fromEntries(Object.entries(MUSIC_SCENES).map(([key, definition]) => [key, this.createTrack(key, definition)]));
+    this.fadeToken = 0;
+    this.audio = this.createPlayer();
   }
 
-  createTrack(key, definition) {
+  createPlayer() {
     if (typeof globalThis.Audio !== 'function') return null;
-    const audio = new globalThis.Audio(definition.src);
+    const audio = new globalThis.Audio();
     audio.preload = 'auto';
-    audio.loop = definition.loop;
     audio.volume = 0;
     audio.playsInline = true;
     audio.setAttribute?.('playsinline', '');
     audio.setAttribute?.('webkit-playsinline', '');
-    audio.load?.();
-    const track = { key, audio, volume: definition.volume, fadeToken: 0, primed: false };
     audio.addEventListener?.('ended', () => {
-      if (this.currentKey === key && !audio.loop) this.currentKey = null;
+      const scene = MUSIC_SCENES[this.currentKey];
+      if (scene && !scene.loop) this.currentKey = null;
     });
-    return track;
+    return audio;
   }
 
   prepare(key) {
@@ -42,36 +44,13 @@ export class MusicController {
 
   unlock() {
     this.unlocked = true;
-    const started = !this.muted && !this.pausedByGame && this.desiredKey
-      ? this.startDesired(false)
-      : false;
-    this.primeInactiveTracks();
-    return started;
+    if (this.muted || this.pausedByGame || !this.desiredKey) return false;
+    return this.startDesired(false);
   }
 
-  primeInactiveTracks() {
-    for (const track of Object.values(this.tracks)) {
-      if (!track || track.key === this.currentKey || track.primed) continue;
-      const audio = track.audio;
-      const previousMuted = audio.muted;
-      audio.muted = true;
-      audio.volume = 0;
-      let result;
-      try { result = audio.play(); }
-      catch {
-        audio.muted = previousMuted;
-        continue;
-      }
-      Promise.resolve(result).then(() => {
-        audio.pause();
-        try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
-        audio.muted = previousMuted;
-        track.primed = true;
-      }).catch(() => {
-        audio.muted = previousMuted;
-      });
-    }
-  }
+  // Kept as a compatibility no-op. A single player no longer needs competing
+  // hidden media elements to be primed.
+  primeInactiveTracks() { return true; }
 
   setMuted(muted) {
     this.muted = Boolean(muted);
@@ -84,28 +63,36 @@ export class MusicController {
 
   scene(key, { fadeOut = .32, fadeIn = .42, restart = true } = {}) {
     if (!this.prepare(key)) return false;
-    if (!this.unlocked || this.muted || this.pausedByGame) return false;
-    const next = this.tracks[key];
-    if (!next) return false;
+    if (!this.unlocked || this.muted || this.pausedByGame || !this.audio) return false;
+    const definition = MUSIC_SCENES[key];
 
-    if (this.currentKey === key) {
+    if (this.currentKey === key && this.audio.src) {
       if (restart) {
-        try { next.audio.currentTime = 0; } catch { /* media not seekable yet */ }
+        try { this.audio.currentTime = 0; } catch { /* media not seekable yet */ }
       }
-      this.safePlay(next);
-      this.fade(next, next.volume, fadeIn);
+      this.safePlay();
+      this.fade(definition.volume, fadeIn);
       return true;
     }
 
-    const previous = this.tracks[this.currentKey];
-    if (previous) this.fade(previous, 0, fadeOut, true);
+    const switchTrack = () => {
+      if (!this.audio) return;
+      this.fadeToken += 1;
+      this.currentKey = key;
+      this.audio.pause();
+      this.audio.src = definition.src;
+      this.audio.loop = definition.loop;
+      this.audio.preload = 'auto';
+      this.audio.volume = 0;
+      try { if (restart) this.audio.currentTime = 0; } catch { /* ignore */ }
+      this.audio.load?.();
+      this.safePlay();
+      this.fade(definition.volume, fadeIn);
+    };
 
-    this.currentKey = key;
-    next.fadeToken += 1;
-    try { if (restart) next.audio.currentTime = 0; } catch { /* media not seekable yet */ }
-    next.audio.volume = 0;
-    this.safePlay(next);
-    this.fade(next, next.volume, fadeIn);
+    if (this.currentKey && fadeOut > 0 && !this.audio.paused && this.audio.volume > 0) {
+      this.fade(0, fadeOut, true, switchTrack);
+    } else switchTrack();
     return true;
   }
 
@@ -116,12 +103,8 @@ export class MusicController {
 
   stop({ duration = .35, clearDesired = true } = {}) {
     if (clearDesired) this.desiredKey = null;
-    const current = this.tracks[this.currentKey];
     this.currentKey = null;
-    if (current) this.fade(current, 0, duration, true);
-    for (const track of Object.values(this.tracks)) {
-      if (track && track !== current && !track.audio.paused) this.fade(track, 0, duration, true);
-    }
+    if (this.audio) this.fade(0, duration, true);
   }
 
   pause() {
@@ -135,59 +118,52 @@ export class MusicController {
   }
 
   pauseAll() {
-    for (const track of Object.values(this.tracks)) {
-      if (!track) continue;
-      track.fadeToken += 1;
-      track.audio.pause();
-    }
+    this.fadeToken += 1;
+    this.audio?.pause();
   }
 
-  safePlay(track) {
-    const audio = track.audio;
+  safePlay() {
+    if (!this.audio) return false;
     let result;
-    try { result = audio.play(); }
+    try { result = this.audio.play(); }
     catch {
       this.unlocked = false;
       return false;
     }
-    Promise.resolve(result).then(() => {
-      track.primed = true;
-    }).catch(() => {
+    Promise.resolve(result).catch(() => {
       // Keep the desired scene queued and retry on the next real user gesture.
-      if (this.currentKey === track.key || this.desiredKey === track.key) this.unlocked = false;
+      this.unlocked = false;
     });
     return true;
   }
 
-  fade(track, target, duration, stopAtEnd = false) {
-    if (!track) return;
-    const token = ++track.fadeToken;
-    const audio = track.audio;
-    const startVolume = Number.isFinite(audio.volume) ? audio.volume : 0;
+  fade(target, duration, stopAtEnd = false, onComplete = null) {
+    if (!this.audio) return;
+    const token = ++this.fadeToken;
+    const startVolume = Number.isFinite(this.audio.volume) ? this.audio.volume : 0;
     const started = now();
     const milliseconds = Math.max(0, duration * 1000);
 
+    const finish = () => {
+      if (stopAtEnd && target <= 0) this.audio.pause();
+      onComplete?.();
+    };
+
     if (milliseconds === 0) {
-      audio.volume = target;
-      if (stopAtEnd && target <= 0) {
-        audio.pause();
-        try { audio.currentTime = 0; } catch { /* ignore */ }
-      }
+      this.audio.volume = target;
+      finish();
       return;
     }
 
     const step = () => {
-      if (track.fadeToken !== token) return;
+      if (this.fadeToken !== token) return;
       const progress = Math.min(1, (now() - started) / milliseconds);
-      audio.volume = startVolume + (target - startVolume) * progress;
+      this.audio.volume = startVolume + (target - startVolume) * progress;
       if (progress < 1) {
         setTimeout(step, 24);
         return;
       }
-      if (stopAtEnd && target <= 0) {
-        audio.pause();
-        try { audio.currentTime = 0; } catch { /* ignore */ }
-      }
+      finish();
     };
     step();
   }
