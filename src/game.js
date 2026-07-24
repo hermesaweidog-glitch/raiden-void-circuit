@@ -89,6 +89,21 @@ export class Game {
       image.src = craft.art;
       return [craft.id, image];
     }));
+    const neonSceneAssets = {
+      upperLeft: './assets/scenes/neon-outskirts/upper-left.webp',
+      upperRight: './assets/scenes/neon-outskirts/upper-right.webp',
+      midLeft: './assets/scenes/neon-outskirts/mid-left.webp',
+      midRight: './assets/scenes/neon-outskirts/mid-right.webp',
+      lowerLeft: './assets/scenes/neon-outskirts/lower-left.webp',
+      lowerRight: './assets/scenes/neon-outskirts/lower-right.webp',
+    };
+    this.neonSceneImages = Object.fromEntries(Object.entries(neonSceneAssets).map(([key, src]) => {
+      if (typeof Image === 'undefined') return [key, null];
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = src;
+      return [key, image];
+    }));
     this.bindInput();
     document.addEventListener('visibilitychange', () => {
       this.accumulator = 0;
@@ -2727,164 +2742,103 @@ export class Game {
   }
 
   drawNeonOutskirts(ctx) {
-    const scroll = this.sceneScroll;
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
-    const horizonY = 88;
-    const sideBoundary = (side, y) => {
+    const horizonY = 78;
+    const boundary = (side, y) => {
       const t = clamp((y - horizonY) / Math.max(1, this.h - horizonY), 0, 1);
-      const topInset = 176;
-      const bottomInset = 54;
-      const inset = topInset + (bottomInset - topInset) * t;
+      const inset = 176 + (54 - 176) * t;
       return side < 0 ? inset : this.w - inset;
+    };
+    const ready = image => image?.complete && image.naturalWidth > 0;
+    const drawCover = (image, x, y, w, h, alpha = 1) => {
+      if (!ready(image)) return false;
+      const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
+      const sw = w / scale;
+      const sh = h / scale;
+      const sx = Math.max(0, (image.naturalWidth - sw) * .5);
+      const sy = Math.max(0, (image.naturalHeight - sh) * .5);
+      ctx.save();
+      ctx.globalAlpha *= alpha;
+      ctx.drawImage(image, sx, sy, Math.min(sw, image.naturalWidth), Math.min(sh, image.naturalHeight), x, y, w, h);
+      ctx.restore();
+      return true;
     };
 
     const drawSide = side => {
+      const isLeft = side < 0;
       ctx.save();
       ctx.beginPath();
-      if (side < 0) {
-        ctx.moveTo(0, horizonY - 16);
-        ctx.lineTo(sideBoundary(side, horizonY - 16), horizonY - 16);
-        ctx.lineTo(sideBoundary(side, this.h), this.h);
+      if (isLeft) {
+        ctx.moveTo(0, 0);
+        ctx.lineTo(boundary(side, 0), 0);
+        ctx.lineTo(boundary(side, this.h), this.h);
         ctx.lineTo(0, this.h);
       } else {
-        ctx.moveTo(sideBoundary(side, horizonY - 16), horizonY - 16);
-        ctx.lineTo(this.w, horizonY - 16);
+        ctx.moveTo(boundary(side, 0), 0);
+        ctx.lineTo(this.w, 0);
         ctx.lineTo(this.w, this.h);
-        ctx.lineTo(sideBoundary(side, this.h), this.h);
+        ctx.lineTo(boundary(side, this.h), this.h);
       }
       ctx.closePath();
       ctx.clip();
 
-      // Base district tone.
-      const district = ctx.createLinearGradient(0, horizonY - 16, 0, this.h);
-      district.addColorStop(0, bossLocked ? 'rgba(8,14,24,.12)' : 'rgba(7,32,48,.14)');
-      district.addColorStop(.28, bossLocked ? 'rgba(8,14,24,.34)' : 'rgba(8,32,48,.36)');
-      district.addColorStop(.68, bossLocked ? 'rgba(5,12,20,.70)' : 'rgba(6,22,34,.74)');
-      district.addColorStop(1, bossLocked ? 'rgba(3,8,14,.96)' : 'rgba(4,14,24,.98)');
-      ctx.fillStyle = district;
-      ctx.fillRect(0, horizonY - 16, this.w, this.h - horizonY + 16);
+      // A restrained dark phase field keeps the real-world assets integrated with the abstract arena.
+      const field = ctx.createLinearGradient(0, 0, 0, this.h);
+      field.addColorStop(0, bossLocked ? 'rgba(10,8,18,.24)' : 'rgba(2,20,32,.18)');
+      field.addColorStop(.55, bossLocked ? 'rgba(18,5,12,.34)' : 'rgba(2,14,24,.24)');
+      field.addColorStop(1, 'rgba(1,7,13,.62)');
+      ctx.fillStyle = field;
+      ctx.fillRect(0, 0, this.w, this.h);
 
-      // Top emergence zone: soft, blurry silhouettes so the upper red-marked area no longer feels empty.
-      for (let i = 0; i < 7; i += 1) {
-        const y = horizonY - 48 + i * 16;
-        const h = 70 + i * 18;
-        const w = 80 + i * 22;
-        const x = side < 0 ? -16 + i * 4 : this.w - w + 16 - i * 4;
-        ctx.save();
-        ctx.globalAlpha = bossLocked ? .08 : .13;
-        ctx.shadowBlur = 18;
-        ctx.shadowColor = bossLocked ? 'rgba(255,82,102,.35)' : 'rgba(94,236,255,.40)';
-        ctx.fillStyle = bossLocked ? 'rgba(255,72,96,.12)' : 'rgba(92,236,255,.12)';
-        ctx.fillRect(x, y, w, h);
-        ctx.restore();
-      }
+      const images = this.neonSceneImages || {};
+      const sideWidthTop = boundary(side, horizonY) + 18;
+      const topW = Math.max(142, sideWidthTop + 26);
+      const topX = isLeft ? 0 : this.w - topW;
+      drawCover(images[isLeft ? 'upperLeft' : 'upperRight'], topX, 4, topW, 208, bossLocked ? .30 : .48);
 
-      // Distant skyline near the horizon.
-      ctx.globalAlpha = bossLocked ? .18 : .28;
-      for (let i = 0; i < 10; i += 1) {
-        const width = 12 + (i * 5) % 18;
-        const height = 22 + (i * 13) % 48;
-        const edge = sideBoundary(side, horizonY - 4);
-        const x = side < 0 ? edge - 18 - (i * 14) - width : edge + 18 + i * 14;
-        ctx.fillStyle = 'rgba(2,10,18,.88)';
-        ctx.fillRect(x, horizonY - height, width, height);
-      }
+      // Main city facade: lightly parallax-shifted while gameplay advances.
+      const midShift = bossLocked ? 0 : (this.sceneScroll % 260) * .08;
+      const midY = 142 + midShift;
+      const midH = 460;
+      const midW = Math.max(132, boundary(side, Math.min(this.h, midY + midH)) + 36);
+      const midX = isLeft ? -8 : this.w - midW + 8;
+      drawCover(images[isLeft ? 'midLeft' : 'midRight'], midX, midY, midW, midH, bossLocked ? .48 : .72);
 
-      // Moving major buildings along the wedge.
-      for (let i = 0; i < 8; i += 1) {
-        const y = ((i * 128 + scroll * 1.0) % (this.h + 220)) - 90;
-        if (y < horizonY - 24) continue;
-        const t = clamp((y - horizonY) / Math.max(1, this.h - horizonY), 0, 1);
-        const width = 64 + t * 92;
-        const height = 150 + t * 220;
-        const x = side < 0 ? -18 - (i % 3) * 8 : this.w - width + 18 + (i % 3) * 8;
-        const top = y - height * .56;
-        ctx.globalAlpha = bossLocked ? .52 : .78;
-        ctx.fillStyle = 'rgba(2,10,18,.97)';
+      // Second copy provides continuous side-world motion without revealing an empty seam.
+      const repeatY = midY - 430;
+      drawCover(images[isLeft ? 'midLeft' : 'midRight'], midX, repeatY, midW * .86, 410, bossLocked ? .24 : .38);
+
+      // Lower structures remain solid and enlarge toward the player.
+      const lowerY = this.h * .57;
+      const lowerH = this.h - lowerY + 34;
+      const lowerW = Math.max(116, boundary(side, this.h) + 72);
+      const lowerX = isLeft ? -16 : this.w - lowerW + 16;
+      drawCover(images[isLeft ? 'lowerLeft' : 'lowerRight'], lowerX, lowerY, lowerW, lowerH, bossLocked ? .60 : .88);
+
+      // Phase-overlap veil: subtle scan displacement and cyan edge glow, no readable stage information.
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = bossLocked ? .10 : .13;
+      ctx.strokeStyle = bossLocked ? '#ff5275' : '#61efff';
+      ctx.lineWidth = 1.2;
+      for (let y = 24; y < this.h; y += 34) {
+        const edge = boundary(side, y);
         ctx.beginPath();
-        if (side < 0) {
-          ctx.moveTo(x, top + 22);
-          ctx.lineTo(x + width * .78, top);
-          ctx.lineTo(x + width, y + height * .46);
-          ctx.lineTo(x, y + height * .5);
-        } else {
-          ctx.moveTo(x + width, top + 22);
-          ctx.lineTo(x + width * .22, top);
-          ctx.lineTo(x, y + height * .46);
-          ctx.lineTo(x + width, y + height * .5);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.78)' : 'rgba(66,232,255,.76)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.fillStyle = bossLocked ? 'rgba(255,72,96,.22)' : 'rgba(115,247,255,.22)';
-        for (let row = top + 24; row < y + height * .34; row += 22 + t * 6) {
-          ctx.fillRect(x + 10, row, Math.max(16, width - 22), 2);
-        }
-        const signW = 22 + t * 26;
-        const signH = 72 + t * 78;
-        const sx = side < 0 ? sideBoundary(side, y) - signW - 8 : sideBoundary(side, y) + 8;
-        const sy = y - signH * .44;
-        ctx.fillStyle = 'rgba(4,18,28,.92)';
-        ctx.fillRect(sx, sy, signW, signH);
-        ctx.strokeStyle = bossLocked ? '#ff496d' : '#42e8ff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(sx, sy, signW, signH);
-        ctx.fillStyle = bossLocked ? 'rgba(255,68,94,.3)' : 'rgba(126,250,255,.34)';
-        ctx.fillRect(sx + 4, sy + 6, Math.max(4, signW - 8), signH - 12);
-      }
-
-      // Lower solid side mass: keep it physical and larger, not faded out.
-      const lowerTop = this.h * .70;
-      const lowerPeak = this.h * .58;
-      const innerUpper = sideBoundary(side, lowerPeak) + (side < 0 ? -18 : 18);
-      const innerLower = sideBoundary(side, this.h) + (side < 0 ? -3 : 3);
-      ctx.globalAlpha = bossLocked ? .58 : .82;
-      ctx.fillStyle = 'rgba(2,10,18,.98)';
-      ctx.beginPath();
-      if (side < 0) {
-        ctx.moveTo(0, lowerTop);
-        ctx.lineTo(innerUpper, lowerPeak);
-        ctx.lineTo(innerLower, this.h);
-        ctx.lineTo(0, this.h);
-      } else {
-        ctx.moveTo(this.w, lowerTop);
-        ctx.lineTo(innerUpper, lowerPeak);
-        ctx.lineTo(innerLower, this.h);
-        ctx.lineTo(this.w, this.h);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = bossLocked ? 'rgba(255,72,96,.46)' : 'rgba(66,232,255,.44)';
-      ctx.lineWidth = 2.2;
-      ctx.stroke();
-      // Structural bands on the lower mass.
-      ctx.globalAlpha = bossLocked ? .24 : .26;
-      ctx.strokeStyle = bossLocked ? 'rgba(255,82,102,.55)' : 'rgba(112,245,255,.55)';
-      ctx.lineWidth = 1.4;
-      for (let yy = lowerPeak + 10; yy < this.h; yy += 16) {
-        const left = side < 0 ? 0 : sideBoundary(side, yy) + 10;
-        const right = side < 0 ? sideBoundary(side, yy) - 10 : this.w;
-        ctx.beginPath();
-        ctx.moveTo(left, yy);
-        ctx.lineTo(right, yy + (side < 0 ? -8 : 8));
+        ctx.moveTo(isLeft ? Math.max(0, edge - 26) : edge, y);
+        ctx.lineTo(isLeft ? edge : Math.min(this.w, edge + 26), y + 2);
         ctx.stroke();
       }
-
-      // Inner guide line across the whole wedge.
-      ctx.globalAlpha = bossLocked ? .5 : .72;
-      ctx.strokeStyle = bossLocked ? '#ff496d' : '#58f3ff';
-      ctx.lineWidth = 2.2;
+      ctx.globalAlpha = bossLocked ? .38 : .45;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(sideBoundary(side, horizonY - 4), horizonY - 4);
-      ctx.lineTo(sideBoundary(side, this.h), this.h);
+      ctx.moveTo(boundary(side, horizonY), horizonY);
+      ctx.lineTo(boundary(side, this.h), this.h);
       ctx.stroke();
 
       if (bossLocked) {
         const pulse = .5 + .5 * Math.sin(this.frame * .08);
-        ctx.fillStyle = `rgba(255,42,78,${.03 + pulse * .03})`;
-        ctx.fillRect(0, horizonY - 16, this.w, this.h - horizonY + 16);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = `rgba(255,35,72,${.035 + pulse * .035})`;
+        ctx.fillRect(0, 0, this.w, this.h);
       }
       ctx.restore();
     };
