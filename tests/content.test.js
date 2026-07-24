@@ -15,7 +15,7 @@ test('final content roster is complete', () => {
   assert.equal(STAGES.length, 5);
   assert.equal(Object.keys(BOSSES).length, 5);
   assert.equal(Object.keys(PILOTS).length, 8);
-  assert.match(PILOTS.imperial.ability, /源晶礦結算獲取量.*通關獎勵/);
+  assert.match(PILOTS.imperial.ability, /超頻.*源晶礦結算獲取量.*1%/);
   assert.deepEqual(Object.keys(FUSIONS), ['seekerOrbit', 'seekerOrbitPlus', 'lanceOrbit', 'clusterStars', 'blackHole', 'langinus', 'suicideSquad', 'luckyStar', 'taijiMaster', 'sixHarmony', 'sixMeridians', 'overclockDirect', 'overclockPierce', 'overclockArea', 'world']);
 });
 

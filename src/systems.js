@@ -73,7 +73,7 @@ export function makeUpgradePool(build) {
   const occupiedSecondarySlots = Object.keys(secondaries).length + secondaryFusionCount;
   for (const item of Object.values(secondaryCatalog)) {
     const level = secondaries[item.id] || 0;
-    if (level >= item.max) continue;
+    if (level >= item.max || (kungfu && level > 0)) continue;
     if (consumedSecondaries.has(item.id)) continue;
     if (level > 0 || occupiedSecondarySlots < (build.secondarySlots || BUILD_LIMITS.secondary)) {
       pool.push({ ...item, category: 'secondary', level });
@@ -107,7 +107,7 @@ export function makeUpgradePool(build) {
     }
     if (build.pilotId === 'imperial') {
       const current = build.battlefieldCleanup || 0;
-      pool.push({ id: 'battlefield-cleanup-boost', category: 'battlefieldCleanup', icon: 'assets/icons/battlefield-cleanup.svg', name: '超頻：戰場清理', description: `源晶礦結算獲取量由 +${current}% 提升至 +${current + 1}%；無上限，並套用於一般模式通關獎勵。` });
+      pool.push({ id: 'battlefield-cleanup-boost', category: 'battlefieldCleanup', icon: 'assets/icons/battlefield-cleanup.svg', name: '超頻：戰場清理', description: `源晶礦結算獲取量每次 +1%，目前累積 +${current + 1}%。` });
     }
   }
   return pool;

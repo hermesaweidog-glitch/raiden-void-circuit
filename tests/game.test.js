@@ -547,7 +547,7 @@ test('seeker orbit launches max-rank orange missiles from every satellite', () =
   assert.equal(missiles.length, 9);
   assert.equal(new Set(missiles.map(missile => `${missile.x.toFixed(2)},${missile.y.toFixed(2)}`)).size, 3);
   assert.ok(missiles.every(missile => missile.color === '#ff9f1c'));
-  assert.ok(missiles.every(missile => missile.damage === 8.75 && missile.splash === 24));
+  assert.ok(missiles.every(missile => missile.damage === 7 && missile.splash === 24));
   assert.ok(missiles.every(missile => missile.guidanceActive && missile.targetId === 700));
   assert.ok(!game.playerBullets.some(bullet => bullet.color === '#a78bfa'));
 });
@@ -744,7 +744,7 @@ test('pause mode shows the complete primary, secondary, and passive loadout', ()
   assert.equal(game.mode, 'paused');
   assert.equal(game.dom['pause-overlay'].classList.contains('hidden'), false);
   assert.match(game.dom['pause-primary'].textContent, /FALCON.*MAX/);
-  assert.match(game.dom['pause-secondary'].textContent, /追蹤飛彈.*微型重力井.*攔截蜂群/);
+  assert.match(game.dom['pause-secondary'].textContent, /追蹤導彈.*微型重力井.*攔截蜂群/);
   assert.match(game.dom['pause-passive'].textContent, /磁力核心.*炸彈電容/);
 
   game.togglePause();
@@ -1760,12 +1760,10 @@ test('cluster stars fires piercing rays toward multiple locked targets', () => {
 
   game.updateSecondaries();
 
-  const rays = game.playerBullets.filter(bullet => bullet.kind === 'cluster');
-  assert.equal(rays.length, 3, 'one ray per locked target');
-  assert.ok(rays.every(ray => ray.pierce > 0), 'rays pierce through targets');
-  assert.ok(rays.every(ray => Math.hypot(ray.vx, ray.vy) > 10), 'rays are high-speed');
-  const angles = new Set(rays.map(ray => Math.atan2(ray.vy, ray.vx).toFixed(2)));
-  assert.equal(angles.size, 3, 'each ray points at a distinct target');
+  const rays = game.effects.filter(effect => effect.type === 'kungfuBeam' && effect.color === '#f0abfc');
+  assert.equal(rays.length, 3, 'one instant beam per locked target');
+  assert.ok(rays.every(ray => ray.life === 30 && ray.maxLife === 30), 'beams remain visible for 0.5 seconds');
+  assert.ok(game.enemies.every(enemy => enemy.hp < 100), 'each locked target receives one-time damage');
   assert.equal(game.effects.filter(effect => effect.type === 'clusterLock').length, 3, 'each target receives a lock-on marker');
   assert.ok(game.effects.some(effect => effect.type === 'clusterFlash'), 'launch produces a muzzle starburst');
 });
