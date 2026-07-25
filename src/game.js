@@ -2770,10 +2770,10 @@ export class Game {
     const yMid = this.h * .56;
     const yBottom = this.h * .84;
     const leftInner = y => {
-      if (y <= yTop) return lerp(this.w * .42, this.w * .36, y / Math.max(1, yTop));
-      if (y <= yMid) return lerp(this.w * .36, this.w * .15, (y - yTop) / Math.max(1, yMid - yTop));
-      if (y <= yBottom) return lerp(this.w * .15, this.w * .045, (y - yMid) / Math.max(1, yBottom - yMid));
-      return lerp(this.w * .045, this.w * .015, (y - yBottom) / Math.max(1, this.h - yBottom));
+      if (y <= yTop) return lerp(this.w * .45, this.w * .34, y / Math.max(1, yTop));
+      if (y <= yMid) return lerp(this.w * .34, this.w * .12, (y - yTop) / Math.max(1, yMid - yTop));
+      if (y <= yBottom) return lerp(this.w * .12, this.w * .03, (y - yMid) / Math.max(1, yBottom - yMid));
+      return lerp(this.w * .03, this.w * .008, (y - yBottom) / Math.max(1, this.h - yBottom));
     };
     const rightInner = y => this.w - leftInner(y);
     const sidePoly = side => {
@@ -2885,18 +2885,18 @@ export class Game {
       const midBase = (this.sceneScroll * .00108 + (side < 0 ? 0 : .21)) % 1;
       const nearBase = (this.sceneScroll * .00162 + (side < 0 ? .09 : .34)) % 1;
       const layers = [
-        { y: lerp(this.h * .28, this.h * .60, Math.pow(midBase, 1.1)), scale: 0.62 + midBase * .18, alpha: bossLocked ? .42 : .70, seed: Math.floor(this.sceneScroll * .00108) + (side < 0 ? 101 : 203), type: 'mid' },
-        { y: lerp(this.h * .38, this.h * .72, Math.pow((midBase + .5) % 1, 1.1)), scale: 0.70 + ((midBase + .5) % 1) * .18, alpha: bossLocked ? .46 : .76, seed: Math.floor(this.sceneScroll * .00108) + (side < 0 ? 151 : 253), type: 'mid' },
-        { y: lerp(this.h * .58, this.h * .94, Math.pow(nearBase, 1.0)), scale: 1.0 + nearBase * .22, alpha: bossLocked ? .58 : .98, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 307 : 409), type: 'near' },
+        { y: lerp(this.h * .30, this.h * .62, Math.pow(midBase, 1.08)), scale: 0.68 + midBase * .16, alpha: bossLocked ? .44 : .74, seed: Math.floor(this.sceneScroll * .00108) + (side < 0 ? 101 : 203), type: 'mid' },
+        { y: lerp(this.h * .54, this.h * .88, Math.pow(nearBase, .98)), scale: 1.10 + nearBase * .24, alpha: bossLocked ? .60 : 1.00, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 307 : 409), type: 'near' },
+        { y: lerp(this.h * .66, this.h * .98, Math.pow((nearBase + .5) % 1, .98)), scale: 1.20 + ((nearBase + .5) % 1) * .24, alpha: bossLocked ? .62 : 1.00, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 337 : 439), type: 'near' },
       ];
       layers.sort((a, b) => a.y - b.y);
       for (const layer of layers) {
         drawBuildingRow(side, layer.y, layer.scale, layer.seed, layer.type === 'near' ? {
-          minW: 60, maxW: 54, minH: 110, maxH: 140, alpha: layer.alpha, innerGap: 8,
+          minW: 72, maxW: 68, minH: 132, maxH: 170, alpha: layer.alpha, innerGap: 6,
           color: 'rgba(8,12,18,.985)', lineColor: bossLocked ? 'rgba(255,88,108,.22)' : 'rgba(99,237,255,.18)',
           accentColor: bossLocked ? 'rgba(255,88,108,.12)' : 'rgba(114,244,255,.10)'
         } : {
-          minW: 54, maxW: 44, minH: 86, maxH: 96, alpha: layer.alpha, innerGap: 14,
+          minW: 60, maxW: 48, minH: 94, maxH: 104, alpha: layer.alpha, innerGap: 12,
           color: 'rgba(12,18,26,.96)', lineColor: bossLocked ? 'rgba(255,88,108,.16)' : 'rgba(99,237,255,.14)',
           accentColor: bossLocked ? 'rgba(255,88,108,.10)' : 'rgba(114,244,255,.08)'
         });
@@ -2932,10 +2932,10 @@ export class Game {
     const yMid = this.h * .56;
     const yBottom = this.h * .84;
     const leftInner = y => {
-      if (y <= yTop) return lerp(this.w * .42, this.w * .36, y / Math.max(1, yTop));
-      if (y <= yMid) return lerp(this.w * .36, this.w * .15, (y - yTop) / Math.max(1, yMid - yTop));
-      if (y <= yBottom) return lerp(this.w * .15, this.w * .045, (y - yMid) / Math.max(1, yBottom - yMid));
-      return lerp(this.w * .045, this.w * .015, (y - yBottom) / Math.max(1, this.h - yBottom));
+      if (y <= yTop) return lerp(this.w * .45, this.w * .34, y / Math.max(1, yTop));
+      if (y <= yMid) return lerp(this.w * .34, this.w * .12, (y - yTop) / Math.max(1, yMid - yTop));
+      if (y <= yBottom) return lerp(this.w * .12, this.w * .03, (y - yMid) / Math.max(1, yBottom - yMid));
+      return lerp(this.w * .03, this.w * .008, (y - yBottom) / Math.max(1, this.h - yBottom));
     };
     const rightInner = y => this.w - leftInner(y);
     ctx.save();
