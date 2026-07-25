@@ -2770,10 +2770,10 @@ export class Game {
     const yMid = this.h * .56;
     const yBottom = this.h * .84;
     const leftInner = y => {
-      if (y <= yTop) return lerp(this.w * .45, this.w * .34, y / Math.max(1, yTop));
-      if (y <= yMid) return lerp(this.w * .34, this.w * .12, (y - yTop) / Math.max(1, yMid - yTop));
-      if (y <= yBottom) return lerp(this.w * .12, this.w * .03, (y - yMid) / Math.max(1, yBottom - yMid));
-      return lerp(this.w * .03, this.w * .008, (y - yBottom) / Math.max(1, this.h - yBottom));
+      if (y <= yTop) return lerp(this.w * .46, this.w * .33, y / Math.max(1, yTop));
+      if (y <= yMid) return lerp(this.w * .33, this.w * .10, (y - yTop) / Math.max(1, yMid - yTop));
+      if (y <= yBottom) return lerp(this.w * .10, this.w * .02, (y - yMid) / Math.max(1, yBottom - yMid));
+      return lerp(this.w * .02, this.w * .004, (y - yBottom) / Math.max(1, this.h - yBottom));
     };
     const rightInner = y => this.w - leftInner(y);
     const sidePoly = side => {
@@ -2797,10 +2797,10 @@ export class Game {
       const isLeft = side < 0;
       const inner = innerAt(side, y);
       const available = isLeft ? inner : this.w - inner;
-      const baseY = y + scale * 24;
-      const innerGap = scale * (opts.innerGap ?? 10);
+      const baseY = y + scale * 30;
+      const innerGap = scale * (opts.innerGap ?? 6);
       const target = isLeft ? inner - innerGap : inner + innerGap;
-      let cursor = isLeft ? -scale * 18 : this.w + scale * 18;
+      let cursor = isLeft ? -scale * 32 : this.w + scale * 32;
       const color = opts.color || 'rgba(8,12,18,.96)';
       const lineColor = opts.lineColor || (bossLocked ? 'rgba(255,88,108,.26)' : 'rgba(99,237,255,.22)');
       const accentColor = opts.accentColor || (bossLocked ? 'rgba(255,88,108,.16)' : 'rgba(114,244,255,.14)');
@@ -2812,16 +2812,16 @@ export class Game {
         const bw = (opts.minW ?? 36) * scale + r1 * (opts.maxW ?? 42) * scale;
         const bh = (opts.minH ?? 74) * scale + r2 * (opts.maxH ?? 100) * scale;
         const slant = scale * (6 + rand(seedBase + i * 3.91) * 8);
-        const spacing = scale * (8 + rand(seedBase + i * 4.87) * 10);
+        const spacing = scale * (2 + rand(seedBase + i * 4.87) * 4);
         let x;
         if (isLeft) {
           x = cursor;
-          if (x >= target || x + bw * .45 >= target) break;
-          cursor += bw * .80 + spacing;
+          if (x >= target || x + bw * .78 >= target) break;
+          cursor += bw * .94 + spacing;
         } else {
           x = cursor - bw;
-          if (x <= target || x + bw * .55 <= target) break;
-          cursor -= bw * .80 + spacing;
+          if (x <= target || x + bw * .22 <= target) break;
+          cursor -= bw * .94 + spacing;
         }
         const top = y - bh;
         ctx.fillStyle = color;
@@ -2885,34 +2885,22 @@ export class Game {
       const midBase = (this.sceneScroll * .00108 + (side < 0 ? 0 : .21)) % 1;
       const nearBase = (this.sceneScroll * .00162 + (side < 0 ? .09 : .34)) % 1;
       const layers = [
-        { y: lerp(this.h * .30, this.h * .62, Math.pow(midBase, 1.08)), scale: 0.68 + midBase * .16, alpha: bossLocked ? .44 : .74, seed: Math.floor(this.sceneScroll * .00108) + (side < 0 ? 101 : 203), type: 'mid' },
-        { y: lerp(this.h * .54, this.h * .88, Math.pow(nearBase, .98)), scale: 1.10 + nearBase * .24, alpha: bossLocked ? .60 : 1.00, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 307 : 409), type: 'near' },
-        { y: lerp(this.h * .66, this.h * .98, Math.pow((nearBase + .5) % 1, .98)), scale: 1.20 + ((nearBase + .5) % 1) * .24, alpha: bossLocked ? .62 : 1.00, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 337 : 439), type: 'near' },
+        { y: lerp(this.h * .24, this.h * .60, Math.pow(midBase, 1.02)), scale: 0.82 + midBase * .30, alpha: bossLocked ? .46 : .78, seed: Math.floor(this.sceneScroll * .00108) + (side < 0 ? 101 : 203), type: 'mid' },
+        { y: lerp(this.h * .46, this.h * .92, Math.pow(nearBase, .90)), scale: 1.22 + nearBase * .42, alpha: bossLocked ? .62 : 1.00, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 307 : 409), type: 'near' },
+        { y: lerp(this.h * .58, this.h * 1.04, Math.pow((nearBase + .5) % 1, .88)), scale: 1.38 + ((nearBase + .5) % 1) * .46, alpha: bossLocked ? .64 : 1.00, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 337 : 439), type: 'near' },
       ];
       layers.sort((a, b) => a.y - b.y);
       for (const layer of layers) {
         drawBuildingRow(side, layer.y, layer.scale, layer.seed, layer.type === 'near' ? {
-          minW: 72, maxW: 68, minH: 132, maxH: 170, alpha: layer.alpha, innerGap: 6,
+          minW: 86, maxW: 84, minH: 152, maxH: 206, alpha: layer.alpha, innerGap: 4,
           color: 'rgba(8,12,18,.985)', lineColor: bossLocked ? 'rgba(255,88,108,.22)' : 'rgba(99,237,255,.18)',
           accentColor: bossLocked ? 'rgba(255,88,108,.12)' : 'rgba(114,244,255,.10)'
         } : {
-          minW: 60, maxW: 48, minH: 94, maxH: 104, alpha: layer.alpha, innerGap: 12,
+          minW: 68, maxW: 58, minH: 108, maxH: 124, alpha: layer.alpha, innerGap: 8,
           color: 'rgba(12,18,26,.96)', lineColor: bossLocked ? 'rgba(255,88,108,.16)' : 'rgba(99,237,255,.14)',
           accentColor: bossLocked ? 'rgba(255,88,108,.10)' : 'rgba(114,244,255,.08)'
         });
       }
-
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = bossLocked ? .22 : .30;
-      ctx.strokeStyle = bossLocked ? '#ff5275' : '#61efff';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.moveTo(innerAt(side, 0), 0);
-      ctx.lineTo(innerAt(side, yTop), yTop);
-      ctx.lineTo(innerAt(side, yMid), yMid);
-      ctx.lineTo(innerAt(side, yBottom), yBottom);
-      ctx.lineTo(innerAt(side, this.h), this.h);
-      ctx.stroke();
 
       if (bossLocked) {
         const pulse = .5 + .5 * Math.sin(this.frame * .08);
@@ -2932,10 +2920,10 @@ export class Game {
     const yMid = this.h * .56;
     const yBottom = this.h * .84;
     const leftInner = y => {
-      if (y <= yTop) return lerp(this.w * .45, this.w * .34, y / Math.max(1, yTop));
-      if (y <= yMid) return lerp(this.w * .34, this.w * .12, (y - yTop) / Math.max(1, yMid - yTop));
-      if (y <= yBottom) return lerp(this.w * .12, this.w * .03, (y - yMid) / Math.max(1, yBottom - yMid));
-      return lerp(this.w * .03, this.w * .008, (y - yBottom) / Math.max(1, this.h - yBottom));
+      if (y <= yTop) return lerp(this.w * .46, this.w * .33, y / Math.max(1, yTop));
+      if (y <= yMid) return lerp(this.w * .33, this.w * .10, (y - yTop) / Math.max(1, yMid - yTop));
+      if (y <= yBottom) return lerp(this.w * .10, this.w * .02, (y - yMid) / Math.max(1, yBottom - yMid));
+      return lerp(this.w * .02, this.w * .004, (y - yBottom) / Math.max(1, this.h - yBottom));
     };
     const rightInner = y => this.w - leftInner(y);
     ctx.save();
