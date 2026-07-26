@@ -2770,10 +2770,10 @@ export class Game {
     const yMid = this.h * .56;
     const yBottom = this.h * .84;
     const leftInner = y => {
-      if (y <= yTop) return lerp(this.w * .46, this.w * .33, y / Math.max(1, yTop));
-      if (y <= yMid) return lerp(this.w * .33, this.w * .10, (y - yTop) / Math.max(1, yMid - yTop));
-      if (y <= yBottom) return lerp(this.w * .10, this.w * .02, (y - yMid) / Math.max(1, yBottom - yMid));
-      return lerp(this.w * .02, this.w * .004, (y - yBottom) / Math.max(1, this.h - yBottom));
+      if (y <= yTop) return lerp(this.w * .47, this.w * .31, y / Math.max(1, yTop));
+      if (y <= yMid) return lerp(this.w * .31, this.w * .08, (y - yTop) / Math.max(1, yMid - yTop));
+      if (y <= yBottom) return lerp(this.w * .08, this.w * .015, (y - yMid) / Math.max(1, yBottom - yMid));
+      return lerp(this.w * .015, this.w * .002, (y - yBottom) / Math.max(1, this.h - yBottom));
     };
     const rightInner = y => this.w - leftInner(y);
     const sidePoly = side => {
@@ -2788,43 +2788,40 @@ export class Game {
       ctx.closePath();
       ctx.clip();
     };
-    const innerAt = (side, y) => side < 0 ? leftInner(y) : rightInner(y);
     const rand = seed => {
       const x = Math.sin(seed * 127.1) * 43758.5453;
       return x - Math.floor(x);
     };
-    const drawBuildingRow = (side, y, scale, seedBase, opts = {}) => {
+    const innerAt = (side, y) => side < 0 ? leftInner(y) : rightInner(y);
+
+    const drawMirageBand = (side, bandY, scale, seedBase, opts = {}) => {
       const isLeft = side < 0;
-      const inner = innerAt(side, y);
-      const available = isLeft ? inner : this.w - inner;
-      const baseY = y + scale * 30;
-      const innerGap = scale * (opts.innerGap ?? 6);
-      const target = isLeft ? inner - innerGap : inner + innerGap;
-      let cursor = isLeft ? -scale * 32 : this.w + scale * 32;
-      const color = opts.color || 'rgba(8,12,18,.96)';
-      const lineColor = opts.lineColor || (bossLocked ? 'rgba(255,88,108,.26)' : 'rgba(99,237,255,.22)');
-      const accentColor = opts.accentColor || (bossLocked ? 'rgba(255,88,108,.16)' : 'rgba(114,244,255,.14)');
+      const y = bandY + Math.sin(this.frame * (opts.waveSpeed ?? .018) + seedBase * .9) * (opts.waveAmp ?? 6);
+      const baseY = y + scale * 28;
+      const inner = innerAt(side, clamp(y, 0, this.h));
+      const target = isLeft ? inner - scale * (opts.innerGap ?? 20) : inner + scale * (opts.innerGap ?? 20);
+      let cursor = isLeft ? -scale * 30 : this.w + scale * 30;
       ctx.save();
       ctx.globalAlpha *= opts.alpha ?? 1;
-      for (let i = 0; i < 16; i += 1) {
+      for (let i = 0; i < 20; i += 1) {
         const r1 = rand(seedBase + i * 1.13);
         const r2 = rand(seedBase + i * 2.37 + 9.1);
-        const bw = (opts.minW ?? 36) * scale + r1 * (opts.maxW ?? 42) * scale;
-        const bh = (opts.minH ?? 74) * scale + r2 * (opts.maxH ?? 100) * scale;
+        const bw = (opts.minW ?? 46) * scale + r1 * (opts.maxW ?? 36) * scale;
+        const bh = (opts.minH ?? 64) * scale + r2 * (opts.maxH ?? 72) * scale;
         const slant = scale * (6 + rand(seedBase + i * 3.91) * 8);
-        const spacing = scale * (2 + rand(seedBase + i * 4.87) * 4);
+        const spacing = scale * (2 + rand(seedBase + i * 4.87) * 5);
         let x;
         if (isLeft) {
           x = cursor;
-          if (x >= target || x + bw * .78 >= target) break;
-          cursor += bw * .94 + spacing;
+          if (x >= target || x + bw * .90 >= target) break;
+          cursor += bw * .95 + spacing;
         } else {
           x = cursor - bw;
-          if (x <= target || x + bw * .22 <= target) break;
-          cursor -= bw * .94 + spacing;
+          if (x <= target || x + bw * .10 <= target) break;
+          cursor -= bw * .95 + spacing;
         }
         const top = y - bh;
-        ctx.fillStyle = color;
+        ctx.fillStyle = opts.color || 'rgba(14,20,30,.92)';
         ctx.beginPath();
         if (isLeft) {
           ctx.moveTo(x, baseY);
@@ -2839,68 +2836,101 @@ export class Game {
         }
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = lineColor;
-        ctx.lineWidth = Math.max(1, scale * 1.4);
-        ctx.stroke();
         if (!opts.noWindows) {
-          ctx.fillStyle = accentColor;
-          const wx = isLeft ? x + bw * .14 : x + bw * .12;
-          const ww = bw * .66;
-          for (let row = top + 14 * scale; row < baseY - 12 * scale; row += 12 * scale) {
-            ctx.fillRect(wx, row, ww, Math.max(1, scale * 1.4));
+          ctx.fillStyle = opts.accentColor || 'rgba(114,244,255,.08)';
+          const wx = isLeft ? x + bw * .16 : x + bw * .12;
+          const ww = bw * .62;
+          for (let row = top + 14 * scale; row < baseY - 10 * scale; row += 14 * scale) {
+            ctx.fillRect(wx, row, ww, Math.max(1, scale * 1.3));
           }
         }
       }
       ctx.restore();
     };
+
+    const drawRoadPosts = side => {
+      const isLeft = side < 0;
+      const progressOffset = isLeft ? 0 : .37;
+      const postCount = 8;
+      for (let i = 0; i < postCount; i += 1) {
+        const progress = ((this.sceneScroll * .0105) + progressOffset + i / postCount) % 1;
+        const eased = Math.pow(progress, .72);
+        const y = lerp(this.h * .14, this.h * 1.12, eased);
+        const inner = innerAt(side, clamp(y, 0, this.h));
+        const offset = lerp(14, 3, eased);
+        const x = isLeft ? inner - offset : inner + offset;
+        const poleH = lerp(14, 76, eased);
+        const poleTilt = lerp(2, 11, eased);
+        const arm = lerp(5, 18, eased);
+        const glowR = lerp(2, 10, eased);
+        const alpha = bossLocked ? (.12 + eased * .14) : (.28 + eased * .34);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = bossLocked ? 'rgba(255,92,112,.68)' : 'rgba(120,242,255,.74)';
+        ctx.lineWidth = lerp(1, 3.2, eased);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + side * poleTilt, y - poleH);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + side * poleTilt, y - poleH);
+        ctx.lineTo(x + side * (poleTilt + arm), y - poleH + 1.5);
+        ctx.stroke();
+        const glowX = x + side * (poleTilt + arm);
+        const glowY = y - poleH + 1.5;
+        ctx.fillStyle = bossLocked ? 'rgba(255,96,116,.78)' : 'rgba(160,250,255,.88)';
+        ctx.beginPath();
+        ctx.arc(glowX, glowY, glowR, 0, TAU);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, glowR * 3.4);
+        g.addColorStop(0, bossLocked ? 'rgba(255,96,116,.42)' : 'rgba(120,242,255,.38)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(glowX, glowY, glowR * 3.4, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+    };
+
     const drawSide = side => {
       ctx.save();
       clipPoly(sidePoly(side));
       const bg = ctx.createLinearGradient(0, 0, 0, this.h);
-      bg.addColorStop(0, bossLocked ? 'rgba(16,8,16,.12)' : 'rgba(5,16,26,.06)');
-      bg.addColorStop(1, bossLocked ? 'rgba(8,6,10,.03)' : 'rgba(2,8,14,.02)');
+      bg.addColorStop(0, bossLocked ? 'rgba(18,8,16,.11)' : 'rgba(6,16,28,.06)');
+      bg.addColorStop(1, bossLocked ? 'rgba(8,6,10,.02)' : 'rgba(2,8,14,.02)');
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, this.w, this.h);
 
-      // fixed far skyline, faded and masked
-      drawBuildingRow(side, this.h * .16, .34, side < 0 ? 11 : 23, {
-        minW: 52, maxW: 36, minH: 52, maxH: 50,
-        alpha: bossLocked ? .12 : .18,
-        color: 'rgba(12,18,26,.92)',
-        lineColor: 'rgba(0,0,0,0)', accentColor: 'rgba(0,0,0,0)', innerGap: 20
+      // Large side scenery stays mostly fixed; only slight mirage-like undulation remains.
+      drawMirageBand(side, this.h * .18, .44, side < 0 ? 11 : 21, {
+        minW: 64, maxW: 46, minH: 78, maxH: 84, alpha: bossLocked ? .10 : .15,
+        color: 'rgba(20,28,38,.90)', accentColor: 'rgba(0,0,0,0)', innerGap: 34, waveAmp: 5, waveSpeed: .011, noWindows: true
       });
-      drawBuildingRow(side, this.h * .22, .28, side < 0 ? 31 : 41, {
-        minW: 46, maxW: 30, minH: 40, maxH: 42,
-        alpha: bossLocked ? .08 : .12,
-        color: 'rgba(24,34,46,.84)',
-        lineColor: 'rgba(0,0,0,0)', accentColor: 'rgba(0,0,0,0)', innerGap: 28
+      drawMirageBand(side, this.h * .30, .78, side < 0 ? 31 : 41, {
+        minW: 74, maxW: 60, minH: 112, maxH: 120, alpha: bossLocked ? .16 : .24,
+        color: 'rgba(16,22,32,.95)', accentColor: 'rgba(88,232,255,.05)', innerGap: 22, waveAmp: 7, waveSpeed: .015
       });
-      const fade = ctx.createLinearGradient(0, this.h * .18, 0, this.h * .34);
-      fade.addColorStop(0, 'rgba(0,0,0,0)');
-      fade.addColorStop(1, bossLocked ? 'rgba(20,10,18,.32)' : 'rgba(8,18,30,.22)');
-      ctx.fillStyle = fade;
-      ctx.fillRect(0, this.h * .18, this.w, this.h * .18);
+      drawMirageBand(side, this.h * .48, 1.08, side < 0 ? 51 : 61, {
+        minW: 82, maxW: 66, minH: 142, maxH: 152, alpha: bossLocked ? .20 : .34,
+        color: 'rgba(10,16,24,.98)', accentColor: 'rgba(114,244,255,.06)', innerGap: 14, waveAmp: 9, waveSpeed: .019
+      });
 
-      // moving rows: fewer, bigger, cleaner
-      const midBase = (this.sceneScroll * .00108 + (side < 0 ? 0 : .21)) % 1;
-      const nearBase = (this.sceneScroll * .00162 + (side < 0 ? .09 : .34)) % 1;
-      const layers = [
-        { y: lerp(this.h * .24, this.h * .60, Math.pow(midBase, 1.02)), scale: 0.82 + midBase * .30, alpha: bossLocked ? .46 : .78, seed: Math.floor(this.sceneScroll * .00108) + (side < 0 ? 101 : 203), type: 'mid' },
-        { y: lerp(this.h * .46, this.h * .92, Math.pow(nearBase, .90)), scale: 1.22 + nearBase * .42, alpha: bossLocked ? .62 : 1.00, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 307 : 409), type: 'near' },
-        { y: lerp(this.h * .58, this.h * 1.04, Math.pow((nearBase + .5) % 1, .88)), scale: 1.38 + ((nearBase + .5) % 1) * .46, alpha: bossLocked ? .64 : 1.00, seed: Math.floor(this.sceneScroll * .00162) + (side < 0 ? 337 : 439), type: 'near' },
-      ];
-      layers.sort((a, b) => a.y - b.y);
-      for (const layer of layers) {
-        drawBuildingRow(side, layer.y, layer.scale, layer.seed, layer.type === 'near' ? {
-          minW: 86, maxW: 84, minH: 152, maxH: 206, alpha: layer.alpha, innerGap: 4,
-          color: 'rgba(8,12,18,.985)', lineColor: bossLocked ? 'rgba(255,88,108,.22)' : 'rgba(99,237,255,.18)',
-          accentColor: bossLocked ? 'rgba(255,88,108,.12)' : 'rgba(114,244,255,.10)'
-        } : {
-          minW: 68, maxW: 58, minH: 108, maxH: 124, alpha: layer.alpha, innerGap: 8,
-          color: 'rgba(12,18,26,.96)', lineColor: bossLocked ? 'rgba(255,88,108,.16)' : 'rgba(99,237,255,.14)',
-          accentColor: bossLocked ? 'rgba(255,88,108,.10)' : 'rgba(114,244,255,.08)'
-        });
-      }
+      // Mirage fog band so the side city feels phase-shifted rather than hard-edged.
+      ctx.globalCompositeOperation = 'screen';
+      const fog = ctx.createLinearGradient(0, this.h * .08, 0, this.h * .60);
+      fog.addColorStop(0, bossLocked ? 'rgba(255,90,110,.03)' : 'rgba(116,240,255,.03)');
+      fog.addColorStop(.45, bossLocked ? 'rgba(255,90,110,.08)' : 'rgba(116,240,255,.06)');
+      fog.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = fog;
+      ctx.fillRect(0, 0, this.w, this.h * .66);
+      ctx.globalCompositeOperation = 'source-over';
+
+      // Roadside objects now carry the actual forward-motion cue.
+      if (!bossLocked) drawRoadPosts(side);
+      else drawRoadPosts(side);
 
       if (bossLocked) {
         const pulse = .5 + .5 * Math.sin(this.frame * .08);
@@ -2910,6 +2940,7 @@ export class Game {
       }
       ctx.restore();
     };
+
     drawSide(-1);
     drawSide(1);
   }
@@ -2920,28 +2951,29 @@ export class Game {
     const yMid = this.h * .56;
     const yBottom = this.h * .84;
     const leftInner = y => {
-      if (y <= yTop) return lerp(this.w * .46, this.w * .33, y / Math.max(1, yTop));
-      if (y <= yMid) return lerp(this.w * .33, this.w * .10, (y - yTop) / Math.max(1, yMid - yTop));
-      if (y <= yBottom) return lerp(this.w * .10, this.w * .02, (y - yMid) / Math.max(1, yBottom - yMid));
-      return lerp(this.w * .02, this.w * .004, (y - yBottom) / Math.max(1, this.h - yBottom));
+      if (y <= yTop) return lerp(this.w * .47, this.w * .31, y / Math.max(1, yTop));
+      if (y <= yMid) return lerp(this.w * .31, this.w * .08, (y - yTop) / Math.max(1, yMid - yTop));
+      if (y <= yBottom) return lerp(this.w * .08, this.w * .015, (y - yMid) / Math.max(1, yBottom - yMid));
+      return lerp(this.w * .015, this.w * .002, (y - yBottom) / Math.max(1, this.h - yBottom));
     };
     const rightInner = y => this.w - leftInner(y);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       const side = i % 2 === 0 ? -1 : 1;
-      const y = ((i * 110 + this.sceneScroll * (.28 + (i % 3) * .06)) % (this.h + 18)) - 8;
+      const p = ((this.sceneScroll * .0018) + i / 8) % 1;
+      const y = lerp(this.h * .10, this.h * .94, p);
       const inner = side < 0 ? leftInner(clamp(y, 0, this.h)) : rightInner(clamp(y, 0, this.h));
-      const band = side < 0 ? inner - 20 : this.w - inner - 20;
-      if (band <= 18) continue;
-      const x = side < 0 ? inner - (18 + ((i * 31) % Math.floor(band))) : inner + (18 + ((i * 31) % Math.floor(band)));
-      const alpha = (bossLocked ? .018 : .04 + (i % 3) * .008) * (y < this.h * .22 ? .4 : 1);
-      ctx.strokeStyle = `rgba(${i % 2 === 0 ? '126,250,255' : '64,190,255'},${alpha})`;
-      ctx.lineWidth = i % 4 === 0 ? 1.8 : 1;
+      const x = side < 0 ? inner - 26 - (i % 3) * 12 : inner + 26 + (i % 3) * 12;
+      const r = 2 + p * 4;
+      const a = bossLocked ? .02 : .05 + p * .04;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r * 5);
+      g.addColorStop(0, `rgba(${bossLocked ? '255,88,108' : '120,242,255'},${a})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + side * (bossLocked ? 1 : 4), y + (bossLocked ? 4 : 12));
-      ctx.stroke();
+      ctx.arc(x, y, r * 5, 0, TAU);
+      ctx.fill();
     }
     ctx.restore();
   }
