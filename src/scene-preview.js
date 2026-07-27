@@ -6,7 +6,7 @@ const status = document.getElementById('status');
 const W = canvas.width;
 const H = canvas.height;
 const TAU = Math.PI * 2;
-const STORAGE_KEY = 'raiden-scene-lab-v72';
+const STORAGE_KEY = 'raiden-scene-lab-v73';
 
 const defaults = {
   paused: false,
@@ -17,9 +17,9 @@ const defaults = {
   background: 0.74,
   speed: 1,
   road: { top: 0.26, mid: 0.66, bottom: 0.99 },
-  far: { left: 'a', right: 'b', y: 0.155, scale: 1.30, alpha: 1, amp: 5, frequency: 0.35 },
-  mid: { left: 'a', right: 'b', y: 0.195, scale: 1.55, alpha: 1, amp: 2, frequency: 0.45 },
-  near: { left: 'a', right: 'b', y: 0.245, scale: 1.24, alpha: 1, amp: 2, frequency: 0.30 },
+  far: { y: 0.155, scale: 1.30, alpha: 1, amp: 5, frequency: 0.35 },
+  mid: { y: 0.205, scale: 1.60, alpha: 1, amp: 2, frequency: 0.45 },
+  near: { y: 0.255, scale: 1.95, alpha: 1, amp: 2, frequency: 0.30 },
   posts: { speed: 0.25, count: 3, scale: 0.6 },
 };
 
@@ -31,16 +31,16 @@ let fpsSamples = [];
 
 const assetPaths = {
   far: {
-    a: './assets/scenes/neon-outskirts/modular/far-a.webp',
-    b: './assets/scenes/neon-outskirts/modular/far-b.webp',
+    left: './assets/scenes/neon-outskirts/modular/far-left.webp',
+    right: './assets/scenes/neon-outskirts/modular/far-right.webp',
   },
   mid: {
-    a: './assets/scenes/neon-outskirts/modular/mid-a.webp',
-    b: './assets/scenes/neon-outskirts/modular/mid-b.webp',
+    left: './assets/scenes/neon-outskirts/modular/mid-left.webp',
+    right: './assets/scenes/neon-outskirts/modular/mid-right.webp',
   },
   near: {
-    a: './assets/scenes/neon-outskirts/modular/near-a.webp',
-    b: './assets/scenes/neon-outskirts/modular/near-b.webp',
+    left: './assets/scenes/neon-outskirts/modular/near-left.webp',
+    right: './assets/scenes/neon-outskirts/modular/near-right.webp',
   },
 };
 
@@ -49,7 +49,7 @@ let loadedCount = 0;
 const totalAssets = 6;
 for (const [layer, variants] of Object.entries(assetPaths)) {
   assets[layer] = {};
-  for (const [variant, src] of Object.entries(variants)) {
+  for (const [side, src] of Object.entries(variants)) {
     const image = new Image();
     image.decoding = 'async';
     image.onload = () => {
@@ -60,7 +60,7 @@ for (const [layer, variants] of Object.entries(assetPaths)) {
     };
     image.onerror = () => { status.textContent = `素材載入失敗：${src}`; };
     image.src = src;
-    assets[layer][variant] = image;
+    assets[layer][side] = image;
   }
 }
 
@@ -105,8 +105,6 @@ const controlMap = {
 };
 
 for (const layer of ['far', 'mid', 'near']) {
-  controlMap[`${layer}-left`] = [`${layer}.left`, 'value', String];
-  controlMap[`${layer}-right`] = [`${layer}.right`, 'value', String];
   controlMap[`${layer}-y`] = [`${layer}.y`, 'value', Number];
   controlMap[`${layer}-scale`] = [`${layer}.scale`, 'value', Number];
   controlMap[`${layer}-alpha`] = [`${layer}.alpha`, 'value', Number];
@@ -265,12 +263,12 @@ function drawAsset(image, side, layerName, time, phase) {
 
   // Use vertical occupancy as the primary scale. The old width-based sizing made
   // the 1280px-wide strips look like tiny skyline stickers on a tall playfield.
-  const baseHeight = layerName === 'far' ? .245 : layerName === 'mid' ? .255 : .325;
+  const baseHeight = layerName === 'far' ? .22 : layerName === 'mid' ? .30 : .40;
   const dh = Math.max(150, H * baseHeight * layer.scale);
   const dw = image.naturalWidth * (dh / image.naturalHeight);
-  const inwardOverlap = layerName === 'far' ? 42 : layerName === 'mid' ? 34 : 26;
+  const inwardOverlap = layerName === 'far' ? 52 : layerName === 'mid' ? 42 : 28;
   const x = side < 0 ? inner - dw + inwardOverlap : inner - inwardOverlap;
-  const y = baseline - dh * .72;
+  const y = baseline - dh * .78;
 
   ctx.save();
   sidePath(side);
@@ -296,13 +294,7 @@ function drawAsset(image, side, layerName, time, phase) {
   }
 
   ctx.globalAlpha = layer.alpha;
-  if (side > 0) {
-    ctx.translate(x + dw, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(image, 0, y, dw, dh);
-  } else {
-    ctx.drawImage(image, x, y, dw, dh);
-  }
+  ctx.drawImage(image, x, y, dw, dh);
   ctx.restore();
 }
 
@@ -418,9 +410,9 @@ function render(time) {
 
   for (const side of [-1, 1]) {
     const sideKey = side < 0 ? 'left' : 'right';
-    drawAsset(assets.far[state.far[sideKey]], side, 'far', time, side < 0 ? .1 : 1.4);
-    drawAsset(assets.mid[state.mid[sideKey]], side, 'mid', time, side < 0 ? 1.2 : 2.5);
-    drawAsset(assets.near[state.near[sideKey]], side, 'near', time, side < 0 ? 2.2 : 3.7);
+    drawAsset(assets.far[sideKey], side, 'far', time, side < 0 ? .1 : 1.4);
+    drawAsset(assets.mid[sideKey], side, 'mid', time, side < 0 ? 1.2 : 2.5);
+    drawAsset(assets.near[sideKey], side, 'near', time, side < 0 ? 2.2 : 3.7);
   }
 
   for (const side of [-1, 1]) drawRoadPosts(side, time);

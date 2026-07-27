@@ -109,7 +109,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.72/);
+  assert.match(html, /ver\.73/);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {

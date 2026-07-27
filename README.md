@@ -341,6 +341,11 @@ git diff --check
 以本機 HTTP 伺服器或 GitHub Pages 開啟 `scene-preview.html`。直接調整右側控制面板，完成後按「下載參數」取得 `stage1-scene-settings.json`。
 
 
+## v73
+- 將第一關 Scene Lab 的正式側景素材整合回程式，改為左右分離的 6 張資產（遠／中／近景各左右一張）。
+- 放大中近景垂直佔比，讓遠／中／近景差異更清楚，便於直接在 GitHub Pages 預覽。
+- 調整 Scene Lab 預設參數與快取版本，避免沿用舊版資產。
+
 ## v72
 - Stage 1 Scene Lab 預設值套用使用者確認的遠／中／近景交疊參數。
 - 側景素材改以畫面高度為主要縮放基準，讓建築帶真正佔據側邊空間，不再像小型貼紙。

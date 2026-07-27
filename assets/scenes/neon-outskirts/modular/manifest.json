@@ -3,11 +3,35 @@
   "theme": "neon-outskirts",
   "usage": "static mirage side scenery",
   "assets": [
-    { "file": "far-a.webp", "layer": "far", "variant": "A" },
-    { "file": "far-b.webp", "layer": "far", "variant": "B" },
-    { "file": "mid-a.webp", "layer": "mid", "variant": "A" },
-    { "file": "mid-b.webp", "layer": "mid", "variant": "B" },
-    { "file": "near-a.webp", "layer": "near", "variant": "A" },
-    { "file": "near-b.webp", "layer": "near", "variant": "B" }
+    {
+      "file": "far-left.webp",
+      "layer": "far",
+      "side": "left"
+    },
+    {
+      "file": "far-right.webp",
+      "layer": "far",
+      "side": "right"
+    },
+    {
+      "file": "mid-left.webp",
+      "layer": "mid",
+      "side": "left"
+    },
+    {
+      "file": "mid-right.webp",
+      "layer": "mid",
+      "side": "right"
+    },
+    {
+      "file": "near-left.webp",
+      "layer": "near",
+      "side": "left"
+    },
+    {
+      "file": "near-right.webp",
+      "layer": "near",
+      "side": "right"
+    }
   ]
 }
