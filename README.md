@@ -339,3 +339,10 @@ git diff --check
 
 ### Scene Lab 使用方式
 以本機 HTTP 伺服器或 GitHub Pages 開啟 `scene-preview.html`。直接調整右側控制面板，完成後按「下載參數」取得 `stage1-scene-settings.json`。
+
+
+## v72
+- Stage 1 Scene Lab 預設值套用使用者確認的遠／中／近景交疊參數。
+- 側景素材改以畫面高度為主要縮放基準，讓建築帶真正佔據側邊空間，不再像小型貼紙。
+- 中景與近景新增隨波動移動的遮蔽底裙，使前景能遮住後景下緣與側邊空底。
+- 放寬三層縮放控制範圍，便於繼續放大調整。

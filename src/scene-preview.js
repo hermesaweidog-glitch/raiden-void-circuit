@@ -6,7 +6,7 @@ const status = document.getElementById('status');
 const W = canvas.width;
 const H = canvas.height;
 const TAU = Math.PI * 2;
-const STORAGE_KEY = 'raiden-scene-lab-v71';
+const STORAGE_KEY = 'raiden-scene-lab-v72';
 
 const defaults = {
   paused: false,
@@ -14,13 +14,13 @@ const defaults = {
   showPosts: true,
   showShip: true,
   showGuides: false,
-  background: 0.82,
+  background: 0.74,
   speed: 1,
-  road: { top: 0.18, mid: 0.72, bottom: 0.94 },
-  far: { left: 'a', right: 'b', y: 0.18, scale: 0.72, alpha: 0.46, amp: 6, frequency: 0.72 },
-  mid: { left: 'a', right: 'b', y: 0.36, scale: 0.96, alpha: 0.64, amp: 9, frequency: 1.05 },
-  near: { left: 'a', right: 'b', y: 0.56, scale: 1.24, alpha: 0.82, amp: 12, frequency: 1.34 },
-  posts: { speed: 1, count: 8, scale: 1 },
+  road: { top: 0.26, mid: 0.66, bottom: 0.99 },
+  far: { left: 'a', right: 'b', y: 0.155, scale: 1.30, alpha: 1, amp: 5, frequency: 0.35 },
+  mid: { left: 'a', right: 'b', y: 0.195, scale: 1.55, alpha: 1, amp: 2, frequency: 0.45 },
+  near: { left: 'a', right: 'b', y: 0.245, scale: 1.24, alpha: 1, amp: 2, frequency: 0.30 },
+  posts: { speed: 0.25, count: 3, scale: 0.6 },
 };
 
 const deepClone = value => JSON.parse(JSON.stringify(value));
@@ -262,18 +262,39 @@ function drawAsset(image, side, layerName, time, phase) {
   const wave = Math.sin(time * layer.frequency * TAU + phase) * layer.amp;
   const baseline = H * layer.y + wave;
   const inner = innerAt(side, baseline);
-  const available = side < 0 ? inner : W - inner;
-  const desiredWidth = Math.max(130, (available + 92) * layer.scale);
-  const ratio = desiredWidth / image.naturalWidth;
-  const dw = desiredWidth;
-  const dh = image.naturalHeight * ratio;
-  const inwardOverlap = layerName === 'far' ? 34 : layerName === 'mid' ? 26 : 18;
+
+  // Use vertical occupancy as the primary scale. The old width-based sizing made
+  // the 1280px-wide strips look like tiny skyline stickers on a tall playfield.
+  const baseHeight = layerName === 'far' ? .245 : layerName === 'mid' ? .255 : .325;
+  const dh = Math.max(150, H * baseHeight * layer.scale);
+  const dw = image.naturalWidth * (dh / image.naturalHeight);
+  const inwardOverlap = layerName === 'far' ? 42 : layerName === 'mid' ? 34 : 26;
   const x = side < 0 ? inner - dw + inwardOverlap : inner - inwardOverlap;
-  const y = baseline - dh * .70;
+  const y = baseline - dh * .72;
 
   ctx.save();
   sidePath(side);
   ctx.clip();
+
+  // Mid and near layers receive an opaque atmospheric skirt behind the artwork.
+  // It follows that layer's wave and hides the exposed lower edge of every layer
+  // behind it, while the asset itself keeps an irregular building silhouette.
+  if (layerName !== 'far') {
+    const skirtTop = baseline - dh * (layerName === 'near' ? .17 : .11);
+    const skirt = ctx.createLinearGradient(0, skirtTop - 44, 0, skirtTop + 34);
+    if (layerName === 'near') {
+      skirt.addColorStop(0, 'rgba(2,8,15,0)');
+      skirt.addColorStop(.56, 'rgba(3,10,18,.88)');
+      skirt.addColorStop(1, 'rgba(2,7,13,.985)');
+    } else {
+      skirt.addColorStop(0, 'rgba(5,14,24,0)');
+      skirt.addColorStop(.60, 'rgba(6,17,28,.68)');
+      skirt.addColorStop(1, 'rgba(4,12,21,.90)');
+    }
+    ctx.fillStyle = skirt;
+    ctx.fillRect(0, skirtTop - 44, W, H - skirtTop + 44);
+  }
+
   ctx.globalAlpha = layer.alpha;
   if (side > 0) {
     ctx.translate(x + dw, 0);
