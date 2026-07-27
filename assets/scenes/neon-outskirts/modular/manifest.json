@@ -1,7 +1,7 @@
 {
   "stage": 1,
   "theme": "neon-outskirts",
-  "usage": "static mirage side scenery",
+  "usage": "four-depth static mirage side scenery",
   "assets": [
     {
       "file": "far-left.webp",
@@ -31,6 +31,16 @@
     {
       "file": "near-right.webp",
       "layer": "near",
+      "side": "right"
+    },
+    {
+      "file": "closest-left.webp",
+      "layer": "closest",
+      "side": "left"
+    },
+    {
+      "file": "closest-right.webp",
+      "layer": "closest",
       "side": "right"
     }
   ]

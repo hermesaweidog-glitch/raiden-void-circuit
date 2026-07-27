@@ -21,7 +21,7 @@
         <canvas id="scene" width="480" height="800" aria-label="第一關場景預覽"></canvas>
       </div>
       <footer class="preview-foot">
-        <span>大型側景：遠／中／近景分層＋海市蜃樓起伏</span>
+        <span>大型側景：遠／中／近／最近四層＋海市蜃樓起伏</span>
         <span>速度層：路燈＋中央格線</span>
       </footer>
     </section>
@@ -73,6 +73,16 @@
         <label>起伏頻率 <output id="near-frequency-output"></output><input id="near-frequency" type="range" min="0.2" max="3" step="0.05"></label>
       </details>
 
+
+      <details open data-layer="closest">
+        <summary>最近景層</summary>
+        <label>高度 <output id="closest-y-output"></output><input id="closest-y" type="range" min="0.24" max="0.68" step="0.005"></label>
+        <label>縮放 <output id="closest-scale-output"></output><input id="closest-scale" type="range" min="0.6" max="2.4" step="0.01"></label>
+        <label>透明度 <output id="closest-alpha-output"></output><input id="closest-alpha" type="range" min="0" max="1" step="0.01"></label>
+        <label>起伏幅度 <output id="closest-amp-output"></output><input id="closest-amp" type="range" min="0" max="30" step="1"></label>
+        <label>起伏頻率 <output id="closest-frequency-output"></output><input id="closest-frequency" type="range" min="0.15" max="2" step="0.05"></label>
+      </details>
+
       <details open>
         <summary>速度物件</summary>
         <label>路燈速度 <output id="post-speed-output"></output><input id="post-speed" type="range" min="0.25" max="2" step="0.05"></label>
@@ -87,6 +97,6 @@
       <p id="status" class="status">參數會自動儲存在此瀏覽器。</p>
     </aside>
   </main>
-  <script type="module" src="./src/scene-preview.js?v=73"></script>
+  <script type="module" src="./src/scene-preview.js?v=74"></script>
 </body>
 </html>

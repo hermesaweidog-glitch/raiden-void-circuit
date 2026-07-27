@@ -6,7 +6,7 @@ const status = document.getElementById('status');
 const W = canvas.width;
 const H = canvas.height;
 const TAU = Math.PI * 2;
-const STORAGE_KEY = 'raiden-scene-lab-v73';
+const STORAGE_KEY = 'raiden-scene-lab-v74';
 
 const defaults = {
   paused: false,
@@ -17,9 +17,10 @@ const defaults = {
   background: 0.74,
   speed: 1,
   road: { top: 0.26, mid: 0.66, bottom: 0.99 },
-  far: { y: 0.155, scale: 1.30, alpha: 1, amp: 5, frequency: 0.35 },
-  mid: { y: 0.205, scale: 1.60, alpha: 1, amp: 2, frequency: 0.45 },
-  near: { y: 0.255, scale: 1.95, alpha: 1, amp: 2, frequency: 0.30 },
+  far: { y: 0.19, scale: 1.00, alpha: 0.72, amp: 5, frequency: 0.35 },
+  mid: { y: 0.265, scale: 1.08, alpha: 0.86, amp: 3, frequency: 0.42 },
+  near: { y: 0.345, scale: 1.16, alpha: 0.96, amp: 2, frequency: 0.31 },
+  closest: { y: 0.415, scale: 1.22, alpha: 1.00, amp: 2, frequency: 0.24 },
   posts: { speed: 0.25, count: 3, scale: 0.6 },
 };
 
@@ -42,11 +43,15 @@ const assetPaths = {
     left: './assets/scenes/neon-outskirts/modular/near-left.webp',
     right: './assets/scenes/neon-outskirts/modular/near-right.webp',
   },
+  closest: {
+    left: './assets/scenes/neon-outskirts/modular/closest-left.webp',
+    right: './assets/scenes/neon-outskirts/modular/closest-right.webp',
+  },
 };
 
 const assets = {};
 let loadedCount = 0;
-const totalAssets = 6;
+const totalAssets = 8;
 for (const [layer, variants] of Object.entries(assetPaths)) {
   assets[layer] = {};
   for (const [side, src] of Object.entries(variants)) {
@@ -55,7 +60,7 @@ for (const [layer, variants] of Object.entries(assetPaths)) {
     image.onload = () => {
       loadedCount += 1;
       status.textContent = loadedCount === totalAssets
-        ? '6 張正式側景素材已載入。調整結果會自動儲存。'
+        ? '8 張四層側景素材已載入。調整結果會自動儲存。'
         : `載入素材 ${loadedCount} / ${totalAssets}…`;
     };
     image.onerror = () => { status.textContent = `素材載入失敗：${src}`; };
@@ -104,7 +109,7 @@ const controlMap = {
   'post-scale': ['posts.scale', 'value', Number],
 };
 
-for (const layer of ['far', 'mid', 'near']) {
+for (const layer of ['far', 'mid', 'near', 'closest']) {
   controlMap[`${layer}-y`] = [`${layer}.y`, 'value', Number];
   controlMap[`${layer}-scale`] = [`${layer}.scale`, 'value', Number];
   controlMap[`${layer}-alpha`] = [`${layer}.alpha`, 'value', Number];
@@ -259,40 +264,17 @@ function drawAsset(image, side, layerName, time, phase) {
   const layer = state[layerName];
   const wave = Math.sin(time * layer.frequency * TAU + phase) * layer.amp;
   const baseline = H * layer.y + wave;
-  const inner = innerAt(side, baseline);
-
-  // Use vertical occupancy as the primary scale. The old width-based sizing made
-  // the 1280px-wide strips look like tiny skyline stickers on a tall playfield.
-  const baseHeight = layerName === 'far' ? .22 : layerName === 'mid' ? .30 : .40;
-  const dh = Math.max(150, H * baseHeight * layer.scale);
+  const baseHeight = { far: .285, mid: .385, near: .505, closest: .625 }[layerName];
+  const dh = H * baseHeight * layer.scale;
   const dw = image.naturalWidth * (dh / image.naturalHeight);
-  const inwardOverlap = layerName === 'far' ? 52 : layerName === 'mid' ? 42 : 28;
-  const x = side < 0 ? inner - dw + inwardOverlap : inner - inwardOverlap;
-  const y = baseline - dh * .78;
+  const outerBleed = { far: .03, mid: .045, near: .06, closest: .075 }[layerName];
+  const x = side < 0 ? -dw * outerBleed : W - dw + dw * outerBleed;
+  const verticalAnchor = { far: .73, mid: .75, near: .77, closest: .79 }[layerName];
+  const y = baseline - dh * verticalAnchor;
 
   ctx.save();
   sidePath(side);
   ctx.clip();
-
-  // Mid and near layers receive an opaque atmospheric skirt behind the artwork.
-  // It follows that layer's wave and hides the exposed lower edge of every layer
-  // behind it, while the asset itself keeps an irregular building silhouette.
-  if (layerName !== 'far') {
-    const skirtTop = baseline - dh * (layerName === 'near' ? .17 : .11);
-    const skirt = ctx.createLinearGradient(0, skirtTop - 44, 0, skirtTop + 34);
-    if (layerName === 'near') {
-      skirt.addColorStop(0, 'rgba(2,8,15,0)');
-      skirt.addColorStop(.56, 'rgba(3,10,18,.88)');
-      skirt.addColorStop(1, 'rgba(2,7,13,.985)');
-    } else {
-      skirt.addColorStop(0, 'rgba(5,14,24,0)');
-      skirt.addColorStop(.60, 'rgba(6,17,28,.68)');
-      skirt.addColorStop(1, 'rgba(4,12,21,.90)');
-    }
-    ctx.fillStyle = skirt;
-    ctx.fillRect(0, skirtTop - 44, W, H - skirtTop + 44);
-  }
-
   ctx.globalAlpha = layer.alpha;
   ctx.drawImage(image, x, y, dw, dh);
   ctx.restore();
@@ -413,6 +395,7 @@ function render(time) {
     drawAsset(assets.far[sideKey], side, 'far', time, side < 0 ? .1 : 1.4);
     drawAsset(assets.mid[sideKey], side, 'mid', time, side < 0 ? 1.2 : 2.5);
     drawAsset(assets.near[sideKey], side, 'near', time, side < 0 ? 2.2 : 3.7);
+    drawAsset(assets.closest[sideKey], side, 'closest', time, side < 0 ? 3.0 : 4.4);
   }
 
   for (const side of [-1, 1]) drawRoadPosts(side, time);

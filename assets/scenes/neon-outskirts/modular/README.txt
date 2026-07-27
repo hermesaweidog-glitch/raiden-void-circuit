@@ -1,1 +1,1 @@
-Stage 1 modular side scenery assets, v73 side-specific layered integration.
+Stage 1 Scene Lab v74: four depth layers, side-specific, road-facing transparent padding.
