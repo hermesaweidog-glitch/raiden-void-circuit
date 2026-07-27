@@ -2755,13 +2755,15 @@ export class Game {
 
   drawBackground(ctx, stage) {
     const scroll = this.worldScroll;
-    if (stage.id === 1) this.drawNeonOutskirts(ctx, stage);
     ctx.save(); ctx.globalAlpha = .24; ctx.strokeStyle = stage.id % 2 ? '#42e8ff' : '#ff8a4c'; ctx.lineWidth = 1;
     for (let y = -80 + scroll % 80; y < this.h + 80; y += 80) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(this.w,y); ctx.stroke(); }
     for (let x = 0; x <= this.w; x += 60) { ctx.beginPath(); ctx.moveTo(this.w/2 + (x-this.w/2)*.25,0); ctx.lineTo(x,this.h); ctx.stroke(); }
     ctx.restore();
     for (const star of this.stars) { const y = (star.y + scroll * star.speed) % this.h; ctx.fillStyle = `rgba(210,250,255,${.18 + star.speed * .16})`; ctx.fillRect(star.x,y,star.size,star.size); }
-    if (stage.id === 1) this.drawNeonOutskirtsParticles(ctx);
+    if (stage.id === 1) {
+      this.drawNeonOutskirts(ctx, stage);
+      this.drawNeonOutskirtsParticles(ctx);
+    }
   }
 
   drawNeonOutskirts(ctx) {
@@ -2836,6 +2838,9 @@ export class Game {
         }
         ctx.closePath();
         ctx.fill();
+        ctx.strokeStyle = opts.lineColor || 'rgba(105,238,255,.12)';
+        ctx.lineWidth = Math.max(.8, scale * .9);
+        ctx.stroke();
         if (!opts.noWindows) {
           ctx.fillStyle = opts.accentColor || 'rgba(114,244,255,.08)';
           const wx = isLeft ? x + bw * .16 : x + bw * .12;
@@ -2899,30 +2904,30 @@ export class Game {
       ctx.save();
       clipPoly(sidePoly(side));
       const bg = ctx.createLinearGradient(0, 0, 0, this.h);
-      bg.addColorStop(0, bossLocked ? 'rgba(18,8,16,.11)' : 'rgba(6,16,28,.06)');
-      bg.addColorStop(1, bossLocked ? 'rgba(8,6,10,.02)' : 'rgba(2,8,14,.02)');
+      bg.addColorStop(0, bossLocked ? 'rgba(18,8,16,.16)' : 'rgba(8,22,36,.13)');
+      bg.addColorStop(1, bossLocked ? 'rgba(8,6,10,.05)' : 'rgba(3,10,18,.06)');
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, this.w, this.h);
 
       // Large side scenery stays mostly fixed; only slight mirage-like undulation remains.
       drawMirageBand(side, this.h * .18, .44, side < 0 ? 11 : 21, {
-        minW: 64, maxW: 46, minH: 78, maxH: 84, alpha: bossLocked ? .10 : .15,
-        color: 'rgba(20,28,38,.90)', accentColor: 'rgba(0,0,0,0)', innerGap: 34, waveAmp: 5, waveSpeed: .011, noWindows: true
+        minW: 64, maxW: 46, minH: 78, maxH: 84, alpha: bossLocked ? .18 : .30,
+        color: 'rgba(28,42,56,.96)', lineColor: 'rgba(105,238,255,.16)', accentColor: 'rgba(0,0,0,0)', innerGap: 28, waveAmp: 5, waveSpeed: .011, noWindows: true
       });
       drawMirageBand(side, this.h * .30, .78, side < 0 ? 31 : 41, {
-        minW: 74, maxW: 60, minH: 112, maxH: 120, alpha: bossLocked ? .16 : .24,
-        color: 'rgba(16,22,32,.95)', accentColor: 'rgba(88,232,255,.05)', innerGap: 22, waveAmp: 7, waveSpeed: .015
+        minW: 74, maxW: 60, minH: 112, maxH: 120, alpha: bossLocked ? .28 : .50,
+        color: 'rgba(20,31,44,.98)', lineColor: 'rgba(105,238,255,.20)', accentColor: 'rgba(88,232,255,.12)', innerGap: 18, waveAmp: 7, waveSpeed: .015
       });
       drawMirageBand(side, this.h * .48, 1.08, side < 0 ? 51 : 61, {
-        minW: 82, maxW: 66, minH: 142, maxH: 152, alpha: bossLocked ? .20 : .34,
-        color: 'rgba(10,16,24,.98)', accentColor: 'rgba(114,244,255,.06)', innerGap: 14, waveAmp: 9, waveSpeed: .019
+        minW: 82, maxW: 66, minH: 142, maxH: 152, alpha: bossLocked ? .36 : .68,
+        color: 'rgba(12,22,34,.995)', lineColor: 'rgba(105,238,255,.24)', accentColor: 'rgba(114,244,255,.16)', innerGap: 10, waveAmp: 9, waveSpeed: .019
       });
 
       // Mirage fog band so the side city feels phase-shifted rather than hard-edged.
       ctx.globalCompositeOperation = 'screen';
       const fog = ctx.createLinearGradient(0, this.h * .08, 0, this.h * .60);
-      fog.addColorStop(0, bossLocked ? 'rgba(255,90,110,.03)' : 'rgba(116,240,255,.03)');
-      fog.addColorStop(.45, bossLocked ? 'rgba(255,90,110,.08)' : 'rgba(116,240,255,.06)');
+      fog.addColorStop(0, bossLocked ? 'rgba(255,90,110,.04)' : 'rgba(116,240,255,.05)');
+      fog.addColorStop(.45, bossLocked ? 'rgba(255,90,110,.10)' : 'rgba(116,240,255,.10)');
       fog.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = fog;
       ctx.fillRect(0, 0, this.w, this.h * .66);
