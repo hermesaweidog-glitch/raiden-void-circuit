@@ -6,7 +6,7 @@ const status = document.getElementById('status');
 const W = canvas.width;
 const H = canvas.height;
 const TAU = Math.PI * 2;
-const STORAGE_KEY = 'raiden-scene-lab-v74';
+const STORAGE_KEY = 'raiden-scene-lab-v75';
 
 const defaults = {
   paused: false,
@@ -17,10 +17,10 @@ const defaults = {
   background: 0.74,
   speed: 1,
   road: { top: 0.26, mid: 0.66, bottom: 0.99 },
-  far: { y: 0.19, scale: 1.00, alpha: 0.72, amp: 5, frequency: 0.35 },
-  mid: { y: 0.265, scale: 1.08, alpha: 0.86, amp: 3, frequency: 0.42 },
-  near: { y: 0.345, scale: 1.16, alpha: 0.96, amp: 2, frequency: 0.31 },
-  closest: { y: 0.415, scale: 1.22, alpha: 1.00, amp: 2, frequency: 0.24 },
+  far: { y: 0.145, scale: 2.19, alpha: 0.65, spread: 0, amp: 5, frequency: 0.35 },
+  mid: { y: 0.285, scale: 0.97, alpha: 0.86, spread: 0, amp: 3, frequency: 0.42 },
+  near: { y: 0.45, scale: 0.96, alpha: 0.96, spread: 0, amp: 2, frequency: 0.31 },
+  closest: { y: 0.625, scale: 0.93, alpha: 1.00, spread: 0, amp: 2, frequency: 0.24 },
   posts: { speed: 0.25, count: 3, scale: 0.6 },
 };
 
@@ -113,6 +113,7 @@ for (const layer of ['far', 'mid', 'near', 'closest']) {
   controlMap[`${layer}-y`] = [`${layer}.y`, 'value', Number];
   controlMap[`${layer}-scale`] = [`${layer}.scale`, 'value', Number];
   controlMap[`${layer}-alpha`] = [`${layer}.alpha`, 'value', Number];
+  controlMap[`${layer}-spread`] = [`${layer}.spread`, 'value', Number];
   controlMap[`${layer}-amp`] = [`${layer}.amp`, 'value', Number];
   controlMap[`${layer}-frequency`] = [`${layer}.frequency`, 'value', Number];
 }
@@ -130,6 +131,7 @@ function setPath(path, value) {
 
 function formatValue(id, value) {
   if (id.endsWith('-y') || id.startsWith('road-')) return `${Math.round(value * 100)}%`;
+  if (id.endsWith('-spread')) return `${value >= 0 ? '+' : ''}${Math.round(value)} px`;
   if (id.endsWith('-amp')) return `${Math.round(value)} px`;
   if (id.includes('frequency')) return `${Number(value).toFixed(2)}×`;
   if (id === 'post-count') return `${Math.round(value)}`;
@@ -268,7 +270,11 @@ function drawAsset(image, side, layerName, time, phase) {
   const dh = H * baseHeight * layer.scale;
   const dw = image.naturalWidth * (dh / image.naturalHeight);
   const outerBleed = { far: .03, mid: .045, near: .06, closest: .075 }[layerName];
-  const x = side < 0 ? -dw * outerBleed : W - dw + dw * outerBleed;
+  // Positive spread opens both sides away from the road; negative values close them inward.
+  const spread = Number(layer.spread) || 0;
+  const x = side < 0
+    ? -dw * outerBleed - spread
+    : W - dw + dw * outerBleed + spread;
   const verticalAnchor = { far: .73, mid: .75, near: .77, closest: .79 }[layerName];
   const y = baseline - dh * verticalAnchor;
 
