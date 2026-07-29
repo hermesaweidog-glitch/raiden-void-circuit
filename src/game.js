@@ -2,6 +2,7 @@ import { AIRCRAFT, BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, SECONDARIES, PASSI
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
 import { loadMetaState, maxedMetaState, metaFromUpgrades, ORE_BASE_VALUE, ORE_CLEAR_BONUS, ORE_STAGE_BONUS, oreDropFor, saveMetaState } from './meta.js';
 import { MusicController } from './audio.js';
+import { STAGE1_GEOMETRY_SETTINGS } from './stage1-geometry-settings.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -90,43 +91,10 @@ export class Game {
       image.src = craft.art;
       return [craft.id, image];
     }));
-    const neonSceneAssets = {
-      farLeft: [
-        './assets/scenes/neon-outskirts/upper-left.webp',
-        './assets/scenes/neon-outskirts/far-left-a.webp',
-        './assets/scenes/neon-outskirts/far-left-b.webp',
-      ],
-      farRight: [
-        './assets/scenes/neon-outskirts/upper-right.webp',
-        './assets/scenes/neon-outskirts/far-right-a.webp',
-        './assets/scenes/neon-outskirts/far-right-b.webp',
-      ],
-      midLeft: [
-        './assets/scenes/neon-outskirts/mid-left.webp',
-        './assets/scenes/neon-outskirts/mid-left-b.webp',
-      ],
-      midRight: [
-        './assets/scenes/neon-outskirts/mid-right.webp',
-        './assets/scenes/neon-outskirts/mid-right-b.webp',
-      ],
-      nearLeft: [
-        './assets/scenes/neon-outskirts/lower-left.webp',
-        './assets/scenes/neon-outskirts/near-left-b.webp',
-      ],
-      nearRight: [
-        './assets/scenes/neon-outskirts/lower-right.webp',
-        './assets/scenes/neon-outskirts/near-right-b.webp',
-      ],
-      shardLeft: ['./assets/scenes/neon-outskirts/shard-left.webp'],
-      shardRight: ['./assets/scenes/neon-outskirts/shard-right.webp'],
-    };
-    this.neonSceneImages = Object.fromEntries(Object.entries(neonSceneAssets).map(([key, sources]) => [key, sources.map(src => {
-      if (typeof Image === 'undefined') return null;
-      const image = new Image();
-      image.decoding = 'async';
-      image.src = src;
-      return image;
-    })]));
+    this.stage1Geometry = null;
+    this.stage1GeometryCanvas = null;
+    this.stage1GeometryStatus = 'idle';
+    this.initStage1Geometry();
     this.bindInput();
     document.addEventListener('visibilitychange', () => {
       this.accumulator = 0;
@@ -139,6 +107,37 @@ export class Game {
     });
     this.updateHud();
     requestAnimationFrame(time => this.loop(time));
+  }
+
+  async initStage1Geometry() {
+    const hasWebGL = typeof window !== 'undefined' && (
+      typeof window.WebGLRenderingContext !== 'undefined' ||
+      typeof window.WebGL2RenderingContext !== 'undefined'
+    );
+    if (!hasWebGL || typeof document?.createElement !== 'function') {
+      this.stage1GeometryStatus = 'unsupported';
+      return;
+    }
+    this.stage1GeometryStatus = 'loading';
+    try {
+      const geometryCanvas = document.createElement('canvas');
+      geometryCanvas.width = this.w;
+      geometryCanvas.height = this.h;
+      const { Stage1GeometryLayer } = await import('./stage1-geometry-layer.js?v=76');
+      this.stage1GeometryCanvas = geometryCanvas;
+      this.stage1Geometry = new Stage1GeometryLayer({
+        canvas: geometryCanvas,
+        width: this.w,
+        height: this.h,
+        settings: STAGE1_GEOMETRY_SETTINGS,
+      });
+      this.stage1GeometryStatus = 'ready';
+    } catch (error) {
+      this.stage1GeometryStatus = 'failed';
+      this.stage1Geometry = null;
+      this.stage1GeometryCanvas = null;
+      console.warn('Stage 1 geometry layer unavailable; using the 2D fallback.', error);
+    }
   }
 
   bindInput() {
@@ -2754,15 +2753,194 @@ export class Game {
   }
 
   drawBackground(ctx, stage) {
-    const scroll = this.worldScroll;
-    ctx.save(); ctx.globalAlpha = .24; ctx.strokeStyle = stage.id % 2 ? '#42e8ff' : '#ff8a4c'; ctx.lineWidth = 1;
-    for (let y = -80 + scroll % 80; y < this.h + 80; y += 80) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(this.w,y); ctx.stroke(); }
-    for (let x = 0; x <= this.w; x += 60) { ctx.beginPath(); ctx.moveTo(this.w/2 + (x-this.w/2)*.25,0); ctx.lineTo(x,this.h); ctx.stroke(); }
-    ctx.restore();
-    for (const star of this.stars) { const y = (star.y + scroll * star.speed) % this.h; ctx.fillStyle = `rgba(210,250,255,${.18 + star.speed * .16})`; ctx.fillRect(star.x,y,star.size,star.size); }
     if (stage.id === 1) {
-      this.drawNeonOutskirts(ctx, stage);
+      this.drawStage1Background(ctx, stage);
+      return;
+    }
+    const scroll = this.worldScroll;
+    ctx.save();
+    ctx.globalAlpha = .24;
+    ctx.strokeStyle = stage.id % 2 ? '#42e8ff' : '#ff8a4c';
+    ctx.lineWidth = 1;
+    for (let y = -80 + scroll % 80; y < this.h + 80; y += 80) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(this.w, y);
+      ctx.stroke();
+    }
+    for (let x = 0; x <= this.w; x += 60) {
+      ctx.beginPath();
+      ctx.moveTo(this.w / 2 + (x - this.w / 2) * .25, 0);
+      ctx.lineTo(x, this.h);
+      ctx.stroke();
+    }
+    ctx.restore();
+    for (const star of this.stars) {
+      const y = (star.y + scroll * star.speed) % this.h;
+      ctx.fillStyle = `rgba(210,250,255,${.18 + star.speed * .16})`;
+      ctx.fillRect(star.x, y, star.size, star.size);
+    }
+  }
+
+  stage1RoadLeftInner(y, cover = 0) {
+    const road = STAGE1_GEOMETRY_SETTINGS.road;
+    const yTop = this.h * .12;
+    const yMid = this.h * .56;
+    const topSide = this.w * (1 - road.top) / 2;
+    const midSide = this.w * (1 - road.mid) / 2;
+    const bottomSide = this.w * (1 - road.bottom) / 2;
+    let value;
+    if (y <= yTop) value = lerp(topSide, lerp(topSide, midSide, .22), y / Math.max(1, yTop));
+    else if (y <= yMid) value = lerp(lerp(topSide, midSide, .22), midSide, (y - yTop) / Math.max(1, yMid - yTop));
+    else value = lerp(midSide, bottomSide, (y - yMid) / Math.max(1, this.h - yMid));
+    return clamp(value - cover, 0, this.w / 2 - 2);
+  }
+
+  stage1RoadInnerAt(side, y, cover = 0) {
+    const left = this.stage1RoadLeftInner(clamp(y, 0, this.h), cover);
+    return side < 0 ? left : this.w - left;
+  }
+
+  stage1RoadPath(ctx, cover = STAGE1_GEOMETRY_SETTINGS.road.cover) {
+    const samples = 36;
+    ctx.beginPath();
+    ctx.moveTo(this.stage1RoadInnerAt(-1, 0, cover), 0);
+    ctx.lineTo(this.stage1RoadInnerAt(1, 0, cover), 0);
+    for (let index = 1; index <= samples; index += 1) {
+      const y = this.h * index / samples;
+      ctx.lineTo(this.stage1RoadInnerAt(1, y, cover), y);
+    }
+    for (let index = samples; index >= 0; index -= 1) {
+      const y = this.h * index / samples;
+      ctx.lineTo(this.stage1RoadInnerAt(-1, y, cover), y);
+    }
+    ctx.closePath();
+  }
+
+  drawStage1RoadBase(ctx) {
+    const roadSettings = STAGE1_GEOMETRY_SETTINGS.road;
+    ctx.save();
+    this.stage1RoadPath(ctx);
+    const road = ctx.createLinearGradient(0, 0, 0, this.h);
+    road.addColorStop(0, `rgba(4,18,34,${roadSettings.opacity * .94})`);
+    road.addColorStop(.55, `rgba(2,11,21,${roadSettings.opacity})`);
+    road.addColorStop(1, `rgba(1,6,12,${roadSettings.opacity})`);
+    ctx.fillStyle = road;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  drawStage1Grid(ctx) {
+    if (!STAGE1_GEOMETRY_SETTINGS.showGrid) return;
+    const scroll = this.worldScroll;
+    ctx.save();
+    this.stage1RoadPath(ctx);
+    ctx.clip();
+    ctx.globalAlpha = .24;
+    ctx.strokeStyle = '#42e8ff';
+    ctx.lineWidth = 1;
+    for (let y = -80 + scroll % 80; y < this.h + 80; y += 80) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(this.w, y);
+      ctx.stroke();
+    }
+    for (let x = 0; x <= this.w; x += 60) {
+      ctx.beginPath();
+      ctx.moveTo(this.w / 2 + (x - this.w / 2) * .25, 0);
+      ctx.lineTo(x, this.h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  drawStage1RoadPosts(ctx) {
+    const settings = STAGE1_GEOMETRY_SETTINGS;
+    if (!settings.showPosts) return;
+    const count = Math.max(1, Math.round(settings.posts.count));
+    const timeSeconds = this.sceneScroll / 72;
+    const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
+    for (const side of [-1, 1]) {
+      const offset = side < 0 ? 0 : .37;
+      for (let index = 0; index < count; index += 1) {
+        const progress = ((timeSeconds * 4.2 * settings.speed * settings.posts.speed) + offset + index / count) % 1;
+        const eased = Math.pow(progress, .72);
+        const y = lerp(this.h * .14, this.h * 1.12, eased);
+        const inner = this.stage1RoadInnerAt(side, y, 0);
+        const gap = lerp(14, 3, eased) * settings.posts.scale;
+        const x = side < 0 ? inner - gap : inner + gap;
+        const poleH = lerp(14, 76, eased) * settings.posts.scale;
+        const poleTilt = lerp(2, 11, eased) * settings.posts.scale;
+        const arm = lerp(5, 18, eased) * settings.posts.scale;
+        const glowR = lerp(2, 10, eased) * settings.posts.scale;
+        const alpha = bossLocked ? .14 + eased * .16 : .28 + eased * .34;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = bossLocked ? 'rgba(255,92,112,.68)' : 'rgba(120,242,255,.78)';
+        ctx.lineWidth = lerp(1, 3.2, eased) * settings.posts.scale;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + side * poleTilt, y - poleH);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x + side * poleTilt, y - poleH);
+        ctx.lineTo(x + side * (poleTilt + arm), y - poleH + 1.5);
+        ctx.stroke();
+        const glowX = x + side * (poleTilt + arm);
+        const glowY = y - poleH + 1.5;
+        ctx.fillStyle = bossLocked ? 'rgba(255,96,116,.78)' : 'rgba(174,252,255,.94)';
+        ctx.beginPath();
+        ctx.arc(glowX, glowY, glowR, 0, TAU);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'lighter';
+        const glow = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, glowR * 3.2);
+        glow.addColorStop(0, bossLocked ? 'rgba(255,96,116,.42)' : 'rgba(120,242,255,.38)');
+        glow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(glowX, glowY, glowR * 3.2, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  drawStage1Background(ctx) {
+    const settings = STAGE1_GEOMETRY_SETTINGS;
+    const scroll = this.worldScroll;
+    for (const star of this.stars) {
+      const y = (star.y + scroll * star.speed) % this.h;
+      ctx.fillStyle = `rgba(210,250,255,${(.10 + star.speed * .10) * settings.background})`;
+      ctx.fillRect(star.x, y, star.size, star.size);
+    }
+
+    if (this.stage1GeometryStatus === 'ready' && this.stage1Geometry) {
+      try {
+        this.stage1Geometry.update(this.sceneScroll / 72);
+        this.stage1Geometry.drawTo(ctx, 0, 0, this.w, this.h);
+      } catch (error) {
+        this.stage1GeometryStatus = 'failed';
+        console.warn('Stage 1 geometry render failed; using the 2D fallback.', error);
+      }
+    }
+
+    if (this.stage1GeometryStatus === 'failed' || this.stage1GeometryStatus === 'unsupported') {
+      this.drawNeonOutskirts(ctx);
       this.drawNeonOutskirtsParticles(ctx);
+      return;
+    }
+
+    this.drawStage1RoadBase(ctx);
+    this.drawStage1Grid(ctx);
+    this.drawStage1RoadPosts(ctx);
+    this.drawNeonOutskirtsParticles(ctx);
+
+    const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
+    if (bossLocked) {
+      const pulse = .5 + .5 * Math.sin(this.frame * .08);
+      ctx.fillStyle = `rgba(255,35,72,${.018 + pulse * .018})`;
+      ctx.fillRect(0, 0, this.w, this.h);
     }
   }
 
