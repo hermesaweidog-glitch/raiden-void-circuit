@@ -2487,3 +2487,57 @@ test('lancer boosts secondary damage by ten percent while wasp gains bombs and a
   falconSetup.game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
   assert.equal(falconSetup.game.player.maxHp, 60, 'falcon flies with 50 base plus its 10 armor bonus');
 });
+
+test('normal-mode completion reward is paid on every clear, not only the first profile clear', () => {
+  const { game } = makeGame();
+  game.meta.cleared = true;
+  const before = game.meta.ore;
+
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.runOre = 0;
+  game.endRun(true);
+  assert.equal(game.meta.ore, before + 1500);
+  assert.match(game.dom['clear-body'].innerHTML, /一般模式通關獎勵 \+1500（每次通關）/);
+  assert.doesNotMatch(game.dom['clear-body'].innerHTML, /無限模式已解鎖/, 'repeat clears do not repeat the unlock message');
+
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.runOre = 0;
+  game.endRun(true);
+  assert.equal(game.meta.ore, before + 3000, 'a second completed run pays the same clear reward again');
+});
+
+test('damage review places average damage on a dedicated line below every source', () => {
+  const { game } = makeGame();
+  game.damageSources = {
+    'primary:LANCER｜本體': 100,
+    'primary:LANCER｜連鎖電擊': 60,
+  };
+  game.damageHits = {
+    'primary:LANCER｜本體': 10,
+    'primary:LANCER｜連鎖電擊': 10,
+  };
+
+  const markup = game.damageReviewMarkup();
+  assert.equal((markup.match(/class="damage-average"/g) || []).length, 2);
+  assert.match(markup, /平均每次傷害 10\.0/);
+  assert.match(markup, /平均每次傷害 6\.0/);
+  assert.doesNotMatch(markup, /<span>平均<\/span>/, 'average is no longer a squeezed table column');
+});
+
+test('lancer chain lightning bounce damage uses three times the previous coefficient', () => {
+  const { game } = makeGame();
+  game.start('lancer');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const makeEnemy = (id, x) => ({ id, type: 'scout', x, y: 200, radius: 10, hp: 10000, maxHp: 10000, alive: true, score: 0, xp: 0, color: '#fff' });
+  const origin = makeEnemy(1, 100);
+  game.enemies = [origin, makeEnemy(2, 130), makeEnemy(3, 160), makeEnemy(4, 190)];
+
+  game.applyBulletStatus({ statuses: ['shock'], statusPowers: { shock: 5 }, damage: 1 }, origin);
+
+  const chainTotal = game.damageSources['primary:LANCER｜連鎖電擊'];
+  assert.ok(Math.abs(chainTotal - 57.6) < 1e-9, 'three bounces each deal 1 × 1.92 × STAT_SCALE damage');
+  assert.equal(game.damageHits['primary:LANCER｜連鎖電擊'], 3);
+});

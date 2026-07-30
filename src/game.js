@@ -15,6 +15,8 @@ const enemyDamage = type => isLargeEnemyType(type) ? 10 : 5;
 const KUNGFU_FIST_DAMAGE_BONUS = [0, 30, 90, 150];
 const BOSS_WARNING_DURATION_MS = 3100;
 const BOSS_WARNING_DURATION_FRAMES = Math.ceil(BOSS_WARNING_DURATION_MS / (1000 / 60));
+// LANCER mastery chain damage: 1.92 = the previous 0.64 coefficient raised to 3×.
+const LANCER_CHAIN_DAMAGE_MULTIPLIER = 1.92;
 const readStorage = (key, fallback = null) => {
   try { return localStorage.getItem(key) ?? fallback; }
   catch { return fallback; }
@@ -127,7 +129,7 @@ export class Game {
       const geometryCanvas = document.createElement('canvas');
       geometryCanvas.width = this.w;
       geometryCanvas.height = this.h;
-      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=77');
+      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=78');
       const stageId = this.stageIndex + 1;
       this.stageGeometryCanvas = geometryCanvas;
       this.stageGeometry = new SceneGeometryLayer({
@@ -1556,7 +1558,7 @@ export class Game {
           // Previously hit enemies may be selected again, but each bounce
           // still requires another living enemy near the current target.
           if (!target) break;
-          this.damageEnemy(target, bullet.damage * .64, false, `primary:${this.player.craft.name}｜連鎖電擊`);
+          this.damageEnemy(target, bullet.damage * LANCER_CHAIN_DAMAGE_MULTIPLIER, false, `primary:${this.player.craft.name}｜連鎖電擊`);
           points.push({ x: target.x, y: target.y });
           current = target;
         }
@@ -1856,7 +1858,7 @@ export class Game {
       const rows = groups[category];
       const subtotal = rows.reduce((sum, row) => sum + row.value, 0);
       const subtotalShare = subtotal / total * 100;
-      return `<section class="damage-group"><header class="damage-group-head"><div><h3>${categoryNames[category] || category}</h3><small>${subtotalShare.toFixed(1)}% of total</small></div><b>${Math.round(subtotal).toLocaleString()}</b></header><div class="damage-table-head"><span>傷害來源</span><span>總傷害</span><span>占比</span><span>命中</span><span>平均</span></div>${rows.map(row => { const share = row.value / total * 100; return `<div class="damage-row"><div class="damage-source"><span>${row.label}</span><i style="--damage-share:${Math.max(2, share)}%"></i></div><b>${Math.round(row.value).toLocaleString()}</b><small>${share.toFixed(1)}%</small><small>${row.hits.toLocaleString()}</small><small>${Math.round(row.value / Math.max(1, row.hits)).toLocaleString()}</small></div>`; }).join('')}</section>`;
+      return `<section class="damage-group"><header class="damage-group-head"><div><h3>${categoryNames[category] || category}</h3><small>${subtotalShare.toFixed(1)}% of total</small></div><b>${Math.round(subtotal).toLocaleString()}</b></header><div class="damage-table-head"><span>傷害來源</span><span>總傷害</span><span>命中</span></div>${rows.map(row => { const share = row.value / total * 100; const average = row.value / Math.max(1, row.hits); return `<div class="damage-row"><div class="damage-source"><span>${row.label}</span><i style="--damage-share:${Math.max(2, share)}%"></i></div><b>${Math.round(row.value).toLocaleString()}</b><small>${row.hits.toLocaleString()}</small><div class="damage-average"><span>傷害占比 ${share.toFixed(1)}%</span><b>平均每次傷害 ${average.toFixed(1)}</b></div></div>`; }).join('')}</section>`;
     }).join('');
     const top = entries[0];
     const topLabel = top[0].split(':').slice(1).join(':') || '其他傷害';
@@ -2579,22 +2581,26 @@ export class Game {
     const secondaryFusionCount = fusionIds.filter(id => FUSIONS[id]?.kind !== 'passive').length;
     const passiveFusionCount = fusionIds.filter(id => FUSIONS[id]?.kind === 'passive').length;
     const depthLine = this.isEndless() ? `DEPTH　${Math.max(0, this.endlessDepth || 0)} km<br>` : `STAGE　${this.stageIndex + 1}/5<br>`;
+    // The normal-mode completion reward is recurring. Profile clear state only
+    // controls the one-time ENDLESS unlock message, never the ore payout.
     const clearBonus = victory && this.runMode === 'normal' ? ORE_CLEAR_BONUS : 0;
     const firstClear = victory && this.runMode === 'normal' && !this.maxMode && !this.meta.cleared;
     if (firstClear) this.meta.cleared = true;
     const banked = this.bankOre(clearBonus);
     const settlement = this.lastOreSettlement || this.oreSettlement(clearBonus);
     const unbankedNote = this.maxMode || this.runMode === 'test' ? '（未入帳）' : '';
+    const clearRewardNote = clearBonus > 0 ? `<small>一般模式通關獎勵 +${clearBonus}（每次通關）</small>` : '';
     const cleanupNote = settlement.bonus > 0 ? `<small>戰場清理額外 +${settlement.bonus}</small>` : '';
-    const oreLine = `<div class="summary-ore"><b>獲得源晶礦　${settlement.total}</b>${cleanupNote}<b>累積源晶礦　${this.meta.ore} ${unbankedNote}</b></div>`;
+    const oreLine = `<div class="summary-ore"><b>獲得源晶礦　${settlement.total}</b>${clearRewardNote}${cleanupNote}<b>累積源晶礦　${this.meta.ore} ${unbankedNote}</b></div>`;
     this.dom['damage-review'].innerHTML = this.damageReviewMarkup();
     this.dom['damage-review'].classList.add('hidden');
     this.dom['review-overlay']?.classList.add('hidden');
     this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}${oreLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
     if (victory && this.runMode === 'normal') {
       const skipBank = this.maxMode || this.runMode === 'test';
+      const clearRewardLine = `<small>一般模式通關獎勵 +${clearBonus}（每次通關）</small>`;
       const cleanupLine = settlement.bonus > 0 ? `<small>戰場清理額外 +${settlement.bonus}</small>` : '';
-      this.dom['clear-body'].innerHTML = `<div class="summary-ore"><b>獲得源晶礦　${settlement.total}</b>${cleanupLine}<b>累積源晶礦　${this.meta.ore} ${skipBank ? '（未入帳）' : ''}</b></div>${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
+      this.dom['clear-body'].innerHTML = `<div class="summary-ore"><b>獲得源晶礦　${settlement.total}</b>${clearRewardLine}${cleanupLine}<b>累積源晶礦　${this.meta.ore} ${skipBank ? '（未入帳）' : ''}</b></div>${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
       this.dom['clear-overlay'].classList.remove('hidden');
       this.dom['clear-confirm'].onclick = () => {
         this.dom['clear-overlay'].classList.add('hidden');
