@@ -2,12 +2,13 @@ import { AIRCRAFT, BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, SECONDARIES, PASSI
 import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarget, shouldCullEnemyBullet, splitXpValue, stagePressure, updateGuidance, upgradePower, xpForLevel, xpValueForStage } from './systems.js';
 import { loadMetaState, maxedMetaState, metaFromUpgrades, ORE_BASE_VALUE, ORE_CLEAR_BONUS, ORE_STAGE_BONUS, oreDropFor, saveMetaState } from './meta.js';
 import { MusicController } from './audio.js';
-import { STAGE1_GEOMETRY_SETTINGS } from './stage1-geometry-settings.js';
+import { STAGE_DEFINITIONS, STAGE_ENTRY_CAMERA_SETTINGS, STAGE_GEOMETRY_SETTINGS, stageEntryCameraTagForMode } from './stage1-geometry-settings.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
 const choose = items => items[(Math.random() * items.length) | 0];
 const lerp = (a, b, t) => a + (b - a) * t;
+const easeOutCubic = value => 1 - Math.pow(1 - clamp(value, 0, 1), 3);
 const skillIconMarkup = icon => icon.startsWith('assets/') ? `<img src="${icon}" alt="" draggable="false">` : icon;
 const isLargeEnemyType = type => type === 'elite' || type === 'midboss' || type === 'boss';
 const enemyDamage = type => isLargeEnemyType(type) ? 10 : 5;
@@ -91,10 +92,13 @@ export class Game {
       image.src = craft.art;
       return [craft.id, image];
     }));
-    this.stage1Geometry = null;
-    this.stage1GeometryCanvas = null;
-    this.stage1GeometryStatus = 'idle';
-    this.initStage1Geometry();
+    this.stageGeometry = null;
+    this.stageGeometryCanvas = null;
+    this.stageGeometryStatus = 'idle';
+    this.stageGeometryStageId = 1;
+    this.stageEntryCamera = null;
+    this.pendingStageEntryCameraTag = null;
+    this.initStageGeometry();
     this.bindInput();
     document.addEventListener('visibilitychange', () => {
       this.accumulator = 0;
@@ -109,35 +113,105 @@ export class Game {
     requestAnimationFrame(time => this.loop(time));
   }
 
-  async initStage1Geometry() {
+  async initStageGeometry() {
     const hasWebGL = typeof window !== 'undefined' && (
       typeof window.WebGLRenderingContext !== 'undefined' ||
       typeof window.WebGL2RenderingContext !== 'undefined'
     );
     if (!hasWebGL || typeof document?.createElement !== 'function') {
-      this.stage1GeometryStatus = 'unsupported';
+      this.stageGeometryStatus = 'unsupported';
       return;
     }
-    this.stage1GeometryStatus = 'loading';
+    this.stageGeometryStatus = 'loading';
     try {
       const geometryCanvas = document.createElement('canvas');
       geometryCanvas.width = this.w;
       geometryCanvas.height = this.h;
-      const { Stage1GeometryLayer } = await import('./stage1-geometry-layer.js?v=76');
-      this.stage1GeometryCanvas = geometryCanvas;
-      this.stage1Geometry = new Stage1GeometryLayer({
+      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=77');
+      const stageId = this.stageIndex + 1;
+      this.stageGeometryCanvas = geometryCanvas;
+      this.stageGeometry = new SceneGeometryLayer({
         canvas: geometryCanvas,
         width: this.w,
         height: this.h,
-        settings: STAGE1_GEOMETRY_SETTINGS,
+        stageId,
+        settings: STAGE_GEOMETRY_SETTINGS[stageId] || STAGE_GEOMETRY_SETTINGS[1],
       });
-      this.stage1GeometryStatus = 'ready';
+      this.stageGeometryStageId = stageId;
+      this.stageGeometryStatus = 'ready';
+      this.applyStageEntryCameraDistance();
     } catch (error) {
-      this.stage1GeometryStatus = 'failed';
-      this.stage1Geometry = null;
-      this.stage1GeometryCanvas = null;
-      console.warn('Stage 1 geometry layer unavailable; using the 2D fallback.', error);
+      this.stageGeometryStatus = 'failed';
+      this.stageGeometry = null;
+      this.stageGeometryCanvas = null;
+      console.warn('Stage geometry layer unavailable; using the 2D fallback.', error);
     }
+  }
+
+  currentStageSceneId() {
+    return clamp(this.stageIndex + 1, 1, STAGES.length);
+  }
+
+  currentStageSceneSettings() {
+    return STAGE_GEOMETRY_SETTINGS[this.currentStageSceneId()] || STAGE_GEOMETRY_SETTINGS[1];
+  }
+
+  currentStageSceneProfile() {
+    return STAGE_DEFINITIONS[this.currentStageSceneId()] || STAGE_DEFINITIONS[1];
+  }
+
+  setStageGeometryStage(stageId = this.currentStageSceneId()) {
+    const resolved = clamp(Number(stageId) || 1, 1, STAGES.length);
+    this.stageGeometryStageId = resolved;
+    if (this.stageGeometryStatus === 'ready' && this.stageGeometry) {
+      this.stageGeometry.setStage(resolved, STAGE_GEOMETRY_SETTINGS[resolved]);
+      this.applyStageEntryCameraDistance();
+    }
+  }
+
+  stageEntryCameraTag() {
+    // Test mode intentionally shares the standard presentation, even when its
+    // combat flags emulate endless rules.
+    return stageEntryCameraTagForMode(this.runMode);
+  }
+
+  beginStageEntryCamera(tag = this.stageEntryCameraTag()) {
+    const settings = this.currentStageSceneSettings();
+    const profile = STAGE_ENTRY_CAMERA_SETTINGS.tags[tag] || STAGE_ENTRY_CAMERA_SETTINGS.tags.standard;
+    const targetDistance = settings.camera.distance;
+    this.stageEntryCamera = {
+      tag,
+      enabled: profile.enabled !== false,
+      elapsedFrames: 0,
+      durationFrames: Math.max(1, Math.round(STAGE_ENTRY_CAMERA_SETTINGS.durationSeconds * 60)),
+      startDistance: STAGE_ENTRY_CAMERA_SETTINGS.startDistance,
+      targetDistance,
+    };
+    this.applyStageEntryCameraDistance();
+  }
+
+  applyStageEntryCameraDistance() {
+    if (this.stageGeometryStatus !== 'ready' || !this.stageGeometry) return;
+    if (!this.stageEntryCamera?.enabled) {
+      this.stageGeometry.setCameraDistance(null);
+      return;
+    }
+    const entry = this.stageEntryCamera;
+    const progress = clamp(entry.elapsedFrames / entry.durationFrames, 0, 1);
+    const distance = lerp(entry.startDistance, entry.targetDistance, easeOutCubic(progress));
+    this.stageGeometry.setCameraDistance(distance);
+  }
+
+  updateStageEntryCamera() {
+    const entry = this.stageEntryCamera;
+    if (!entry?.enabled) return;
+    entry.elapsedFrames += 1;
+    if (entry.elapsedFrames >= entry.durationFrames) {
+      this.stageEntryCamera = null;
+      this.stageGeometry?.setCameraDistance(null);
+      return;
+    }
+    this.applyStageEntryCameraDistance();
   }
 
   bindInput() {
@@ -405,6 +479,10 @@ export class Game {
     this.hudBuildRevision = -1;
     this.upgradeReturnMode = null;
     this.pendingStageMusic = false;
+    this.pendingStageEntryCameraTag = null;
+    this.stageEntryCamera = null;
+    this.setStageGeometryStage(1);
+    this.stageGeometry?.setCameraDistance(null);
     this.lastSoundFrame = {};
     this.announcementToken += 1;
     this.runOre = 0;
@@ -453,8 +531,8 @@ export class Game {
     this.waveCooldown = 0;
     this.routeProgress = 0;
     this.mode = 'stageIntro';
-    this.transitionTimer = 75;
-    this.transitionDeadline = performance.now() + 1250;
+    this.transitionTimer = 120;
+    this.transitionDeadline = performance.now() + 2000;
     this.enemies = [];
     this.playerBullets = [];
     this.enemyBullets = [];
@@ -467,6 +545,8 @@ export class Game {
     this.healDropsThisStage = 0;
     this.bossHealOpportunityRestored = false;
     const stage = STAGES[this.stageIndex];
+    this.setStageGeometryStage(stage.id);
+    this.beginStageEntryCamera();
     this.announce(`STAGE ${stage.id} — ${stage.name}`, stage.subtitle, 1900);
     // Keep the menu track through the initial pre-flight upgrade. Actual combat
     // music begins after the starter choice; test runs and later sectors start it here.
@@ -522,6 +602,7 @@ export class Game {
       if (!bossSceneLocked) this.sceneScroll += this.worldScrollSpeed();
       this.runFrames += 1;
       this.stageFrames += 1;
+      this.updateStageEntryCamera();
       this.updateDps();
       this.ensureTestModeMusic();
     }
@@ -1880,6 +1961,8 @@ export class Game {
         else this.stageIndex += 1;
         this.waveIndex = -1;
         const nextStage = STAGES[this.stageIndex];
+        this.setStageGeometryStage(nextStage.id);
+        this.pendingStageEntryCameraTag = 'endless';
         this.announce(`SECTOR SHIFT — ${nextStage.name}`, nextStage.subtitle, 1600);
         this.player.pendingLevels += 1;
         this.showUpgrade();
@@ -2186,6 +2269,10 @@ export class Game {
     this.pendingStageMusic = false;
     this.mode = this.upgradeReturnMode || 'playing';
     if (resumeStageMusic) this.music.scene('stage', { fadeOut: .32, fadeIn: .60, restart: true });
+    if (this.pendingStageEntryCameraTag) {
+      this.beginStageEntryCamera(this.pendingStageEntryCameraTag);
+      this.pendingStageEntryCameraTag = null;
+    }
     if (this.mode === 'stageClear') {
       this.transitionTimer = 90;
       this.transitionDeadline = performance.now() + 1500;
@@ -2701,7 +2788,8 @@ export class Game {
 
   render() {
     const ctx = this.ctx; const stage = STAGES[this.stageIndex] || STAGES[0];
-    const gradient = ctx.createLinearGradient(0, 0, 0, this.h); gradient.addColorStop(0, stage.theme[0]); gradient.addColorStop(1, stage.theme[1]); ctx.fillStyle = gradient; ctx.fillRect(0, 0, this.w, this.h);
+    const palette = this.currentStageSceneProfile().palette;
+    const gradient = ctx.createLinearGradient(0, 0, 0, this.h); gradient.addColorStop(0, palette.top); gradient.addColorStop(1, palette.bottom); ctx.fillStyle = gradient; ctx.fillRect(0, 0, this.w, this.h);
     this.drawBackground(ctx, stage);
     this.drawXp(ctx); this.drawEffects(ctx); this.drawEnemies(ctx); this.drawBullets(ctx); this.drawPlayer(ctx); this.drawParticles(ctx); this.drawSkillGauge(ctx); this.drawWorldOverlay(ctx);
     if (this.finaleFlash > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(this.finaleFlash, 0, 1)})`; ctx.fillRect(0,0,this.w,this.h); }
@@ -2753,37 +2841,11 @@ export class Game {
   }
 
   drawBackground(ctx, stage) {
-    if (stage.id === 1) {
-      this.drawStage1Background(ctx, stage);
-      return;
-    }
-    const scroll = this.worldScroll;
-    ctx.save();
-    ctx.globalAlpha = .24;
-    ctx.strokeStyle = stage.id % 2 ? '#42e8ff' : '#ff8a4c';
-    ctx.lineWidth = 1;
-    for (let y = -80 + scroll % 80; y < this.h + 80; y += 80) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(this.w, y);
-      ctx.stroke();
-    }
-    for (let x = 0; x <= this.w; x += 60) {
-      ctx.beginPath();
-      ctx.moveTo(this.w / 2 + (x - this.w / 2) * .25, 0);
-      ctx.lineTo(x, this.h);
-      ctx.stroke();
-    }
-    ctx.restore();
-    for (const star of this.stars) {
-      const y = (star.y + scroll * star.speed) % this.h;
-      ctx.fillStyle = `rgba(210,250,255,${.18 + star.speed * .16})`;
-      ctx.fillRect(star.x, y, star.size, star.size);
-    }
+    this.drawHybridStageBackground(ctx, stage);
   }
 
-  stage1RoadLeftInner(y, cover = 0) {
-    const road = STAGE1_GEOMETRY_SETTINGS.road;
+  stageRoadLeftInner(y, cover = 0) {
+    const road = this.currentStageSceneSettings().road;
     const yTop = this.h * .12;
     const yMid = this.h * .56;
     const topSide = this.w * (1 - road.top) / 2;
@@ -2796,54 +2858,150 @@ export class Game {
     return clamp(value - cover, 0, this.w / 2 - 2);
   }
 
-  stage1RoadInnerAt(side, y, cover = 0) {
-    const left = this.stage1RoadLeftInner(clamp(y, 0, this.h), cover);
+  stageRoadInnerAt(side, y, cover = 0) {
+    const left = this.stageRoadLeftInner(clamp(y, 0, this.h), cover);
     return side < 0 ? left : this.w - left;
   }
 
-  stage1RoadPath(ctx, cover = STAGE1_GEOMETRY_SETTINGS.road.cover) {
+  stageRoadPath(ctx, cover = this.currentStageSceneSettings().road.cover) {
     const samples = 36;
     ctx.beginPath();
-    ctx.moveTo(this.stage1RoadInnerAt(-1, 0, cover), 0);
-    ctx.lineTo(this.stage1RoadInnerAt(1, 0, cover), 0);
+    ctx.moveTo(this.stageRoadInnerAt(-1, 0, cover), 0);
+    ctx.lineTo(this.stageRoadInnerAt(1, 0, cover), 0);
     for (let index = 1; index <= samples; index += 1) {
       const y = this.h * index / samples;
-      ctx.lineTo(this.stage1RoadInnerAt(1, y, cover), y);
+      ctx.lineTo(this.stageRoadInnerAt(1, y, cover), y);
     }
     for (let index = samples; index >= 0; index -= 1) {
       const y = this.h * index / samples;
-      ctx.lineTo(this.stage1RoadInnerAt(-1, y, cover), y);
+      ctx.lineTo(this.stageRoadInnerAt(-1, y, cover), y);
     }
     ctx.closePath();
   }
 
-  drawStage1RoadBase(ctx) {
-    const roadSettings = STAGE1_GEOMETRY_SETTINGS.road;
+  rgbaTemplate(template, alpha) {
+    return template.replace('VAR', String(alpha));
+  }
+
+  drawStageAtmosphere(ctx, timeSeconds) {
+    const id = this.currentStageSceneId();
+    const settings = this.currentStageSceneSettings();
     ctx.save();
-    this.stage1RoadPath(ctx);
+    ctx.globalAlpha = settings.background;
+
+    if (id === 1) {
+      const glow = ctx.createRadialGradient(this.w / 2, this.h * .08, 0, this.w / 2, this.h * .08, this.w * .72);
+      glow.addColorStop(0, 'rgba(79,220,255,.18)');
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, this.w, this.h);
+    } else if (id === 2) {
+      ctx.strokeStyle = 'rgba(255,105,66,.22)';
+      ctx.lineWidth = 2;
+      for (let ring = 0; ring < 3; ring += 1) {
+        ctx.beginPath();
+        ctx.ellipse(this.w / 2, this.h * .08, this.w * (.28 + ring * .1), this.h * (.06 + ring * .022), 0, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255,120,52,.52)';
+      for (let index = 0; index < 24; index += 1) {
+        const x = (index * 83 + Math.sin(timeSeconds * 1.7 + index) * 29) % this.w;
+        const y = (index * 137 + timeSeconds * 96 * settings.speed) % this.h;
+        const r = .6 + index % 4 * .45;
+        ctx.fillRect(x, y, r, r * 2.4);
+      }
+    } else if (id === 3) {
+      ctx.strokeStyle = 'rgba(142,234,255,.16)';
+      ctx.lineWidth = 1.2;
+      for (let index = 0; index < 13; index += 1) {
+        const offset = (timeSeconds * 120 * settings.speed + index * 79) % (this.h + 180) - 90;
+        ctx.beginPath();
+        ctx.moveTo(-80 + index * 47, offset - 70);
+        ctx.lineTo(80 + index * 47, offset + 70);
+        ctx.stroke();
+      }
+      for (let index = 0; index < 8; index += 1) {
+        const x = (index * 67 + 29) % this.w;
+        const y = this.h * (.08 + index % 4 * .11);
+        const pulse = .35 + Math.sin(timeSeconds * 3.3 + index) * .18;
+        ctx.fillStyle = `rgba(205,250,255,${pulse})`;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 7); ctx.lineTo(x + 2, y - 1); ctx.lineTo(x + 8, y); ctx.lineTo(x + 2, y + 1);
+        ctx.lineTo(x, y + 7); ctx.lineTo(x - 2, y + 1); ctx.lineTo(x - 8, y); ctx.lineTo(x - 2, y - 1);
+        ctx.closePath(); ctx.fill();
+      }
+    } else if (id === 4) {
+      const sunX = this.w / 2;
+      const sunY = this.h * .075;
+      const sunR = this.w * .17;
+      const sun = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR * 1.7);
+      sun.addColorStop(0, 'rgba(255,247,183,.95)');
+      sun.addColorStop(.28, 'rgba(255,181,61,.72)');
+      sun.addColorStop(.65, 'rgba(255,89,28,.18)');
+      sun.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = sun;
+      ctx.fillRect(0, 0, this.w, this.h * .42);
+      ctx.strokeStyle = 'rgba(255,190,77,.12)';
+      for (let index = 0; index < 9; index += 1) {
+        const y = this.h * (.13 + index * .065) + Math.sin(timeSeconds * 1.4 + index) * 5;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.w, y + Math.sin(index) * 3); ctx.stroke();
+      }
+    } else if (id === 5) {
+      const cx = this.w / 2;
+      const cy = this.h * .105;
+      const pulse = 1 + Math.sin(timeSeconds * 1.4) * .04;
+      const voidGlow = ctx.createRadialGradient(cx, cy, 5, cx, cy, this.w * .3 * pulse);
+      voidGlow.addColorStop(0, 'rgba(0,0,0,.98)');
+      voidGlow.addColorStop(.25, 'rgba(35,8,68,.86)');
+      voidGlow.addColorStop(.57, 'rgba(143,58,224,.22)');
+      voidGlow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = voidGlow;
+      ctx.fillRect(0, 0, this.w, this.h * .48);
+      ctx.strokeStyle = 'rgba(205,144,255,.22)';
+      for (let ring = 0; ring < 4; ring += 1) {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, this.w * (.1 + ring * .055) * pulse, this.h * (.028 + ring * .014) * pulse, timeSeconds * .03 * (ring % 2 ? -1 : 1), 0, TAU);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(210,152,255,.42)';
+      for (let index = 0; index < 18; index += 1) {
+        const angle = index * 2.399 + timeSeconds * .09;
+        const radius = 46 + index % 6 * 25;
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius * .3 + (timeSeconds * 18 + index * 31) % 120;
+        ctx.fillRect(x, y, 1.2, 1.2);
+      }
+    }
+    ctx.restore();
+  }
+
+  drawStageRoadBase(ctx) {
+    const settings = this.currentStageSceneSettings();
+    const palette = this.currentStageSceneProfile().palette;
+    ctx.save();
+    this.stageRoadPath(ctx);
     const road = ctx.createLinearGradient(0, 0, 0, this.h);
-    road.addColorStop(0, `rgba(4,18,34,${roadSettings.opacity * .94})`);
-    road.addColorStop(.55, `rgba(2,11,21,${roadSettings.opacity})`);
-    road.addColorStop(1, `rgba(1,6,12,${roadSettings.opacity})`);
+    road.addColorStop(0, this.rgbaTemplate(palette.roadTop, settings.road.opacity * .94));
+    road.addColorStop(.55, this.rgbaTemplate(palette.roadMid, settings.road.opacity));
+    road.addColorStop(1, this.rgbaTemplate(palette.roadBottom, settings.road.opacity));
     ctx.fillStyle = road;
     ctx.fill();
     ctx.restore();
   }
 
-  drawStage1Grid(ctx) {
-    if (!STAGE1_GEOMETRY_SETTINGS.showGrid) return;
+  drawStageGrid(ctx) {
+    const settings = this.currentStageSceneSettings();
+    if (!settings.showGrid) return;
+    const palette = this.currentStageSceneProfile().palette;
     const scroll = this.worldScroll;
     ctx.save();
-    this.stage1RoadPath(ctx);
+    this.stageRoadPath(ctx);
     ctx.clip();
-    ctx.globalAlpha = .24;
-    ctx.strokeStyle = '#42e8ff';
+    ctx.globalAlpha = this.currentStageSceneId() === 4 ? .3 : .23;
+    ctx.strokeStyle = palette.grid;
     ctx.lineWidth = 1;
     for (let y = -80 + scroll % 80; y < this.h + 80; y += 80) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(this.w, y);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.w, y); ctx.stroke();
     }
     for (let x = 0; x <= this.w; x += 60) {
       ctx.beginPath();
@@ -2854,87 +3012,110 @@ export class Game {
     ctx.restore();
   }
 
-  drawStage1RoadPosts(ctx) {
-    const settings = STAGE1_GEOMETRY_SETTINGS;
+  drawStagePostLamp(ctx, side, x, y, eased, scale, color) {
+    const poleH = lerp(14, 76, eased) * scale;
+    const poleTilt = lerp(2, 11, eased) * scale;
+    const arm = lerp(5, 18, eased) * scale;
+    const glowR = lerp(2, 10, eased) * scale;
+    ctx.strokeStyle = color; ctx.lineWidth = lerp(1, 3.2, eased) * scale;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + side * poleTilt, y - poleH); ctx.lineTo(x + side * (poleTilt + arm), y - poleH + 1.5); ctx.stroke();
+    return { x: x + side * (poleTilt + arm), y: y - poleH + 1.5, r: glowR };
+  }
+
+  drawStagePostGantry(ctx, side, x, y, eased, scale, color) {
+    const h = lerp(18, 88, eased) * scale; const w = lerp(7, 30, eased) * scale;
+    ctx.strokeStyle = color; ctx.lineWidth = lerp(1, 3.4, eased) * scale; ctx.strokeRect(x - w / 2, y - h, w, h);
+    ctx.beginPath(); ctx.moveTo(x - w / 2, y - h * .35); ctx.lineTo(x + w / 2, y - h * .55); ctx.moveTo(x - w / 2, y - h * .7); ctx.lineTo(x + w / 2, y - h * .9); ctx.stroke();
+    return { x: x - side * w * .15, y: y - h, r: lerp(2, 8, eased) * scale };
+  }
+
+  drawStagePostCrystal(ctx, side, x, y, eased, scale, color) {
+    const h = lerp(14, 72, eased) * scale; const w = lerp(5, 22, eased) * scale;
+    ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(x, y - h); ctx.lineTo(x + w, y - h * .28); ctx.lineTo(x + w * .42, y); ctx.lineTo(x - w * .42, y); ctx.lineTo(x - w, y - h * .28); ctx.closePath();
+    ctx.globalAlpha *= .35; ctx.fill(); ctx.globalAlpha /= .35; ctx.strokeStyle = color; ctx.stroke();
+    return { x, y: y - h * .55, r: lerp(2, 7, eased) * scale };
+  }
+
+  drawStagePostSolar(ctx, side, x, y, eased, scale, color) {
+    const h = lerp(16, 82, eased) * scale; const r = lerp(3, 12, eased) * scale;
+    ctx.strokeStyle = color; ctx.lineWidth = lerp(1, 3.2, eased) * scale;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - h); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y - h, r, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y - h, r * .48, 0, TAU); ctx.stroke();
+    return { x, y: y - h, r: r * .7 };
+  }
+
+  drawStagePostVoid(ctx, side, x, y, eased, scale, color) {
+    const h = lerp(16, 84, eased) * scale; const w = lerp(4, 18, eased) * scale;
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(x, y - h); ctx.lineTo(x + w * .55, y - h * .24); ctx.lineTo(x, y); ctx.lineTo(x - w * .55, y - h * .24); ctx.closePath();
+    ctx.globalAlpha *= .22; ctx.fill(); ctx.globalAlpha /= .22; ctx.stroke();
+    return { x: x + side * w * .8, y: y - h * .62, r: lerp(2, 8, eased) * scale };
+  }
+
+  drawStageRoadPosts(ctx) {
+    const settings = this.currentStageSceneSettings();
     if (!settings.showPosts) return;
+    const profile = this.currentStageSceneProfile();
     const count = Math.max(1, Math.round(settings.posts.count));
     const timeSeconds = this.sceneScroll / 72;
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     for (const side of [-1, 1]) {
       const offset = side < 0 ? 0 : .37;
       for (let index = 0; index < count; index += 1) {
-        const progress = ((timeSeconds * 4.2 * settings.speed * settings.posts.speed) + offset + index / count) % 1;
+        const progress = (timeSeconds * 4.2 * settings.speed * settings.posts.speed + offset + index / count) % 1;
         const eased = Math.pow(progress, .72);
         const y = lerp(this.h * .14, this.h * 1.12, eased);
-        const inner = this.stage1RoadInnerAt(side, y, 0);
+        const inner = this.stageRoadInnerAt(side, y, 0);
         const gap = lerp(14, 3, eased) * settings.posts.scale;
         const x = side < 0 ? inner - gap : inner + gap;
-        const poleH = lerp(14, 76, eased) * settings.posts.scale;
-        const poleTilt = lerp(2, 11, eased) * settings.posts.scale;
-        const arm = lerp(5, 18, eased) * settings.posts.scale;
-        const glowR = lerp(2, 10, eased) * settings.posts.scale;
-        const alpha = bossLocked ? .14 + eased * .16 : .28 + eased * .34;
-
         ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.strokeStyle = bossLocked ? 'rgba(255,92,112,.68)' : 'rgba(120,242,255,.78)';
-        ctx.lineWidth = lerp(1, 3.2, eased) * settings.posts.scale;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + side * poleTilt, y - poleH);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(x + side * poleTilt, y - poleH);
-        ctx.lineTo(x + side * (poleTilt + arm), y - poleH + 1.5);
-        ctx.stroke();
-        const glowX = x + side * (poleTilt + arm);
-        const glowY = y - poleH + 1.5;
-        ctx.fillStyle = bossLocked ? 'rgba(255,96,116,.78)' : 'rgba(174,252,255,.94)';
-        ctx.beginPath();
-        ctx.arc(glowX, glowY, glowR, 0, TAU);
-        ctx.fill();
+        ctx.globalAlpha = bossLocked ? .14 + eased * .16 : .28 + eased * .34;
+        let glowPoint;
+        if (profile.postStyle === 'gantry') glowPoint = this.drawStagePostGantry(ctx, side, x, y, eased, settings.posts.scale, profile.palette.post);
+        else if (profile.postStyle === 'crystal') glowPoint = this.drawStagePostCrystal(ctx, side, x, y, eased, settings.posts.scale, profile.palette.post);
+        else if (profile.postStyle === 'solar') glowPoint = this.drawStagePostSolar(ctx, side, x, y, eased, settings.posts.scale, profile.palette.post);
+        else if (profile.postStyle === 'void') glowPoint = this.drawStagePostVoid(ctx, side, x, y, eased, settings.posts.scale, profile.palette.post);
+        else glowPoint = this.drawStagePostLamp(ctx, side, x, y, eased, settings.posts.scale, profile.palette.post);
         ctx.globalCompositeOperation = 'lighter';
-        const glow = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, glowR * 3.2);
-        glow.addColorStop(0, bossLocked ? 'rgba(255,96,116,.42)' : 'rgba(120,242,255,.38)');
-        glow.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath();
-        ctx.arc(glowX, glowY, glowR * 3.2, 0, TAU);
-        ctx.fill();
+        ctx.fillStyle = profile.palette.post;
+        ctx.beginPath(); ctx.arc(glowPoint.x, glowPoint.y, glowPoint.r, 0, TAU); ctx.fill();
+        const glow = ctx.createRadialGradient(glowPoint.x, glowPoint.y, 0, glowPoint.x, glowPoint.y, glowPoint.r * 3.2);
+        glow.addColorStop(0, `${profile.palette.post}66`); glow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(glowPoint.x, glowPoint.y, glowPoint.r * 3.2, 0, TAU); ctx.fill();
         ctx.restore();
       }
     }
   }
 
-  drawStage1Background(ctx) {
-    const settings = STAGE1_GEOMETRY_SETTINGS;
-    const scroll = this.worldScroll;
+  drawHybridStageBackground(ctx) {
+    const settings = this.currentStageSceneSettings();
+    const profile = this.currentStageSceneProfile();
+    const timeSeconds = this.sceneScroll / 72;
+
+    ctx.save();
+    ctx.globalAlpha = .12 * settings.background;
+    ctx.fillStyle = profile.palette.accent;
     for (const star of this.stars) {
-      const y = (star.y + scroll * star.speed) % this.h;
-      ctx.fillStyle = `rgba(210,250,255,${(.10 + star.speed * .10) * settings.background})`;
+      const y = (star.y + this.worldScroll * star.speed) % this.h;
       ctx.fillRect(star.x, y, star.size, star.size);
     }
+    ctx.restore();
+    this.drawStageAtmosphere(ctx, timeSeconds);
 
-    if (this.stage1GeometryStatus === 'ready' && this.stage1Geometry) {
+    if (this.stageGeometryStatus === 'ready' && this.stageGeometry) {
       try {
-        this.stage1Geometry.update(this.sceneScroll / 72);
-        this.stage1Geometry.drawTo(ctx, 0, 0, this.w, this.h);
+        if (this.stageGeometryStageId !== this.currentStageSceneId()) this.setStageGeometryStage();
+        this.stageGeometry.update(timeSeconds);
+        this.stageGeometry.drawTo(ctx, 0, 0, this.w, this.h);
       } catch (error) {
-        this.stage1GeometryStatus = 'failed';
-        console.warn('Stage 1 geometry render failed; using the 2D fallback.', error);
+        this.stageGeometryStatus = 'failed';
+        console.warn('Stage geometry render failed; using the 2D fallback.', error);
       }
     }
 
-    if (this.stage1GeometryStatus === 'failed' || this.stage1GeometryStatus === 'unsupported') {
-      this.drawNeonOutskirts(ctx);
-      this.drawNeonOutskirtsParticles(ctx);
-      return;
-    }
-
-    this.drawStage1RoadBase(ctx);
-    this.drawStage1Grid(ctx);
-    this.drawStage1RoadPosts(ctx);
-    this.drawNeonOutskirtsParticles(ctx);
+    this.drawStageRoadBase(ctx);
+    this.drawStageGrid(ctx);
+    this.drawStageRoadPosts(ctx);
 
     const bossLocked = this.mode === 'bossWarning' || this.enemies.some(enemy => enemy.type === 'boss' && enemy.alive);
     if (bossLocked) {
