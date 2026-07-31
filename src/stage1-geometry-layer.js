@@ -7,6 +7,20 @@ const PHASES = { far: 0.2, mid: 1.1, near: 2.0, closest: 2.9 };
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const lerp = (a, b, t) => a + (b - a) * t;
 
+
+function graphicsProfile() {
+  const nav = globalThis.navigator || {};
+  const cores = Number(nav.hardwareConcurrency || 8);
+  const memory = Number(nav.deviceMemory || 8);
+  const lowEnd = cores <= 4 || memory <= 4;
+  const deviceRatio = Number(globalThis.devicePixelRatio || 1);
+  return {
+    lowEnd,
+    antialias: !lowEnd,
+    pixelRatio: lowEnd ? 1 : Math.min(deviceRatio, 1.35),
+  };
+}
+
 function seeded(seed) {
   let value = seed >>> 0;
   return () => {
@@ -34,16 +48,17 @@ export class SceneGeometryLayer {
     this.materials = [];
     this.geometries = [];
     this.animatedObjects = [];
+    this.graphicsProfile = graphicsProfile();
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: this.graphicsProfile.antialias,
       alpha: true,
       powerPreference: 'high-performance',
       preserveDrawingBuffer: true,
     });
     this.renderer.setSize(width, height, false);
-    this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(this.graphicsProfile.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.setClearColor(0x000000, 0);
@@ -78,6 +93,15 @@ export class SceneGeometryLayer {
       stageId: this.stageId,
       settings: this.settings,
     });
+  }
+
+  precompile() {
+    try {
+      this.renderer.compile(this.scene, this.camera);
+      if (this.enemyVisuals?.scene) this.renderer.compile(this.enemyVisuals.scene, this.camera);
+    } catch {
+      // Shader precompile is an optimization only; normal rendering remains available.
+    }
   }
 
   setStage(stageId, settings) {

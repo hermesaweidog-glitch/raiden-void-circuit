@@ -2498,7 +2498,7 @@ test('normal-mode completion reward is paid on every clear, not only the first p
   game.runOre = 0;
   game.endRun(true);
   assert.equal(game.meta.ore, before + 1500);
-  assert.match(game.dom['clear-body'].innerHTML, /一般模式通關獎勵 \+1500（每次通關）/);
+  assert.match(game.dom['clear-body'].innerHTML, /通關獎勵\+1500/);
   assert.doesNotMatch(game.dom['clear-body'].innerHTML, /無限模式已解鎖/, 'repeat clears do not repeat the unlock message');
 
   game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });

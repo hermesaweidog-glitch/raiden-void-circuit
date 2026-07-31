@@ -102,7 +102,7 @@ export class Game {
     this.stageGeometryStageId = 1;
     this.stageEntryCamera = null;
     this.pendingStageEntryCameraTag = null;
-    this.initStageGeometry();
+    this.scheduleStageGeometryInit();
     this.bindInput();
     document.addEventListener('visibilitychange', () => {
       this.accumulator = 0;
@@ -115,6 +115,15 @@ export class Game {
     });
     this.updateHud();
     requestAnimationFrame(time => this.loop(time));
+  }
+
+  scheduleStageGeometryInit() {
+    const start = () => this.initStageGeometry();
+    if (typeof globalThis.requestIdleCallback === 'function') {
+      globalThis.requestIdleCallback(start, { timeout: 450 });
+    } else if (typeof globalThis.requestAnimationFrame === 'function') {
+      globalThis.requestAnimationFrame(() => setTimeout(start, 40));
+    } else setTimeout(start, 0);
   }
 
   async initStageGeometry() {
@@ -131,7 +140,7 @@ export class Game {
       const geometryCanvas = document.createElement('canvas');
       geometryCanvas.width = this.w;
       geometryCanvas.height = this.h;
-      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=79');
+      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=80');
       const stageId = this.stageIndex + 1;
       this.stageGeometryCanvas = geometryCanvas;
       this.stageGeometry = new SceneGeometryLayer({
@@ -143,6 +152,7 @@ export class Game {
       });
       this.stageGeometryStageId = stageId;
       this.stageGeometryStatus = 'ready';
+      this.stageGeometry.precompile?.();
       this.applyStageEntryCameraDistance();
     } catch (error) {
       this.stageGeometryStatus = 'failed';
@@ -2618,7 +2628,7 @@ export class Game {
     const banked = this.bankOre(clearBonus);
     const settlement = this.lastOreSettlement || this.oreSettlement(clearBonus);
     const unbankedNote = this.maxMode || this.runMode === 'test' ? '（未入帳）' : '';
-    const clearRewardNote = clearBonus > 0 ? `<small>一般模式通關獎勵 +${clearBonus}（每次通關）</small>` : '';
+    const clearRewardNote = clearBonus > 0 ? `<small>通關獎勵+${clearBonus}</small>` : '';
     const cleanupNote = settlement.bonus > 0 ? `<small>戰場清理額外 +${settlement.bonus}</small>` : '';
     const oreLine = `<div class="summary-ore"><b>獲得源晶礦　${settlement.total}</b>${clearRewardNote}${cleanupNote}<b>累積源晶礦　${this.meta.ore} ${unbankedNote}</b></div>`;
     this.dom['damage-review'].innerHTML = this.damageReviewMarkup();
@@ -2627,7 +2637,7 @@ export class Game {
     this.dom['run-summary'].innerHTML = `SCORE　${String(this.score).padStart(7, '0')}<br>${depthLine}${oreLine}LEVEL　${this.player.level}<br>TIME　${String(minutes).padStart(2, '0')}:${seconds}<br><br>BEST 1S DPS　${dps(this.dpsBest.one)}<br>BEST 10S DPS　${dps(this.dpsBest.ten)}<br>BEST STAGE DPS　${dps(this.dpsBest.total)}<br><br>PRIMARY　${this.player.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `LV ${this.player.build.primaryLevel}`}<br>SECONDARY　${Object.keys(this.player.build.secondaries).length + secondaryFusionCount}/${this.player.build.secondarySlots}　PASSIVE　${Object.keys(this.player.build.passives).length + passiveFusionCount}/${this.player.build.passiveSlots}`;
     if (victory && this.runMode === 'normal') {
       const skipBank = this.maxMode || this.runMode === 'test';
-      const clearRewardLine = `<small>一般模式通關獎勵 +${clearBonus}（每次通關）</small>`;
+      const clearRewardLine = `<small>通關獎勵+${clearBonus}</small>`;
       const cleanupLine = settlement.bonus > 0 ? `<small>戰場清理額外 +${settlement.bonus}</small>` : '';
       this.dom['clear-body'].innerHTML = `<div class="summary-ore"><b>獲得源晶礦　${settlement.total}</b>${clearRewardLine}${cleanupLine}<b>累積源晶礦　${this.meta.ore} ${skipBank ? '（未入帳）' : ''}</b></div>${firstClear ? '<span class="clear-unlock">🔓 無限模式已解鎖！<br>主選單新增 ENDLESS 出擊選項。</span>' : ''}`;
       this.dom['clear-overlay'].classList.remove('hidden');
@@ -3671,8 +3681,37 @@ export class Game {
     }
   }
 
+  drawSmallEnemyContrast(ctx) {
+    for (const enemy of this.enemies) {
+      if (!enemy?.alive || !['scout', 'striker', 'gunship', 'elite'].includes(enemy.type)) continue;
+      const stageId = clamp(Number(enemy.stageId) || this.currentStageSceneId(), 1, 5);
+      const palette = ENEMY_ROLE_PALETTES[stageId]?.[enemy.type] || ENEMY_ROLE_PALETTES[1].scout;
+      const radius = Math.max(10, Number(enemy.radius) || 14);
+      const pulse = 1 + Math.sin(this.frame * 0.08 + enemy.id * 0.37) * 0.035;
+      const outer = radius * 1.36 * pulse;
+      const gradient = ctx.createRadialGradient(enemy.x, enemy.y, radius * 0.42, enemy.x, enemy.y, outer);
+      gradient.addColorStop(0, 'rgba(1,4,12,.34)');
+      gradient.addColorStop(.58, 'rgba(1,4,12,.28)');
+      gradient.addColorStop(.77, `${palette.glow}2e`);
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.save();
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, outer, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 0.76;
+      ctx.strokeStyle = '#f4ffff';
+      ctx.lineWidth = 1.25;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, radius * 1.04, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   drawEnemies(ctx) {
     this.drawVoidEnemyTrails(ctx);
+    this.drawSmallEnemyContrast(ctx);
     let rendered3D = false;
     if (this.stageGeometryStatus === 'ready' && this.stageGeometry?.updateEnemies) {
       try {

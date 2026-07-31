@@ -31,7 +31,7 @@ function resolvePath(root, path) {
   return current;
 }
 
-function cloneFactoryModel(factory) {
+function cloneFactoryModel(factory, type = factory.enemyClass) {
   const source = factory.modelGroup;
   const clone = source.clone(true);
   const originals = [];
@@ -82,6 +82,31 @@ function cloneFactoryModel(factory) {
       visible: object.visible,
     });
   });
+
+  if (SMALL_TYPES.has(type)) {
+    clone.traverse(object => {
+      if (object.isLineSegments && object.material) {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) {
+          material.color?.set?.(0xf4ffff);
+          material.opacity = 0.96;
+          material.transparent = true;
+          material.blending = THREE.NormalBlending;
+          material.depthWrite = false;
+          material.toneMapped = false;
+        }
+      } else if (object.isMesh && object.material) {
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) {
+          if (material.isMeshStandardMaterial) {
+            material.emissiveIntensity = Math.max(0.82, Number(material.emissiveIntensity || 0) * 1.35);
+            material.color?.offsetHSL?.(0, 0.04, 0.08);
+            material.roughness = Math.min(Number(material.roughness ?? 0.3), 0.24);
+          }
+        }
+      }
+    });
+  }
 
   const bounds = new THREE.Box3().setFromObject(clone);
   const size = bounds.getSize(new THREE.Vector3());
@@ -179,6 +204,7 @@ export class EnemyVisualLayer {
       stageId: this.stageId,
       stageSettings: settings,
       labSettings: { ...ENEMY_LAB_DEFAULTS, stageId: this.stageId, enemyClass: 'scout', action: 'idle' },
+      headless: true,
     });
     this.ensureStagePrototypes(this.stageId, settings);
   }
@@ -211,7 +237,7 @@ export class EnemyVisualLayer {
       const key = this.prototypeKey(stageId, type);
       if (this.prototypes.has(key)) continue;
       this.factory.setEnemyClass(type);
-      this.prototypes.set(key, cloneFactoryModel(this.factory));
+      this.prototypes.set(key, cloneFactoryModel(this.factory, type));
     }
   }
 

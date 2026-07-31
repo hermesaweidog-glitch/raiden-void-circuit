@@ -56,7 +56,7 @@ function setOpacity(root, value) {
 }
 
 export class EnemyGeometryLayer {
-  constructor({ canvas, width = 480, height = 800, stageId = 1, stageSettings, labSettings }) {
+  constructor({ canvas, width = 480, height = 800, stageId = 1, stageSettings, labSettings, headless = false }) {
     if (!canvas) throw new Error('EnemyGeometryLayer requires a canvas.');
     this.canvas = canvas;
     this.width = width;
@@ -77,19 +77,22 @@ export class EnemyGeometryLayer {
     this.pose = [];
     this.modelData = {};
 
-    this.renderer = new THREE.WebGLRenderer({
+    this.headless = Boolean(headless);
+    this.renderer = this.headless ? null : new THREE.WebGLRenderer({
       canvas,
       antialias: true,
       alpha: true,
       powerPreference: 'high-performance',
       preserveDrawingBuffer: true,
     });
-    this.renderer.setSize(width, height, false);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.setClearColor(0x000000, 0);
-    this.renderer.toneMappingExposure = Math.max(1.12, this.stageSettings.exposure + 0.06);
+    if (this.renderer) {
+      this.renderer?.setSize(width, height, false);
+      this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
+      this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.setClearColor(0x000000, 0);
+      if (this.renderer) this.renderer.toneMappingExposure = Math.max(1.12, this.stageSettings.exposure + 0.06);
+    }
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(this.stageSettings.camera.fov, width / height, 0.1, 300);
@@ -1001,7 +1004,7 @@ export class EnemyGeometryLayer {
     this.stageId = Number(stageId) || 1;
     this.profile = STAGE_DEFINITIONS[this.stageId] || STAGE_DEFINITIONS[1];
     this.stageSettings = cloneSettings(stageSettings);
-    this.renderer.toneMappingExposure = Math.max(1.12, this.stageSettings.exposure + 0.06);
+    if (this.renderer) this.renderer.toneMappingExposure = Math.max(1.12, this.stageSettings.exposure + 0.06);
     this.rim.color.set(this.profile.palette.accent);
     this.warm.color.set(this.profile.palette.warm);
     this.updateCamera();
@@ -1345,7 +1348,7 @@ export class EnemyGeometryLayer {
         t = 1;
       }
     }
-    this.renderer.render(this.scene, this.camera);
+    this.renderer?.render(this.scene, this.camera);
   }
 
   getActionProgress() {
@@ -1358,9 +1361,9 @@ export class EnemyGeometryLayer {
 
   getStats() {
     return {
-      calls: this.renderer.info.render.calls,
-      triangles: this.renderer.info.render.triangles,
-      geometries: this.renderer.info.memory.geometries,
+      calls: this.renderer?.info.render.calls || 0,
+      triangles: this.renderer?.info.render.triangles || 0,
+      geometries: this.renderer?.info.memory.geometries || this.geometries.length,
       materials: this.materials.length,
     };
   }
@@ -1368,7 +1371,7 @@ export class EnemyGeometryLayer {
   resize(width, height) {
     this.width = width;
     this.height = height;
-    this.renderer.setSize(width, height, false);
+    this.renderer?.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.updatePlacement();
@@ -1376,7 +1379,7 @@ export class EnemyGeometryLayer {
 
   dispose() {
     this.disposeGenerated();
-    this.renderer.dispose();
+    this.renderer?.dispose();
   }
 }
 
