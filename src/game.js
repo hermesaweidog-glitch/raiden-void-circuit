@@ -3,6 +3,7 @@ import { clamp, distanceSq, makeUpgradeChoices, midbossProgress, pickNearestTarg
 import { loadMetaState, maxedMetaState, metaFromUpgrades, ORE_BASE_VALUE, ORE_CLEAR_BONUS, ORE_STAGE_BONUS, oreDropFor, saveMetaState } from './meta.js';
 import { MusicController } from './audio.js';
 import { STAGE_DEFINITIONS, STAGE_ENTRY_CAMERA_SETTINGS, STAGE_GEOMETRY_SETTINGS, stageEntryCameraTagForMode } from './stage1-geometry-settings.js';
+import { ENEMY_ROLE_PALETTES, PROJECTILE_STYLES } from './enemy-geometry-settings.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -69,6 +70,7 @@ export class Game {
     this.enemies = [];
     this.playerBullets = [];
     this.enemyBullets = [];
+    this.enemyBulletSpriteCache = new Map();
     this.xpOrbs = [];
     this.particles = [];
     this.effects = [];
@@ -129,7 +131,7 @@ export class Game {
       const geometryCanvas = document.createElement('canvas');
       geometryCanvas.width = this.w;
       geometryCanvas.height = this.h;
-      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=78');
+      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=79');
       const stageId = this.stageIndex + 1;
       this.stageGeometryCanvas = geometryCanvas;
       this.stageGeometry = new SceneGeometryLayer({
@@ -319,6 +321,7 @@ export class Game {
     this.enemies = [];
     this.playerBullets = [];
     this.enemyBullets = [];
+    this.enemyBulletSpriteCache = new Map();
     this.xpOrbs = [];
     this.particles = [];
     this.effects = [];
@@ -509,6 +512,7 @@ export class Game {
     this.enemies = [];
     this.playerBullets = [];
     this.enemyBullets = [];
+    this.enemyBulletSpriteCache = new Map();
     this.xpOrbs = [];
     this.effects = [];
     this.particles = [];
@@ -1580,6 +1584,7 @@ export class Game {
     enemy.kungfuSlowTimer = Math.max(0, (enemy.kungfuSlowTimer || 0) - 1);
     enemy.kungfuAttackLock = Math.max(0, (enemy.kungfuAttackLock || 0) - 1);
     enemy.ironMountainCooldown = Math.max(0, (enemy.ironMountainCooldown || 0) - 1);
+    enemy.visualFirePulse = Math.max(0, (enemy.visualFirePulse || 0) - 1);
     if (enemy.burnTimer > 0 && this.frame % 20 === 0) this.damageEnemy(enemy, enemy.burnDamage || .1, false, enemy.burnSource || 'primary:主武器｜燃燒');
     if (!enemy.alive) return 0;
     if (enemy.chillTimer <= 0 && enemy.freezeTimer <= 0) enemy.chillStacks = 0;
@@ -1609,6 +1614,7 @@ export class Game {
         else if (enemy.formation === 5) enemy.x = clamp(enemy.originX + (enemy.index % 2 ? -1 : 1) * enemy.age * .62, 20, this.w - 20);
         else enemy.x = enemy.originX + Math.sin(enemy.age / 27 + enemy.index) * 18;
         enemy.y += enemy.speed * motionScale;
+        this.updateEnemyPhaseTrail(enemy);
         if (!(enemy.kungfuAttackLock > 0)) {
           enemy.cooldown -= motionScale;
           if (enemy.y > 30 && enemy.cooldown <= 0) { this.enemyShoot(enemy); enemy.cooldown = this.enemyCooldown(enemy); }
@@ -1654,6 +1660,22 @@ export class Game {
     }
   }
 
+  updateEnemyPhaseTrail(enemy) {
+    const stageId = clamp(Number(enemy.stageId) || this.currentStageSceneId(), 1, STAGES.length);
+    if (stageId !== 5 || !['scout', 'striker', 'gunship', 'elite'].includes(enemy.type)) {
+      enemy.phaseTrail = null;
+      return;
+    }
+    const trail = enemy.phaseTrail || (enemy.phaseTrail = []);
+    if (this.frame % 3 !== 0) return;
+    const previous = trail[0];
+    const moved = !previous || Math.hypot(enemy.x - previous.x, enemy.y - previous.y) >= 1.1;
+    if (!moved) return;
+    trail.unshift({ x: enemy.x, y: enemy.y, age: 0 });
+    for (const sample of trail) sample.age += 1;
+    if (trail.length > 3) trail.length = 3;
+  }
+
   updateMidboss(enemy) {
     const motionScale = enemy.motionScale || 1;
     if (!enemy.orbiting) {
@@ -1678,6 +1700,7 @@ export class Game {
   }
 
   midbossAttack(enemy) {
+    enemy.visualFirePulse = 10;
     const speed = (1.55 + this.stageIndex * .1) * this.activeStage().bulletSpeed;
     if (this.stageIndex === 0) {
       for (let shot = -3; shot <= 3; shot += 1) this.aim(enemy, speed, shot * .13);
@@ -1711,7 +1734,11 @@ export class Game {
 
   addEnemyBullet(x, y, vx, vy, radius = 5, color = '#ff6b6b', life = 360, entryGrace = 0, damage = 5) {
     if (this.enemyBullets.length >= WORLD.maxEnemyBullets) return false;
-    this.enemyBullets.push({ x, y, vx, vy, radius, color, life, entryGrace, damage: this.endlessDamage(damage) });
+    this.enemyBullets.push({
+      x, y, vx, vy, radius, color, life, entryGrace, damage: this.endlessDamage(damage),
+      visualStageId: this.currentStageSceneId(),
+      visualPhase: rand(0, TAU),
+    });
     return true;
   }
 
@@ -1725,6 +1752,7 @@ export class Game {
   }
 
   enemyShoot(enemy) {
+    enemy.visualFirePulse = 10;
     const stage = this.activeStage();
     const speed = (1.65 + this.stageIndex * .12) * stage.bulletSpeed;
     const countBonus = Math.floor((stage.bulletCount - .9) * 2.2);
@@ -1773,6 +1801,7 @@ export class Game {
   }
 
   bossAttack(boss) {
+    boss.visualFirePulse = 10;
     const s = this.activeStage();
     const speed = (1.75 + boss.phase * .22) * s.bulletSpeed;
     const radial = (count, bulletSpeed, offset = 0, skip = () => false) => {
@@ -3584,31 +3613,218 @@ export class Game {
     }
   }
 
+  drawFallbackEnemyBody(ctx, enemy) {
+    ctx.fillStyle = enemy.color;
+    ctx.strokeStyle = 'rgba(255,255,255,.5)';
+    ctx.lineWidth = 1.5;
+    if (enemy.type === 'boss') this.drawBossSprite(ctx, enemy);
+    else if (enemy.type === 'midboss') {
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-enemy.radius * .62, -enemy.radius * .62, enemy.radius * 1.24, enemy.radius * 1.24);
+      ctx.strokeRect(-enemy.radius * .62, -enemy.radius * .62, enemy.radius * 1.24, enemy.radius * 1.24);
+      ctx.rotate(-Math.PI / 4);
+      ctx.fillStyle = '#07111d';
+      ctx.beginPath(); ctx.arc(0, 0, 13, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillRect(-8, -3, 16, 6);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(0, 20); ctx.lineTo(-enemy.radius, -12); ctx.lineTo(-5, -5);
+      ctx.lineTo(0, -enemy.radius); ctx.lineTo(5, -5); ctx.lineTo(enemy.radius, -12);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  }
+
+  drawVoidEnemyTrails(ctx) {
+    if (this.currentStageSceneId() !== 5) return;
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || !['scout', 'striker', 'gunship', 'elite'].includes(enemy.type) || !enemy.phaseTrail?.length) continue;
+      const palette = ENEMY_ROLE_PALETTES[5]?.[enemy.type];
+      const color = palette?.glow || '#c084fc';
+      enemy.phaseTrail.forEach((sample, index) => {
+        const alpha = [0.19, 0.095, 0.04][index] || 0;
+        if (!alpha) return;
+        ctx.save();
+        ctx.translate(sample.x, sample.y);
+        ctx.globalAlpha = alpha;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = Math.max(1, enemy.radius * .1);
+        if (enemy.type === 'scout') {
+          for (const [x, y, scale] of [[0, -4, 1], [-enemy.radius * .58, 3, .72], [enemy.radius * .58, 3, .72]]) {
+            ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale); ctx.rotate(Math.PI / 4);
+            ctx.fillRect(-enemy.radius * .24, -enemy.radius * .24, enemy.radius * .48, enemy.radius * .48); ctx.restore();
+          }
+        } else if (enemy.type === 'striker') {
+          ctx.beginPath(); ctx.moveTo(0, -enemy.radius); ctx.lineTo(-enemy.radius * .42, enemy.radius * .5); ctx.lineTo(0, enemy.radius * .2); ctx.lineTo(enemy.radius * .42, enemy.radius * .5); ctx.closePath(); ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, 0, enemy.radius * .48, 0, TAU); ctx.stroke();
+        } else if (enemy.type === 'gunship') {
+          ctx.strokeRect(-enemy.radius * .86, -enemy.radius * .45, enemy.radius * 1.72, enemy.radius * .9);
+          ctx.beginPath(); ctx.arc(-enemy.radius * .62, 0, enemy.radius * .27, 0, TAU); ctx.arc(enemy.radius * .62, 0, enemy.radius * .27, 0, TAU); ctx.stroke();
+        } else {
+          ctx.beginPath(); ctx.arc(0, 0, enemy.radius * .82, 0, TAU); ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, 0, enemy.radius * .43, 0, TAU); ctx.stroke();
+          ctx.rotate(Math.PI / 4); ctx.strokeRect(-enemy.radius * .55, -enemy.radius * .55, enemy.radius * 1.1, enemy.radius * 1.1);
+        }
+        ctx.restore();
+      });
+    }
+  }
+
   drawEnemies(ctx) {
-    for (const e of this.enemies) { if(!e.alive)continue; ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle='rgba(255,255,255,.08)';ctx.beginPath();ctx.arc(0,0,e.radius*1.45,0,TAU);ctx.fill();ctx.fillStyle=e.color;ctx.strokeStyle='rgba(255,255,255,.5)';ctx.lineWidth=1.5;
-      if(e.type==='boss')this.drawBossSprite(ctx,e);
-      else if(e.type==='midboss'){ctx.rotate(Math.PI/4);ctx.fillRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.strokeRect(-e.radius*.62,-e.radius*.62,e.radius*1.24,e.radius*1.24);ctx.rotate(-Math.PI/4);ctx.fillStyle='#07111d';ctx.beginPath();ctx.arc(0,0,13,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(-8,-3,16,6);}
-      else{ctx.beginPath();ctx.moveTo(0,20);ctx.lineTo(-e.radius,-12);ctx.lineTo(-5,-5);ctx.lineTo(0,-e.radius);ctx.lineTo(5,-5);ctx.lineTo(e.radius,-12);ctx.closePath();ctx.fill();ctx.stroke();}
-      if((e.type==='midboss'&&!e.orbiting)||(e.type==='boss'&&e.arriving)){ctx.strokeStyle='rgba(66,232,255,.9)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,e.radius+9+Math.sin(this.frame/7)*2,0,TAU);ctx.stroke();}
-      if(e.burnTimer>0||e.chillTimer>0||e.freezeTimer>0||e.acidTimer>0){ctx.globalAlpha=e.acidTimer>0?clamp(.35+e.acidTimer/600,.35,.82):.72;ctx.strokeStyle=e.acidTimer>0?'#a3e635':e.freezeTimer>0?'#dffcff':e.chillTimer>0?'#42e8ff':'#ff8a4c';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+5+Math.sin(this.frame/6)*2,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
-      if(e.kungfuSlowTimer>0){ctx.strokeStyle='rgba(52,211,153,.8)';ctx.lineWidth=3;ctx.setLineDash([4,4]);ctx.beginPath();ctx.arc(0,0,e.radius+9,0,TAU);ctx.stroke();ctx.setLineDash([]);}
-      if(e.kungfuAttackLock>0){ctx.strokeStyle='rgba(251,146,60,.95)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-9,-9);ctx.lineTo(9,9);ctx.moveTo(9,-9);ctx.lineTo(-9,9);ctx.stroke();}
-      if(e.statusFlash>0){ctx.globalAlpha=e.statusFlash/14;ctx.strokeStyle=e.statusFlashColor||'#fff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,e.radius+8,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
-      if(e.hitFlash>0){ctx.globalAlpha=e.hitFlash/8;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,e.radius+4,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
+    this.drawVoidEnemyTrails(ctx);
+    let rendered3D = false;
+    if (this.stageGeometryStatus === 'ready' && this.stageGeometry?.updateEnemies) {
+      try {
+        rendered3D = this.stageGeometry.updateEnemies(this.enemies, this.frame / 60, {
+          allowDeathAnimations: ['playing', 'stageClear', 'bossWarning'].includes(this.mode),
+        });
+        if (rendered3D) this.stageGeometry.drawTo(ctx, 0, 0, this.w, this.h);
+      } catch (error) {
+        console.warn('3D enemy visuals unavailable; using the original 2D enemy renderer.', error);
+        this.stageGeometry.enemyVisuals?.dispose?.();
+        this.stageGeometry.enemyVisuals = null;
+        rendered3D = false;
+      }
+    }
+
+    for (const enemy of this.enemies) {
+      if (!enemy.alive) continue;
+      ctx.save();
+      ctx.translate(enemy.x, enemy.y);
+      if (!rendered3D) {
+        ctx.fillStyle = 'rgba(255,255,255,.08)';
+        ctx.beginPath(); ctx.arc(0, 0, enemy.radius * 1.45, 0, TAU); ctx.fill();
+        this.drawFallbackEnemyBody(ctx, enemy);
+      }
+      if ((enemy.type === 'midboss' && !enemy.orbiting) || (enemy.type === 'boss' && enemy.arriving)) {
+        ctx.strokeStyle = 'rgba(66,232,255,.9)'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(0, 0, enemy.radius + 9 + Math.sin(this.frame / 7) * 2, 0, TAU); ctx.stroke();
+      }
+      if (enemy.burnTimer > 0 || enemy.chillTimer > 0 || enemy.freezeTimer > 0 || enemy.acidTimer > 0) {
+        ctx.globalAlpha = enemy.acidTimer > 0 ? clamp(.35 + enemy.acidTimer / 600, .35, .82) : .72;
+        ctx.strokeStyle = enemy.acidTimer > 0 ? '#a3e635' : enemy.freezeTimer > 0 ? '#dffcff' : enemy.chillTimer > 0 ? '#42e8ff' : '#ff8a4c';
+        ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, enemy.radius + 5 + Math.sin(this.frame / 6) * 2, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      if (enemy.kungfuSlowTimer > 0) {
+        ctx.strokeStyle = 'rgba(52,211,153,.8)'; ctx.lineWidth = 3; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.arc(0, 0, enemy.radius + 9, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (enemy.kungfuAttackLock > 0) {
+        ctx.strokeStyle = 'rgba(251,146,60,.95)'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(-9, -9); ctx.lineTo(9, 9); ctx.moveTo(9, -9); ctx.lineTo(-9, 9); ctx.stroke();
+      }
+      if (enemy.statusFlash > 0) {
+        ctx.globalAlpha = enemy.statusFlash / 14; ctx.strokeStyle = enemy.statusFlashColor || '#fff'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(0, 0, enemy.radius + 8, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      if (enemy.hitFlash > 0) {
+        ctx.globalAlpha = enemy.hitFlash / 8; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(0, 0, enemy.radius + 4, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+      }
       ctx.restore();
-      if(e.type==='boss'||e.type==='elite'||e.type==='midboss'){
-        const width=e.type==='boss'?180:e.type==='midboss'?110:55;
-        const barX=e.x-width/2;
-        const barY=e.y-e.radius-14;
-        ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(barX,barY,width,6);
-        ctx.fillStyle=e.color;ctx.fillRect(barX,barY,width*clamp(e.hp/e.maxHp,0,1),6);
-        if(e.type==='boss'){
-          ctx.fillStyle='rgba(255,255,255,.9)';
-          ctx.fillRect(barX+width*.33-1,barY-1,2,8);
-          ctx.fillRect(barX+width*.67-1,barY-1,2,8);
+
+      if (enemy.type === 'boss' || enemy.type === 'elite' || enemy.type === 'midboss') {
+        const width = enemy.type === 'boss' ? 180 : enemy.type === 'midboss' ? 110 : 55;
+        const barX = enemy.x - width / 2;
+        const barY = enemy.y - enemy.radius - 14;
+        ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(barX, barY, width, 6);
+        ctx.fillStyle = enemy.color; ctx.fillRect(barX, barY, width * clamp(enemy.hp / enemy.maxHp, 0, 1), 6);
+        if (enemy.type === 'boss') {
+          ctx.fillStyle = 'rgba(255,255,255,.9)';
+          ctx.fillRect(barX + width * .33 - 1, barY - 1, 2, 8);
+          ctx.fillRect(barX + width * .67 - 1, barY - 1, 2, 8);
         }
       }
     }
+  }
+
+  colorWithAlpha(color, alpha) {
+    const value = String(color || '#ffffff').trim();
+    const short = /^#([0-9a-f]{3})$/i.exec(value);
+    if (short) {
+      const [r, g, b] = short[1].split('').map(char => parseInt(char + char, 16));
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+    const full = /^#([0-9a-f]{6})$/i.exec(value);
+    if (full) {
+      const number = parseInt(full[1], 16);
+      return `rgba(${number >> 16},${(number >> 8) & 255},${number & 255},${alpha})`;
+    }
+    return value;
+  }
+
+  enemyBulletSprite(stageId, radius, color) {
+    const style = PROJECTILE_STYLES[stageId] || PROJECTILE_STYLES[1];
+    const roundedRadius = Math.max(2, Math.round(radius * 10) / 10);
+    const key = `${stageId}|${roundedRadius}|${color}`;
+    const cached = this.enemyBulletSpriteCache.get(key);
+    if (cached) return cached;
+    const extent = roundedRadius * 2.25;
+    const size = Math.max(12, Math.ceil(extent * 2 + 4));
+    const canvas = typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(size, size)
+      : document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext('2d');
+    const center = size / 2;
+
+    const halo = context.createRadialGradient(center, center, roundedRadius * .55, center, center, roundedRadius * 2.15);
+    halo.addColorStop(0, this.colorWithAlpha(color, .34));
+    halo.addColorStop(.52, this.colorWithAlpha(color, .13));
+    halo.addColorStop(1, this.colorWithAlpha(color, 0));
+    context.fillStyle = halo;
+    context.beginPath(); context.arc(center, center, roundedRadius * 2.15, 0, TAU); context.fill();
+
+    const sphere = context.createRadialGradient(
+      center - roundedRadius * .36, center - roundedRadius * .4, roundedRadius * .06,
+      center, center, roundedRadius,
+    );
+    sphere.addColorStop(0, style.rim);
+    sphere.addColorStop(.18, style.rim);
+    sphere.addColorStop(.48, color || style.base);
+    sphere.addColorStop(.78, style.warm);
+    sphere.addColorStop(1, style.shadow);
+    context.fillStyle = sphere;
+    context.beginPath(); context.arc(center, center, roundedRadius, 0, TAU); context.fill();
+    context.strokeStyle = style.rim;
+    context.globalAlpha = .78;
+    context.lineWidth = Math.max(1, roundedRadius * .16);
+    context.beginPath(); context.arc(center, center, roundedRadius - context.lineWidth * .45, 0, TAU); context.stroke();
+    context.globalAlpha = .72;
+    context.strokeStyle = '#ffffff';
+    context.lineWidth = Math.max(.8, roundedRadius * .12);
+    context.beginPath(); context.arc(center - roundedRadius * .12, center - roundedRadius * .14, roundedRadius * .48, Math.PI * 1.06, Math.PI * 1.61); context.stroke();
+    context.globalAlpha = 1;
+
+    const result = { canvas, size, extent };
+    this.enemyBulletSpriteCache.set(key, result);
+    if (this.enemyBulletSpriteCache.size > 80) this.enemyBulletSpriteCache.delete(this.enemyBulletSpriteCache.keys().next().value);
+    return result;
+  }
+
+  drawPseudo3DEnemyBullet(ctx, bullet) {
+    const stageId = clamp(Number(bullet.visualStageId) || this.currentStageSceneId(), 1, STAGES.length);
+    const style = PROJECTILE_STYLES[stageId] || PROJECTILE_STYLES[1];
+    const speed = Math.hypot(bullet.vx, bullet.vy) || 1;
+    const nx = bullet.vx / speed;
+    const ny = bullet.vy / speed;
+    const trailLength = clamp(speed * 4.2, bullet.radius * .9, bullet.radius * 2.7);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = .22;
+    ctx.strokeStyle = bullet.color || style.base;
+    ctx.lineWidth = Math.max(1, bullet.radius * .75);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(bullet.x - nx * trailLength, bullet.y - ny * trailLength);
+    ctx.lineTo(bullet.x - nx * bullet.radius * .72, bullet.y - ny * bullet.radius * .72);
+    ctx.stroke();
+    ctx.restore();
+
+    const sprite = this.enemyBulletSprite(stageId, bullet.radius, bullet.color || style.base);
+    ctx.drawImage(sprite.canvas, bullet.x - sprite.size / 2, bullet.y - sprite.size / 2, sprite.size, sprite.size);
   }
 
   drawBullets(ctx) {
@@ -3718,7 +3934,7 @@ export class Game {
       if(b.kind==='cluster'){const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);ctx.shadowColor='#f0abfc';ctx.shadowBlur=14;ctx.fillStyle='rgba(240,171,252,.28)';ctx.beginPath();ctx.ellipse(-14,0,20,5,0,0,TAU);ctx.fill();ctx.fillStyle='#f0abfc';ctx.beginPath();ctx.ellipse(0,0,11,3.6,0,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(3,0,5,2,0,0,TAU);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=1.5;const tw=this.frame*.5+b.id;ctx.beginPath();ctx.moveTo(-6+Math.sin(tw)*3,-6);ctx.lineTo(-2,0);ctx.lineTo(-6+Math.cos(tw)*3,6);ctx.stroke();ctx.restore();continue;}
       ctx.fillStyle=b.color;ctx.globalAlpha=.22;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.5,0,TAU);ctx.fill();ctx.globalAlpha=1;if(b.kind==='rail'){ctx.fillRect(b.x-b.radius/2,b.y-16,b.radius,32);}else{ctx.beginPath();ctx.ellipse(b.x,b.y,b.radius,b.radius*(b.kind==='missile'?1.8:1.4),0,0,TAU);ctx.fill();}const colors={burn:'#ff8a4c',chill:'#42e8ff',shock:'#facc15'};(b.statuses||[]).forEach((status,index)=>{ctx.strokeStyle=colors[status];ctx.lineWidth=2;ctx.globalAlpha=.8;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*1.8+index*3,0,TAU);ctx.stroke();});ctx.globalAlpha=1;
     }
-    for(const b of this.enemyBullets){ctx.fillStyle=b.color;ctx.globalAlpha=.18;ctx.beginPath();ctx.arc(b.x,b.y,b.radius*2.2,0,TAU);ctx.fill();ctx.globalAlpha=1;ctx.beginPath();ctx.arc(b.x,b.y,b.radius,0,TAU);ctx.fill();ctx.fillStyle='#fff';ctx.globalAlpha=.55;ctx.beginPath();ctx.arc(b.x-1.5,b.y-1.5,b.radius*.28,0,TAU);ctx.fill();ctx.globalAlpha=1;}
+    for (const bullet of this.enemyBullets) this.drawPseudo3DEnemyBullet(ctx, bullet);
   }
 
   drawXp(ctx) { for(const o of this.xpOrbs){ctx.save();ctx.translate(o.x,o.y);ctx.rotate(this.frame*.025);ctx.fillStyle=o.glow||'rgba(76,255,155,.18)';ctx.fillRect(-o.radius*1.8,-o.radius*1.8,o.radius*3.6,o.radius*3.6);ctx.fillStyle=o.color||'#4cff9b';ctx.fillRect(-o.radius,-o.radius,o.radius*2,o.radius*2);ctx.fillStyle='#fff';ctx.fillRect(-1,-o.radius,2,o.radius*2);ctx.restore();} }

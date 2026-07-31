@@ -1,5 +1,6 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js';
 import { STAGE_DEFINITIONS, cloneSettings } from './stage1-geometry-settings.js';
+import { EnemyVisualLayer } from './enemy-visual-layer.js';
 
 const LAYERS = ['far', 'mid', 'near', 'closest'];
 const PHASES = { far: 0.2, mid: 1.1, near: 2.0, closest: 2.9 };
@@ -70,6 +71,13 @@ export class SceneGeometryLayer {
     this.applyStageLighting();
     this.rebuild();
     this.updateCamera();
+    this.enemyVisuals = new EnemyVisualLayer({
+      camera: this.camera,
+      width: this.width,
+      height: this.height,
+      stageId: this.stageId,
+      settings: this.settings,
+    });
   }
 
   setStage(stageId, settings) {
@@ -83,6 +91,7 @@ export class SceneGeometryLayer {
     this.renderer.toneMappingExposure = this.settings.exposure;
     this.updateCamera();
     this.rebuild();
+    this.enemyVisuals?.setStage(this.stageId, this.settings);
   }
 
   setSettings(settings, { rebuild = false } = {}) {
@@ -134,6 +143,10 @@ export class SceneGeometryLayer {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    if (this.enemyVisuals) {
+      this.enemyVisuals.width = width;
+      this.enemyVisuals.height = height;
+    }
   }
 
   trackGeometry(geometry) {
@@ -497,12 +510,25 @@ export class SceneGeometryLayer {
     this.renderer.render(this.scene, this.camera);
   }
 
+
+  updateEnemies(enemies, timeSeconds, options = {}) {
+    if (!this.enemyVisuals) return false;
+    this.enemyVisuals.sync(enemies, timeSeconds, options);
+    const previousExposure = this.renderer.toneMappingExposure;
+    this.renderer.toneMappingExposure = Math.max(1.1, this.settings.exposure + 0.04);
+    this.renderer.render(this.enemyVisuals.scene, this.camera);
+    this.renderer.toneMappingExposure = previousExposure;
+    return true;
+  }
+
   drawTo(context, x = 0, y = 0, width = this.width, height = this.height) {
     if (!context?.drawImage) throw new Error('drawTo requires a 2D canvas context.');
     context.drawImage(this.canvas, x, y, width, height);
   }
 
   dispose() {
+    this.enemyVisuals?.dispose();
+    this.enemyVisuals = null;
     this.disposeGenerated();
     this.renderer.dispose();
   }
