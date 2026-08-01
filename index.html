@@ -49,7 +49,7 @@
         <div class="title-lockup">
           <p class="eyebrow">TACTICAL ROGUELITE STRIKE</p>
           <h1>VOID<br><span>CIRCUIT</span></h1>
-          <p class="title-version" id="title-version">ver.80</p>
+          <p class="title-version" id="title-version">ver.81</p>
         </div>
         <div class="title-meta-bar">
           <div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
@@ -66,11 +66,12 @@
           <div id="craft-step">
             <small class="setup-label">SELECT AIRCRAFT · 選擇機體</small>
             <div id="aircraft-select" class="aircraft-grid" aria-label="選擇戰機"></div>
-            <button id="craft-next" class="primary-button deploy-button">選擇駕駛 →</button>
+            
           </div>
           <div id="pilot-step" class="hidden">
             <div class="setup-heading"><button id="pilot-back" class="back-text-btn" type="button">返回</button><b>SELECT PILOT · 選擇駕駛</b></div>
             <div id="pilot-select" class="pilot-grid" aria-label="選擇駕駛"></div>
+            <div id="selection-confirm" class="selection-confirm hidden" aria-live="polite"><div id="selection-summary" class="selection-summary"></div><button id="confirm-back" class="back-text-btn" type="button">重選駕駛</button></div>
             <div id="test-options" class="test-options hidden">
               <label class="stage-select">起始關卡
                 <select id="test-stage">
@@ -90,7 +91,7 @@
                 <label><input id="test-enemies-immortal" type="checkbox"> 敵人不死</label>
               </div>
             </div>
-            <button id="deploy-button" class="primary-button deploy-button">開始出擊</button>
+            <button id="deploy-button" class="primary-button deploy-button hidden">開始出擊</button>
           </div>
         </div>
         <p class="start-help">桌面：WASD / 方向鍵移動，Space 射擊，X/B/Shift 炸彈，P 暫停<br>手機：拖曳移動、自動射擊，右下 BOMB</p>
@@ -104,10 +105,10 @@
       <section id="pause-overlay" class="overlay pause-overlay hidden" aria-label="暫停與裝備狀態">
         <div class="pause-heading"><small>TACTICAL STATUS</small><h2>PAUSED</h2></div>
         <div class="pause-loadout">
-          <article><small>PILOT / MODE</small><p id="pause-pilot">—</p></article>
-          <article><small>PRIMARY</small><p id="pause-primary">—</p></article>
-          <article><small>SECONDARY</small><p id="pause-secondary">—</p></article>
-          <article><small>PASSIVE</small><p id="pause-passive">—</p></article>
+          <article><small>主武器與駕駛員被動</small><div id="pause-primary" class="pause-item-list"></div></article>
+          <article><small>副武器</small><div id="pause-secondary" class="pause-item-list"></div></article>
+          <article><small>被動能力</small><div id="pause-passive" class="pause-item-list"></div></article>
+          <div id="pause-pilot" class="pause-mode-line">—</div>
         </div>
         <div id="pause-test-controls" class="pause-test-controls hidden">
           <label><input id="pause-player-invincible" type="checkbox"> 自身無敵</label>
@@ -170,6 +171,6 @@
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js?v=80"></script>
+  <script type="module" src="./src/main.js?v=81"></script>
 </body>
 </html>

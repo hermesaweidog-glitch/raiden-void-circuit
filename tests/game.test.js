@@ -516,8 +516,8 @@ test('passive fusions render in the passive strip instead of the secondary strip
   assert.match(game.dom['passive-build'].innerHTML, /幸運星/);
 
   game.updatePausePanel();
-  assert.doesNotMatch(game.dom['pause-secondary'].textContent, /朗基努斯之槍|自殺突擊隊|幸運星/);
-  assert.match(game.dom['pause-passive'].textContent, /朗基努斯之槍/);
+  assert.doesNotMatch(game.dom['pause-secondary'].innerHTML, /朗基努斯之槍|自殺突擊隊|幸運星/);
+  assert.match(game.dom['pause-passive'].innerHTML, /朗基努斯之槍/);
 
   game.endRun(false);
   assert.match(game.dom['run-summary'].innerHTML, /SECONDARY　2\/4/, 'the end screen counts the weapon fusion as an occupied secondary slot');
@@ -743,9 +743,9 @@ test('pause mode shows the complete primary, secondary, and passive loadout', ()
 
   assert.equal(game.mode, 'paused');
   assert.equal(game.dom['pause-overlay'].classList.contains('hidden'), false);
-  assert.match(game.dom['pause-primary'].textContent, /FALCON.*MAX/);
-  assert.match(game.dom['pause-secondary'].textContent, /追蹤導彈.*微型重力井.*攔截蜂群/);
-  assert.match(game.dom['pause-passive'].textContent, /磁力核心.*炸彈電容/);
+  assert.match(game.dom['pause-primary'].innerHTML, /FALCON.*MAX/);
+  assert.match(game.dom['pause-secondary'].innerHTML, /追蹤導彈[\s\S]*微型重力井[\s\S]*攔截蜂群/);
+  assert.match(game.dom['pause-passive'].innerHTML, /磁力核心[\s\S]*炸彈電容/);
 
   game.togglePause();
   assert.equal(game.dom['pause-overlay'].classList.contains('hidden'), true);
@@ -1395,7 +1395,7 @@ test('pause panel identifies the active pilot and returns to the prior combat st
   game.mode = 'bossWarning';
   game.togglePause();
   assert.equal(game.mode, 'paused');
-  assert.match(game.dom['pause-pilot'].textContent, /陰影/);
+  assert.match(game.dom['pause-primary'].innerHTML, /陰影/);
   game.togglePause();
   assert.equal(game.mode, 'bossWarning');
 });

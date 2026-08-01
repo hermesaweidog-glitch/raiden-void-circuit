@@ -803,7 +803,7 @@ export class Game {
     const bossHpGrowth = this.endlessHpGrowth('boss');
     const hp = data.baseHp * stage.bossHp * bossHpGrowth * .6 * STAT_SCALE;
     this.enemies.push({
-      id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 4, y: -85,
+      id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 4, y: -85, entranceHold: 170,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 130,
       age: 0, phase: 0, hitFlash: 0, score: 5000 * stage.id, xp: 40 + stage.id * 10, pressure: 1, arriving: true, escort: true,
     });
@@ -878,7 +878,7 @@ export class Game {
       this.bossHealOpportunityRestored = true;
     }
     this.enemies.push({
-      id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85,
+      id: this.entityId++, type: 'boss', bossId: data.id, name: data.name, x: this.w / 2, y: -85, entranceHold: 170,
       radius: 52, alive: true, hp, maxHp: hp, color: data.color, cooldown: 95,
       age: 0, phase: 0, hitFlash: 0, score: 10000 * route.id, xp: 65 + route.id * 15, pressure: 1, arriving: true,
     });
@@ -1780,7 +1780,9 @@ export class Game {
   updateBoss(boss) {
     const motionScale = boss.motionScale || 1;
     if (!boss.orbiting) {
-      boss.y = Math.min(118, boss.y + 1.35 * motionScale);
+      if (boss.y < 34) boss.y = Math.min(34, boss.y + 1.8 * motionScale);
+      else if ((boss.entranceHold || 0) > 0) boss.entranceHold -= motionScale;
+      else boss.y = Math.min(118, boss.y + 1.15 * motionScale);
       if (boss.y >= 118) {
         boss.orbiting = true;
         boss.arriving = false;
@@ -2654,19 +2656,48 @@ export class Game {
   updatePausePanel() {
     if (!this.player) return;
     const p = this.player;
-    const list = (items, catalog) => Object.entries(items).map(([id, rank]) => { const item = catalog[id]; return item ? `${item.name} ${rank >= item.max ? 'MAX' : `Lv.${rank}`}` : id; }).join('　/　') || '尚未取得';
     const kungfu = p.build.secondarySet === 'kungfu';
-    const mastery = p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` · ${kungfu ? '宗師境界' : p.craft.mastery}` : '';
-    const overdrive = p.build.overdrive ? ` · 攻擊 +${p.build.overdrive * (p.build.overdriveStep ?? 1)}%` : '';
+    const rankLabel = (rank, max = WORLD.maxUpgradeRank) => rank >= max ? 'MAX' : `Lv.${rank}`;
+    const itemCard = (icon, name, level, description, extraClass = '') => `
+      <div class="pause-item ${extraClass}">
+        <span class="pause-item-icon"><img src="${icon}" alt=""></span>
+        <span class="pause-item-copy"><b>${name}</b><em>${level}</em><small>${description}</small></span>
+      </div>`;
+    const emptyCard = text => `<div class="pause-empty">${text}</div>`;
+    const primaryName = kungfu ? '基本拳法' : `${p.craft.name} · ${p.craft.primary.toUpperCase()}`;
+    const primaryIcon = kungfu ? 'assets/icons/fajin.svg' : PRIMARY_ICON;
+    const primaryDescription = kungfu
+      ? `傷害 +${KUNGFU_FIST_DAMAGE_BONUS[p.build.primaryLevel]}%；${p.build.primaryLevel >= WORLD.maxUpgradeRank ? '宗師境界已啟動。' : '提升拳法傷害與招式強度。'}`
+      : `${p.craft.description}${p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` ${p.craft.mastery}已啟動。` : ''}`;
+    const overdrive = p.build.overdrive ? ` 攻擊增幅 +${p.build.overdrive * (p.build.overdriveStep ?? 1)}%。` : '';
+    this.dom['pause-primary'].innerHTML =
+      itemCard(primaryIcon, primaryName, rankLabel(p.build.primaryLevel), primaryDescription + overdrive, 'primary') +
+      itemCard(p.pilot.art, `${p.pilot.name} · ${p.pilot.subtitle}`, '駕駛員被動', p.pilot.ability, 'pilot');
+
+    const secondaryCatalog = this.secondaryCatalog(p);
+    const secondaryCards = Object.entries(p.build.secondaries).map(([id, rank]) => {
+      const item = secondaryCatalog[id];
+      return item ? itemCard(item.icon, item.name, rankLabel(rank, item.max), item.description, 'secondary') : '';
+    });
+    for (const id of Object.keys(p.build.fusions || {})) {
+      const item = FUSIONS[id];
+      if (item && item.kind !== 'passive') secondaryCards.push(itemCard(item.icon, item.name, '融合', item.description, 'fusion'));
+    }
+    this.dom['pause-secondary'].innerHTML = secondaryCards.join('') || emptyCard('尚未取得副武器');
+
+    const passiveCards = Object.entries(p.build.passives).map(([id, rank]) => {
+      const item = PASSIVES[id];
+      return item ? itemCard(item.icon, item.name, rankLabel(rank, item.max), item.description, 'passive') : '';
+    });
+    for (const id of Object.keys(p.build.fusions || {})) {
+      const item = FUSIONS[id];
+      if (item?.kind === 'passive') passiveCards.push(itemCard(item.icon, item.name, '融合', item.description, 'fusion'));
+    }
+    this.dom['pause-passive'].innerHTML = passiveCards.join('') || emptyCard('尚未取得被動能力');
+
     const modeLabel = { normal: '一般模式', endless: `無限模式 · 循環 ${this.endlessCycle + 1}`, test: '測試模式' }[this.runMode] || '一般模式';
     const testFlags = this.runMode === 'test' ? ` · 自身${this.testFlags.playerInvincible ? '無敵' : '可受傷'} · 敵人${this.testFlags.enemiesImmortal ? '不死' : '可擊破'}` : '';
-    this.dom['pause-pilot'].textContent = `${p.pilot.name} · ${p.pilot.ability} · ${modeLabel}${testFlags}`;
-    this.dom['pause-primary'].textContent = `${kungfu ? `基本拳法 · 傷害 +${KUNGFU_FIST_DAMAGE_BONUS[p.build.primaryLevel]}% · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}　/　唯快不破 · 迴避 ${p.build.evasion ?? 20}%` : `${p.craft.name} · ${p.craft.primary.toUpperCase()} · ${p.build.primaryLevel >= WORLD.maxUpgradeRank ? 'MAX' : `Lv.${p.build.primaryLevel}`}`}${mastery}${overdrive}`;
-    const fusionNames = kind => Object.keys(p.build.fusions || {}).filter(id => (FUSIONS[id]?.kind === 'passive') === (kind === 'passive')).map(id => FUSIONS[id].name).join('　/　');
-    const weaponFusions = fusionNames('secondary');
-    const passiveFusions = fusionNames('passive');
-    this.dom['pause-secondary'].textContent = `${list(p.build.secondaries, this.secondaryCatalog(p))}${weaponFusions ? `　/　合成：${weaponFusions}` : ''}`;
-    this.dom['pause-passive'].textContent = `${list(p.build.passives, PASSIVES)}${passiveFusions ? `　/　合成：${passiveFusions}` : ''}`;
+    this.dom['pause-pilot'].textContent = `${modeLabel}${testFlags}`;
     const controls = this.dom['pause-test-controls'];
     controls.classList[this.runMode !== 'test' ? 'add' : 'remove']('hidden');
     this.dom['pause-player-invincible'].checked = Boolean(this.testFlags.playerInvincible);

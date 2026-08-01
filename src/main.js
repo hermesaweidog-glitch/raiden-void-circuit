@@ -11,6 +11,8 @@ const loadoutSelect = document.querySelector('#loadout-select');
 const craftStep = document.querySelector('#craft-step');
 const pilotStep = document.querySelector('#pilot-step');
 const testOptions = document.querySelector('#test-options');
+const selectionConfirm = document.querySelector('#selection-confirm');
+const selectionSummary = document.querySelector('#selection-summary');
 const hangarOverlay = document.querySelector('#hangar-overlay');
 let selectedMode = 'normal';
 let selectedCraft = 'falcon';
@@ -63,6 +65,7 @@ const renderAircraft = () => {
   for (const button of aircraftSelect.querySelectorAll('[data-craft]')) button.addEventListener('click', () => {
     selectedCraft = button.dataset.craft;
     selectCard(aircraftSelect, 'data-craft', selectedCraft);
+    showPilotStep();
   });
 };
 
@@ -79,6 +82,7 @@ const renderPilots = () => {
     renderSecondaryOptions();
     renderPassiveOptions();
     syncTestLimits();
+    showSelectionConfirm();
   });
   if (!isPilotUnlocked(meta, selectedPilot)) { selectedPilot = 'imperial'; selectCard(pilotSelect, 'data-pilot', selectedPilot); }
 };
@@ -161,9 +165,27 @@ const showPilotStep = () => {
   pilotStep.classList.remove('hidden');
   loadoutSelect.classList.add('pilot-open');
   renderPilots();
+  showPilotChoices();
   renderSecondaryOptions();
   renderPassiveOptions();
   syncTestLimits();
+};
+
+
+const showSelectionConfirm = () => {
+  const craft = AIRCRAFT[selectedCraft];
+  const pilot = PILOTS[selectedPilot];
+  pilotSelect.classList.add('hidden');
+  selectionConfirm.classList.remove('hidden');
+  selectionSummary.innerHTML = `
+    <article style="--accent:${craft.color}"><img src="${craft.art}" alt=""><span><small>機體</small><strong>${craft.name}</strong><em>${craft.subtitle}</em></span></article>
+    <article style="--accent:#c084fc"><img src="${pilot.art}" alt=""><span><small>駕駛員</small><strong>${pilot.name}</strong><em>${pilot.subtitle}</em></span></article>`;
+  document.querySelector('#deploy-button').classList.remove('hidden');
+};
+const showPilotChoices = () => {
+  selectionConfirm.classList.add('hidden');
+  pilotSelect.classList.remove('hidden');
+  document.querySelector('#deploy-button').classList.add('hidden');
 };
 
 // --- Hangar (meta shop) ----------------------------------------------------
@@ -287,7 +309,7 @@ resetButton.addEventListener('click', () => {
   showModeSelect();
 });
 
-document.querySelector('#craft-next').addEventListener('click', showPilotStep);
+document.querySelector('#confirm-back').addEventListener('click', showPilotChoices);
 document.querySelector('#pilot-back').addEventListener('click', () => {
   pilotStep.classList.add('hidden');
   craftStep.classList.remove('hidden');

@@ -22,7 +22,7 @@ test('page exposes a route bar with mandatory midboss and boss nodes', () => {
 
 test('page is installable and loads modular entry point', () => {
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=80"/);
+  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=81"/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -87,8 +87,8 @@ test('title page exposes the upgrade hangar, ore balance, and max mode toggle', 
   assert.match(html, /class="mode-card hangar-button"/, 'the upgrade entry shares the mode-card width');
 });
 
-test('aircraft and pilot selection are split into two dedicated enlarged steps', () => {
-  for (const id of ['craft-step', 'pilot-step', 'craft-next', 'pilot-back']) {
+test('aircraft and pilot selection advance directly into a confirmation step', () => {
+  for (const id of ['craft-step', 'pilot-step', 'pilot-back', 'selection-confirm', 'selection-summary', 'confirm-back']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
   assert.match(css, /\.aircraft-grid\{[^}]*grid-template-columns:1fr/);
@@ -109,7 +109,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.80/);
+  assert.match(html, /ver\.81/);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {

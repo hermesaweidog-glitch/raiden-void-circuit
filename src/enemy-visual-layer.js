@@ -336,7 +336,10 @@ export class EnemyVisualLayer {
     } else instance.phaseElapsed += deltaSeconds;
 
     if (instance.type === 'boss' && enemy.arriving) {
-      const t = clamp((enemy.y + 85) / 203, 0, 1);
+      const holdTotal = 170;
+      const holdProgress = enemy.y >= 34 ? 1 - clamp((enemy.entranceHold || 0) / holdTotal, 0, 1) : 0;
+      const approachProgress = clamp((enemy.y + 85) / 119, 0, 1) * 0.12;
+      const t = clamp(approachProgress + holdProgress * 0.88, 0, 1);
       ANIM.applyBossEntrance.call(instance, t, timeSeconds);
     } else if (instance.type === 'midboss' && !enemy.orbiting) {
       const t = clamp((enemy.y + 110) / 255, 0, 1);
