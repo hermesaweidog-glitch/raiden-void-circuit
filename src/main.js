@@ -353,7 +353,7 @@ for (const [id, flag] of [['pause-player-invincible', 'playerInvincible'], ['pau
 document.querySelector('#mute-button').addEventListener('click', () => game.toggleMute());
 document.querySelector('#retry-button').addEventListener('click', () => game.restart());
 
-window.raidenGame = {
+const debugApi = {
   start: id => game.start(id || 'falcon'),
   getState: () => game.debugState(),
   bomb: () => game.useBomb(),
@@ -362,6 +362,8 @@ window.raidenGame = {
   forceStage: stage => game.debugForceStage(stage),
   game,
 };
+window.phaseIncursionGame = debugApi;
+window.raidenGame = debugApi; // Legacy alias retained for existing test scripts.
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));

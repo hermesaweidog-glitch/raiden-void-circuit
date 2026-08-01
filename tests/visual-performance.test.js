@@ -26,3 +26,12 @@ test('3D startup uses one WebGL context and adaptive internal resolution', () =>
   assert.match(game, /scheduleStageGeometryInit/);
   assert.match(game, /precompile/);
 });
+
+test('boss showcase uses projected visible model bounds and eases back to combat placement', () => {
+  const source = readFileSync(new URL('../src/enemy-visual-layer.js', import.meta.url), 'utf8');
+  assert.match(source, /projectedVisibleBounds\(root\)/);
+  assert.match(source, /alignBossShowcase\(instance, enemy\)/);
+  assert.match(source, /preferredCenter = this\.height \* 0\.31/);
+  assert.match(source, /topSafe = clamp\(this\.height \* 0\.055, 34, 48\)/);
+  assert.match(source, /settleBlend = holding/);
+});

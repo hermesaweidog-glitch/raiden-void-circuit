@@ -1,6 +1,14 @@
-# RAIDEN: VOID CIRCUIT
+# 相位入侵｜PHASE INCURSION
 
-手機與桌面瀏覽器皆可遊玩的 Roguelite 垂直射擊遊戲，使用純 HTML、CSS 與原生 JavaScript 製作，無外部 runtime 依賴。
+以「3D 世界侵入 2D 戰場」為核心、可於手機與桌面瀏覽器遊玩的 Roguelite 垂直射擊遊戲，使用純 HTML、CSS 與原生 JavaScript 製作，無外部 runtime 依賴。
+
+
+## v82
+
+- 正式名稱更新為「相位入侵｜PHASE INCURSION」。
+- PWA 名稱、頁面標題、品牌標示與快取名稱同步更新。
+- 保留既有 `void-circuit-*` localStorage 鍵值，確保測試玩家進度延續。
+- Boss 出場展示依當前 3D 模型的可視外框自動置中並保留頂部安全距離；展示結束後平滑回到戰鬥定位。
 
 ## 立即遊玩
 

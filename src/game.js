@@ -599,7 +599,7 @@ export class Game {
       this.render();
     } catch (error) {
       this.accumulator = 0;
-      console.error('Raiden frame recovered after an unexpected error', error);
+      console.error('Phase Incursion frame recovered after an unexpected error', error);
     }
     requestAnimationFrame(next => this.loop(next));
   }
@@ -2611,7 +2611,7 @@ export class Game {
     this.music.stop({ duration: 3.2, clearDesired: true });
     this.updateDps();
     if (this.score > this.best) { this.best = this.score; writeStorage('void-circuit-best', String(this.best)); }
-    this.dom['end-kicker'].textContent = victory ? 'VOID CIRCUIT COLLAPSED' : 'RUN TERMINATED';
+    this.dom['end-kicker'].textContent = victory ? 'PHASE INCURSION REPELLED' : 'RUN TERMINATED';
     this.dom['end-title'].textContent = victory ? 'MISSION COMPLETE' : 'MISSION FAILED';
     this.dom['end-title'].style.color = victory ? '#4cff9b' : '#ff3158';
     const elapsedSeconds = this.runFrames / 60;

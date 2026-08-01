@@ -302,6 +302,81 @@ export class EnemyVisualLayer {
     return Math.max(0.00001, a.distanceTo(b));
   }
 
+  projectedVisibleBounds(root) {
+    root.updateMatrixWorld(true);
+    this.camera.updateMatrixWorld(true);
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    const corner = new THREE.Vector3();
+
+    root.traverse(object => {
+      if (!object.geometry || !object.visible) return;
+      let ancestor = object.parent;
+      while (ancestor && ancestor !== root.parent) {
+        if (!ancestor.visible) return;
+        if (ancestor === root) break;
+        ancestor = ancestor.parent;
+      }
+      const geometry = object.geometry;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      const box = geometry.boundingBox;
+      if (!box) return;
+      for (const x of [box.min.x, box.max.x]) {
+        for (const y of [box.min.y, box.max.y]) {
+          for (const z of [box.min.z, box.max.z]) {
+            corner.set(x, y, z).applyMatrix4(object.matrixWorld).project(this.camera);
+            if (!Number.isFinite(corner.x) || !Number.isFinite(corner.y)) continue;
+            const screenX = (corner.x * 0.5 + 0.5) * this.width;
+            const screenY = (-corner.y * 0.5 + 0.5) * this.height;
+            left = Math.min(left, screenX);
+            right = Math.max(right, screenX);
+            top = Math.min(top, screenY);
+            bottom = Math.max(bottom, screenY);
+          }
+        }
+      }
+    });
+
+    if (![left, right, top, bottom].every(Number.isFinite)) return null;
+    return { left, right, top, bottom, width: right - left, height: bottom - top };
+  }
+
+  alignBossShowcase(instance, enemy) {
+    if (!enemy.arriving || enemy.orbiting) return;
+    const holding = (enemy.entranceHold || 0) > 0;
+    const settling = !holding && enemy.y < 118;
+    if (!holding && !settling) return;
+
+    const bounds = this.projectedVisibleBounds(instance.modelGroup);
+    if (!bounds || bounds.height < 1) return;
+    const topSafe = clamp(this.height * 0.055, 34, 48);
+    const bottomSafe = this.height * 0.55;
+    const preferredCenter = this.height * 0.31;
+    const minimumCenter = topSafe + bounds.height / 2;
+    const maximumCenter = bottomSafe - bounds.height / 2;
+    const targetCenter = minimumCenter <= maximumCenter
+      ? clamp(preferredCenter, minimumCenter, maximumCenter)
+      : (topSafe + bottomSafe) / 2;
+    const currentCenter = (bounds.top + bounds.bottom) / 2;
+    const measuredOffset = targetCenter - currentCenter;
+
+    if (holding) {
+      instance.showcaseOffsetPx = Number.isFinite(instance.showcaseOffsetPx)
+        ? instance.showcaseOffsetPx + (measuredOffset - instance.showcaseOffsetPx) * 0.28
+        : measuredOffset;
+    }
+    const settleBlend = holding ? clamp((enemy.y + 8) / 42, 0, 1) : clamp((118 - enemy.y) / 84, 0, 1);
+    const offsetPixels = (instance.showcaseOffsetPx || 0) * settleBlend;
+    if (Math.abs(offsetPixels) < 0.01) return;
+
+    const planeY = 7.5;
+    const from = this.screenToWorld(enemy.x, enemy.y, planeY);
+    const to = this.screenToWorld(enemy.x, enemy.y + offsetPixels, planeY);
+    instance.root.position.add(to.sub(from));
+  }
+
   placeInstance(instance, enemy) {
     const classInfo = ENEMY_CLASSES[instance.type] || ENEMY_CLASSES.scout;
     const planeY = 7.5;
@@ -341,6 +416,7 @@ export class EnemyVisualLayer {
       const approachProgress = clamp((enemy.y + 85) / 119, 0, 1) * 0.12;
       const t = clamp(approachProgress + holdProgress * 0.88, 0, 1);
       ANIM.applyBossEntrance.call(instance, t, timeSeconds);
+      this.alignBossShowcase(instance, enemy);
     } else if (instance.type === 'midboss' && !enemy.orbiting) {
       const t = clamp((enemy.y + 110) / 255, 0, 1);
       ANIM.applyGenericEntrance.call(instance, t);
