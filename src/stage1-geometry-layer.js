@@ -12,12 +12,16 @@ function graphicsProfile() {
   const nav = globalThis.navigator || {};
   const cores = Number(nav.hardwareConcurrency || 8);
   const memory = Number(nav.deviceMemory || 8);
-  const lowEnd = cores <= 4 || memory <= 4;
+  const coarse = Boolean(globalThis.matchMedia?.('(pointer: coarse)')?.matches);
+  const lowEnd = cores <= 4 || memory <= 4 || coarse;
   const deviceRatio = Number(globalThis.devicePixelRatio || 1);
   return {
-    lowEnd,
+    lowEnd, coarse,
     antialias: !lowEnd,
-    pixelRatio: lowEnd ? 1 : Math.min(deviceRatio, 1.35),
+    pixelRatio: coarse ? 1 : lowEnd ? 1 : Math.min(deviceRatio, 1.2),
+    powerPreference: lowEnd ? 'low-power' : 'high-performance',
+    backgroundCadence: lowEnd ? 2 : 1,
+    enemyCadence: 1,
   };
 }
 
@@ -49,13 +53,27 @@ export class SceneGeometryLayer {
     this.geometries = [];
     this.animatedObjects = [];
     this.graphicsProfile = graphicsProfile();
+    this.backgroundCadence = this.graphicsProfile.backgroundCadence;
+    this.enemyCadence = this.graphicsProfile.enemyCadence;
+    this.backgroundRenderTick = 0;
+    this.enemyRenderTick = 0;
+    const makeCache = () => {
+      const cache = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
+      cache.width = width; cache.height = height;
+      return cache;
+    };
+    this.backgroundCache = makeCache();
+    this.enemyCache = makeCache();
+    this.backgroundCacheContext = this.backgroundCache.getContext('2d', { alpha:true });
+    this.enemyCacheContext = this.enemyCache.getContext('2d', { alpha:true });
+    this.lastRenderLayer = 'background';
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: this.graphicsProfile.antialias,
       alpha: true,
-      powerPreference: 'high-performance',
-      preserveDrawingBuffer: true,
+      powerPreference: this.graphicsProfile.powerPreference,
+      preserveDrawingBuffer: false,
     });
     this.renderer.setSize(width, height, false);
     this.renderer.setPixelRatio(this.graphicsProfile.pixelRatio);
@@ -518,6 +536,17 @@ export class SceneGeometryLayer {
     for (const line of this.edgeLines) line.visible = visible;
   }
 
+  setRenderCadence({ background = this.backgroundCadence, enemies = this.enemyCadence } = {}) {
+    this.backgroundCadence = Math.max(1, Math.round(background || 1));
+    this.enemyCadence = Math.max(1, Math.round(enemies || 1));
+  }
+
+  cacheCurrentFrame(context) {
+    if (!context) return;
+    context.clearRect(0, 0, this.width, this.height);
+    context.drawImage(this.canvas, 0, 0, this.width, this.height);
+  }
+
   update(timeSeconds) {
     for (const layer of LAYERS) {
       const config = this.settings[layer];
@@ -531,23 +560,34 @@ export class SceneGeometryLayer {
       if (!Number.isFinite(entry.baseRotation)) entry.baseRotation = entry.object.rotation[entry.axis];
       entry.object.rotation[entry.axis] = entry.baseRotation + timeSeconds * entry.speed;
     }
-    this.renderer.render(this.scene, this.camera);
+    const shouldRender = this.backgroundRenderTick++ % this.backgroundCadence === 0;
+    if (shouldRender) {
+      this.renderer.render(this.scene, this.camera);
+      this.cacheCurrentFrame(this.backgroundCacheContext);
+    }
+    this.lastRenderLayer = 'background';
+    return true;
   }
-
 
   updateEnemies(enemies, timeSeconds, options = {}) {
     if (!this.enemyVisuals) return false;
-    this.enemyVisuals.sync(enemies, timeSeconds, options);
-    const previousExposure = this.renderer.toneMappingExposure;
-    this.renderer.toneMappingExposure = Math.max(1.1, this.settings.exposure + 0.04);
-    this.renderer.render(this.enemyVisuals.scene, this.camera);
-    this.renderer.toneMappingExposure = previousExposure;
+    const shouldRender = this.enemyRenderTick++ % this.enemyCadence === 0;
+    if (shouldRender) {
+      this.enemyVisuals.sync(enemies, timeSeconds, options);
+      const previousExposure = this.renderer.toneMappingExposure;
+      this.renderer.toneMappingExposure = Math.max(1.1, this.settings.exposure + 0.04);
+      this.renderer.render(this.enemyVisuals.scene, this.camera);
+      this.renderer.toneMappingExposure = previousExposure;
+      this.cacheCurrentFrame(this.enemyCacheContext);
+    }
+    this.lastRenderLayer = 'enemy';
     return true;
   }
 
   drawTo(context, x = 0, y = 0, width = this.width, height = this.height) {
     if (!context?.drawImage) throw new Error('drawTo requires a 2D canvas context.');
-    context.drawImage(this.canvas, x, y, width, height);
+    const source = this.lastRenderLayer === 'enemy' ? this.enemyCache : this.backgroundCache;
+    context.drawImage(source, x, y, width, height);
   }
 
   dispose() {
@@ -555,6 +595,8 @@ export class SceneGeometryLayer {
     this.enemyVisuals = null;
     this.disposeGenerated();
     this.renderer.dispose();
+    this.backgroundCache = null; this.enemyCache = null;
+    this.backgroundCacheContext = null; this.enemyCacheContext = null;
   }
 }
 

@@ -87,6 +87,8 @@ export class Game {
     this.lastSoundFrame = {};
     this.lastTime = 0;
     this.accumulator = 0;
+    this.performanceProfile = { samples:0, totalMs:0, averageMs:0, slowWindows:0, adaptiveLowPower:false };
+    this.lastStaticRender = 0;
     this.announcementToken = 0;
     this.stars = Array.from({ length: 90 }, (_, i) => ({ x: (i * 71 + 19) % this.w, y: (i * 113 + 7) % this.h, speed: .45 + (i % 5) * .23, size: i % 7 === 0 ? 2 : 1 }));
     this.craftImages = Object.fromEntries(Object.values(AIRCRAFT).map(craft => {
@@ -102,7 +104,6 @@ export class Game {
     this.stageGeometryStageId = 1;
     this.stageEntryCamera = null;
     this.pendingStageEntryCameraTag = null;
-    this.scheduleStageGeometryInit();
     this.bindInput();
     document.addEventListener('visibilitychange', () => {
       this.accumulator = 0;
@@ -115,6 +116,11 @@ export class Game {
     });
     this.updateHud();
     requestAnimationFrame(time => this.loop(time));
+  }
+
+  prepareGraphics() {
+    if (this.stageGeometryStatus !== 'idle') return;
+    this.scheduleStageGeometryInit();
   }
 
   scheduleStageGeometryInit() {
@@ -140,7 +146,7 @@ export class Game {
       const geometryCanvas = document.createElement('canvas');
       geometryCanvas.width = this.w;
       geometryCanvas.height = this.h;
-      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=80');
+      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=87');
       const stageId = this.stageIndex + 1;
       this.stageGeometryCanvas = geometryCanvas;
       this.stageGeometry = new SceneGeometryLayer({
@@ -152,6 +158,7 @@ export class Game {
       });
       this.stageGeometryStageId = stageId;
       this.stageGeometryStatus = 'ready';
+      this.stageGeometry.setRenderCadence?.({ background: this.performanceProfile.adaptiveLowPower ? 2 : undefined, enemies: this.performanceProfile.adaptiveLowPower ? 2 : undefined });
       this.stageGeometry.precompile?.();
       this.applyStageEntryCameraDistance();
     } catch (error) {
@@ -281,6 +288,7 @@ export class Game {
   }
 
   start(craftOrOptions = 'falcon') {
+    this.prepareGraphics();
     const options = typeof craftOrOptions === 'string' ? { craftId: craftOrOptions } : (craftOrOptions || {});
     const craft = AIRCRAFT[options.craftId] || AIRCRAFT.falcon;
     const craftId = craft.id;
@@ -590,18 +598,49 @@ export class Game {
   loop(time) {
     try {
       if (!this.lastTime) this.lastTime = time;
-      this.accumulator += Math.min(50, time - this.lastTime);
+      const frameDelta = Math.min(50, time - this.lastTime);
       this.lastTime = time;
+
+      if (this.mode === 'title') {
+        this.accumulator = 0;
+        requestAnimationFrame(next => this.loop(next));
+        return;
+      }
+
+      this.recordFramePerformance(frameDelta);
+      this.accumulator += frameDelta;
       while (this.accumulator >= 1000 / 60) {
         this.update();
         this.accumulator -= 1000 / 60;
       }
-      this.render();
+
+      const staticMode = ['paused','levelup','gameover','victory'].includes(this.mode);
+      if (!staticMode || time - this.lastStaticRender >= 100) {
+        this.render();
+        if (staticMode) this.lastStaticRender = time;
+      }
     } catch (error) {
       this.accumulator = 0;
       console.error('Phase Incursion frame recovered after an unexpected error', error);
     }
     requestAnimationFrame(next => this.loop(next));
+  }
+
+  recordFramePerformance(frameDelta) {
+    const active = this.player && ['stageIntro','bossWarning','playing','stageClear'].includes(this.mode);
+    if (!active || !Number.isFinite(frameDelta) || frameDelta < 5 || frameDelta > 50 || document.hidden) return;
+    const profile = this.performanceProfile;
+    profile.samples += 1; profile.totalMs += frameDelta;
+    if (profile.samples < 120) return;
+    profile.averageMs = profile.totalMs / profile.samples;
+    profile.samples = 0; profile.totalMs = 0;
+    if (profile.averageMs > 19.5) profile.slowWindows += 1;
+    else profile.slowWindows = Math.max(0, profile.slowWindows - 1);
+    if (!profile.adaptiveLowPower && profile.slowWindows >= 2) {
+      profile.adaptiveLowPower = true;
+      this.stageGeometry?.setRenderCadence?.({ background:2, enemies:2 });
+      console.info('Adaptive graphics enabled after sustained frame drops.', { averageMs: profile.averageMs.toFixed(1) });
+    }
   }
 
   transitionElapsed() {
@@ -4104,7 +4143,7 @@ export class Game {
   drawParticles(ctx) { for(const p of this.particles){ctx.globalAlpha=clamp(p.life/p.maxLife,0,1);ctx.fillStyle=p.color;ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);}ctx.globalAlpha=1; }
 
   debugState() {
-    return { mode:this.mode, frame:this.frame, score:this.score, stage:this.stageIndex+1, wave:this.waveIndex+1, enemies:this.enemies.filter(e=>e.alive).length, boss:this.enemies.find(e=>e.type==='boss'&&e.alive)?.bossId||null, enemyBullets:this.enemyBullets.length, playerBullets:this.playerBullets.length, xpOrbs:this.xpOrbs.length, level:this.player?.level||0, hp:this.player?.hp||0, bombs:this.player?.bombs||0, shield:this.player?.shield||0, kungfuShield:this.player?.kungfuShield||0, kungfuFreezeTimer:this.kungfuFreezeTimer||0, primaryLevel:this.player?.build.primaryLevel||0, overdrive:this.player?.build.overdrive||0, secondaries:this.player?{...this.player.build.secondaries}:{}, passives:this.player?{...this.player.build.passives}:{} };
+    return { mode:this.mode, frame:this.frame, score:this.score, stage:this.stageIndex+1, wave:this.waveIndex+1, enemies:this.enemies.filter(e=>e.alive).length, boss:this.enemies.find(e=>e.type==='boss'&&e.alive)?.bossId||null, enemyBullets:this.enemyBullets.length, playerBullets:this.playerBullets.length, xpOrbs:this.xpOrbs.length, level:this.player?.level||0, hp:this.player?.hp||0, bombs:this.player?.bombs||0, shield:this.player?.shield||0, kungfuShield:this.player?.kungfuShield||0, kungfuFreezeTimer:this.kungfuFreezeTimer||0, primaryLevel:this.player?.build.primaryLevel||0, overdrive:this.player?.build.overdrive||0, secondaries:this.player?{...this.player.build.secondaries}:{}, passives:this.player?{...this.player.build.passives}:{}, frameMs:Number(this.performanceProfile.averageMs.toFixed(2)), adaptiveGraphics:this.performanceProfile.adaptiveLowPower };
   }
   debugForceBoss(){if(!this.player)return false;this.enemies=[];this.enemyBullets=[];this.waveIndex=STAGES[this.stageIndex].waves-1;this.mode='playing';this.spawnBoss();return true;}
   debugForceStage(stage){if(!this.player)return false;this.startStage(clamp(Number(stage)-1,0,STAGES.length-1));return true;}

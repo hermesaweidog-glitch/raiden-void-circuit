@@ -24,7 +24,8 @@ test('page is installable and loads modular entry point', () => {
   assert.match(html, /相位入侵/);
   assert.match(html, /PHASE INCURSION/);
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /type="module" src="\.\/src\/main\.js\?v=86"/);
+  assert.match(html, /src=["']\.\/src\/main\.js\?v=87["']/);
+  assert.match(html, /type=["']module["']/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
   assert.match(main, /<i><img src="\$\{pilot\.art\}"/);
@@ -119,7 +120,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.86/);
+  assert.match(html, /ver\.87/i);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {
@@ -140,4 +141,13 @@ test('rebrand keeps legacy progression storage while exposing the new public tit
   assert.match(html, /PHASE INCURSION/);
   assert.doesNotMatch(html, /RAIDEN: VOID CIRCUIT/);
   assert.match(main, /window\.phaseIncursionGame = debugApi/);
+});
+
+
+test('Claude entry and main menu are wired to the existing game flow', () => {
+  for (const id of ['phase-title-screen','phase-menu-screen','phase-start','phase-menu-ore','phase-hangar','phase-codex','phase-max-toggle','phase-reset']) {
+    assert.match(html, new RegExp(`id=["']${id}["']`));
+  }
+  assert.match(main, /initTitleShell/);
+  assert.match(main, /onMode: mode => showLoadout\(mode\)/);
 });

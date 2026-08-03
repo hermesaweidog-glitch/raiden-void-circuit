@@ -1,10 +1,10 @@
 {
   "name": "phase-incursion",
-  "version": "2.16.0",
+  "version": "2.17.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/main.js && node --check src/game.js && node --check src/audio.js && node --check src/systems.js && node --check src/config.js && node --check src/stage1-geometry-settings.js && node --check src/stage1-geometry-layer.js && node --check src/enemy-geometry-settings.js && node --check src/enemy-model-factory.js && node --check src/enemy-visual-layer.js"
+    "check": "node --check src/main.js && node --check src/title-shell.js && node --check src/game.js && node --check src/audio.js && node --check src/systems.js && node --check src/config.js && node --check src/stage1-geometry-settings.js && node --check src/stage1-geometry-layer.js && node --check src/enemy-geometry-settings.js && node --check src/enemy-model-factory.js && node --check src/enemy-visual-layer.js"
   }
 }

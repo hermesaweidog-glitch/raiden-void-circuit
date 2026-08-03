@@ -22,7 +22,8 @@ test('clear reward label stays concise', () => {
 test('3D startup uses one WebGL context and adaptive internal resolution', () => {
   assert.match(factory, /headless = false/);
   assert.match(enemyLayer, /headless: true/);
-  assert.match(stageLayer, /pixelRatio: lowEnd \? 1/);
+  assert.match(stageLayer, /pixelRatio: coarse \? 1/);
+  assert.match(stageLayer, /powerPreference: lowEnd \? 'low-power'/);
   assert.match(game, /scheduleStageGeometryInit/);
   assert.match(game, /precompile/);
 });
@@ -55,4 +56,19 @@ test('time effects use per-object snapshots instead of a global enemy time scale
   assert.match(game, /updateEnemyFieldTime\(enemy\)/);
   assert.doesNotMatch(game, /this\.enemyTimeScale = this\.worldFreezeTimer/);
   assert.match(game, /this\.updateDirector\(\)/);
+});
+
+
+test('mobile WebGL avoids preserved buffers and supports adaptive render cadence', () => {
+  assert.match(stageLayer, /preserveDrawingBuffer:\s*false/);
+  assert.match(stageLayer, /setRenderCadence/);
+  assert.match(stageLayer, /backgroundCache/);
+  assert.match(game, /Adaptive graphics enabled/);
+});
+
+
+test('title and overlay screens do not keep the full game renderer hot', () => {
+  assert.match(game, /if \(this\.mode === 'title'\)/);
+  assert.match(game, /staticMode = \['paused','levelup','gameover','victory'\]/);
+  assert.match(game, /prepareGraphics\(\)/);
 });

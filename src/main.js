@@ -1,6 +1,7 @@
 import { AIRCRAFT, BUILD_LIMITS, FUSIONS, KUNGFU_SECONDARIES, PASSIVES, PILOTS, SECONDARIES } from './config.js';
 import { Game } from './game.js';
 import { isCraftUnlocked, isPilotUnlocked, loadMetaState, META_UNLOCKS, META_UPGRADES, purchaseUnlock, purchaseUpgrade, saveMetaState, upgradeCost } from './meta.js';
+import { initTitleShell } from './title-shell.js';
 
 const canvas = document.querySelector('#game');
 const game = new Game(canvas);
@@ -17,6 +18,7 @@ const hangarOverlay = document.querySelector('#hangar-overlay');
 let selectedMode = 'normal';
 let selectedCraft = 'falcon';
 let selectedPilot = 'imperial';
+let titleShell = null;
 
 const isMaxMode = () => document.querySelector('#max-mode').checked;
 
@@ -129,6 +131,7 @@ const selectCard = (container, attribute, value) => {
 
 const refreshOreBalance = () => {
   document.querySelector('#meta-ore-balance').textContent = `◆ ${game.meta.ore}`;
+  titleShell?.refresh({ ore: game.meta.ore, endlessUnlocked: isEndlessUnlocked(), maxMode: isMaxMode(), cleared: game.meta.cleared });
 };
 
 const showModeSelect = () => {
@@ -145,6 +148,7 @@ const showModeSelect = () => {
 };
 
 const showLoadout = mode => {
+  game.prepareGraphics();
   selectedMode = mode;
   document.querySelector('#setup-mode-title').textContent = MODES.find(item => item.id === mode)?.name || '一般模式';
   modeSelect.classList.add('hidden');
@@ -317,7 +321,7 @@ document.querySelector('#pilot-back').addEventListener('click', () => {
   renderAircraft();
 });
 
-document.querySelector('#setup-back').addEventListener('click', showModeSelect);
+document.querySelector('#setup-back').addEventListener('click', () => { showModeSelect(); titleShell?.showMenu(); });
 document.querySelector('#deploy-button').addEventListener('click', () => {
   const values = name => [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value);
   game.start({
@@ -334,8 +338,20 @@ document.querySelector('#deploy-button').addEventListener('click', () => {
     enemiesImmortal: selectedMode === 'test' && document.querySelector('#test-enemies-immortal').checked,
   });
 });
-game.onShowTitle = showModeSelect;
+game.onShowTitle = () => { showModeSelect(); titleShell?.showMenu(); };
 renderModeSelect();
+titleShell = initTitleShell({
+  onMode: mode => showLoadout(mode),
+  onHangar: () => document.querySelector('#hangar-button').click(),
+  onCodex: () => document.querySelector('#codex-button').click(),
+  onMaxMode: enabled => {
+    const input = document.querySelector('#max-mode');
+    input.checked = enabled;
+    input.dispatchEvent(new Event('change', { bubbles:true }));
+    refreshOreBalance();
+  },
+  onReset: () => document.querySelector('#reset-meta').click(),
+});
 refreshOreBalance();
 
 document.querySelector('#bomb-button').addEventListener('pointerdown', event => {

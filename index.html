@@ -1,179 +1,208 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-  <meta name="theme-color" content="#050816">
-  <meta name="description" content="相位入侵｜PHASE INCURSION — playable roguelite vertical shooter">
-  <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="stylesheet" href="./styles.css">
-  <title>相位入侵｜PHASE INCURSION</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" name="viewport"/>
+<meta content="#050816" name="theme-color"/>
+<meta content="相位入侵｜PHASE INCURSION — playable roguelite vertical shooter" name="description"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=Noto+Sans+TC:wght@400;500;700;900&amp;family=Saira+Condensed:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="./manifest.webmanifest" rel="manifest"/>
+<link href="./styles.css" rel="stylesheet"/>
+<title>相位入侵｜PHASE INCURSION</title>
 </head>
 <body>
-  <main class="app-shell">
-    <header class="topbar">
-      <div class="brand"><strong>相位入侵</strong><span>PHASE INCURSION</span></div>
-      <div class="status-actions">
-        <button id="mute-button" class="icon-button" aria-label="切換聲音">SOUND</button>
-        <button id="pause-button" class="icon-button" aria-label="暫停遊戲">PAUSE</button>
-      </div>
-    </header>
-
-    <section class="hud hud-compact" aria-label="遊戲狀態">
-      <div class="hud-score"><small>SCORE</small><b id="score">0000000</b></div>
-      <div class="hud-ore-slot"><small>ORE</small><b id="ore" class="hud-ore">◆0</b></div>
-      <div class="hud-sector"><small>SECTOR</small><b id="stage">—</b></div>
-      <div class="hud-hp-slot"><small>HP</small><b id="hp">●●●●</b></div>
-      <div class="hud-lives-slot"><small>LIVES</small><b id="lives">—</b></div>
-      <div class="hud-bombs-slot"><small>BOMB</small><b id="bombs">◆◆</b></div>
-    </section>
-    <section id="route-progress" class="route-progress" aria-label="戰區進度">
-      <div class="route-meta"><span id="route-label">AWAITING DEPLOYMENT</span><b id="route-status">STANDBY</b></div>
-      <div class="route-track">
-        <div id="route-fill"></div>
-        <span id="midboss-node" class="route-node midboss-node" title="中頭目檢查點" aria-label="中頭目檢查點"></span>
-        <span id="boss-node" class="route-node boss-node" title="戰區頭目" aria-label="戰區頭目"></span>
-      </div>
-    </section>
-    <div class="xp-track" aria-label="升級經驗"><div id="xp-bar"></div></div>
-    <section class="dps-strip" aria-label="即時傷害統計">
-      <div><small>DPS · 1S</small><b id="dps-1s">0.0</b></div>
-      <div><small>DPS · 10S</small><b id="dps-10s">0.0</b></div>
-      <div><small>DPS · STAGE</small><b id="dps-total">0.0</b></div>
-    </section>
-
-    <section class="game-frame">
-      <canvas id="game" width="480" height="800" aria-label="相位入侵 roguelite shooting game"></canvas>
-
-      <section id="title-overlay" class="overlay title-overlay">
-        <div class="title-lockup">
-          <p class="eyebrow">相位入侵</p>
-          <h1>PHASE<br><span>INCURSION</span></h1>
-          <p class="title-version" id="title-version">ver.86</p>
-        </div>
-        <div class="title-meta-bar">
-          <div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
-          <div class="meta-bar-actions">
-            <label class="max-mode-flag"><input id="max-mode" type="checkbox"> MAX模式</label>
-            <button id="reset-meta" class="reset-meta-button" aria-label="重置升級與源晶礦">重置進度</button>
-          </div>
-        </div>
-        <button id="hangar-button" class="mode-card hangar-button"><small>HANGAR</small><b>UPGRADE</b><span>消耗源晶礦強化機體、解鎖新機體與駕駛員。</span></button>
-        <div id="mode-select" class="setup-step" aria-label="選擇遊戲模式"></div>
-        <button id="codex-button" class="mode-card codex-button"><small>ARCHIVE</small><b>圖鑑</b><span>檢視所有機體、駕駛、副武器、被動與合成配方。</span></button>
-        <div id="loadout-select" class="setup-step hidden" aria-label="配置本次出擊">
-          <div class="setup-heading" id="setup-mode-heading"><button id="setup-back" class="back-text-btn" type="button">返回</button><b id="setup-mode-title">一般模式</b></div>
-          <div id="craft-step">
-            <small class="setup-label">SELECT AIRCRAFT · 選擇機體</small>
-            <div id="aircraft-select" class="aircraft-grid" aria-label="選擇戰機"></div>
-
-          </div>
-          <div id="pilot-step" class="hidden">
-            <div class="setup-heading"><button id="pilot-back" class="back-text-btn" type="button">返回</button><b>SELECT PILOT · 選擇駕駛</b></div>
-            <div id="pilot-select" class="pilot-grid" aria-label="選擇駕駛"></div>
-            <div id="selection-confirm" class="selection-confirm hidden" aria-live="polite"><div id="selection-summary" class="selection-summary"></div><button id="confirm-back" class="back-text-btn" type="button">重選駕駛</button></div>
-            <div id="test-options" class="test-options hidden">
-              <label class="stage-select">起始關卡
+<main class="app-shell">
+<header class="topbar">
+<div class="brand"><strong>相位入侵</strong><span>PHASE INCURSION</span></div>
+<div class="status-actions">
+<button aria-label="切換聲音" class="icon-button" id="mute-button">SOUND</button>
+<button aria-label="暫停遊戲" class="icon-button" id="pause-button">PAUSE</button>
+</div>
+</header>
+<section aria-label="遊戲狀態" class="hud hud-compact">
+<div class="hud-score"><small>SCORE</small><b id="score">0000000</b></div>
+<div class="hud-ore-slot"><small>ORE</small><b class="hud-ore" id="ore">◆0</b></div>
+<div class="hud-sector"><small>SECTOR</small><b id="stage">—</b></div>
+<div class="hud-hp-slot"><small>HP</small><b id="hp">●●●●</b></div>
+<div class="hud-lives-slot"><small>LIVES</small><b id="lives">—</b></div>
+<div class="hud-bombs-slot"><small>BOMB</small><b id="bombs">◆◆</b></div>
+</section>
+<section aria-label="戰區進度" class="route-progress" id="route-progress">
+<div class="route-meta"><span id="route-label">AWAITING DEPLOYMENT</span><b id="route-status">STANDBY</b></div>
+<div class="route-track">
+<div id="route-fill"></div>
+<span aria-label="中頭目檢查點" class="route-node midboss-node" id="midboss-node" title="中頭目檢查點"></span>
+<span aria-label="戰區頭目" class="route-node boss-node" id="boss-node" title="戰區頭目"></span>
+</div>
+</section>
+<div aria-label="升級經驗" class="xp-track"><div id="xp-bar"></div></div>
+<section aria-label="即時傷害統計" class="dps-strip">
+<div><small>DPS · 1S</small><b id="dps-1s">0.0</b></div>
+<div><small>DPS · 10S</small><b id="dps-10s">0.0</b></div>
+<div><small>DPS · STAGE</small><b id="dps-total">0.0</b></div>
+</section>
+<section class="game-frame">
+<canvas aria-label="相位入侵 roguelite shooting game" height="800" id="game" width="480"></canvas>
+<section class="overlay title-overlay" id="title-overlay">
+<div class="phase-shell" id="phase-shell">
+<section class="phase-screen on" id="phase-title-screen">
+<canvas aria-hidden="true" id="titleCanvas"></canvas>
+<button class="phase-lang-btn" id="phase-title-lang"><span class="globe">⌘</span><span class="now">繁體中文</span></button>
+<div class="phase-title-inner">
+<h1 class="phase-wordmark"><span class="a">Phase</span><span class="b">Incursion</span></h1>
+<button class="phase-start" id="phase-start"><span class="txt" data-phase-i18n="start">點擊開始</span></button>
+</div>
+<div class="phase-title-foot"><span id="title-version">VER.87</span><span data-phase-i18n="build">建置 2026.08</span></div>
+</section>
+<section class="phase-screen" id="phase-menu-screen">
+<div class="phase-app">
+<div class="phase-status">
+<button aria-label="back" class="back" id="phase-back">←</button>
+<span class="ver">VER.87</span><span class="spacer"></span>
+<span class="link"><span class="dot"></span><span data-phase-i18n="link">相位鏈路 穩定</span></span>
+</div>
+<section class="phase-vault">
+<div class="vault-top"><span class="vault-label" data-phase-i18n="oreLabel">源晶礦</span><span class="vault-num"><span class="gem">◆</span> <span id="phase-menu-ore">0</span></span></div>
+<button class="phase-hangar" id="phase-hangar"><span class="tag">HANGAR</span><span class="body"><span class="name" data-phase-i18n="hangarName">前往機庫</span><span class="desc" data-phase-i18n="hangarDesc">消耗源晶礦強化機體、解鎖新機體與駕駛員。</span></span><span class="arrow">→</span></button>
+</section>
+<h2 class="phase-sec" data-phase-i18n="secMode">選擇遊戲模式</h2>
+<button class="phase-card primary" data-phase-mode="normal">
+<div class="row-top"><span class="tag">CAMPAIGN</span><span class="chip" id="phase-campaign-progress">首次攻略</span></div>
+<div class="name"><span data-phase-i18n="m1">一般模式</span><span class="arrow">→</span></div>
+<p class="desc" data-phase-i18n="d1">五個戰區，逐步建立裝備並完成任務。</p>
+<div class="meter"><span class="cap" data-phase-i18n="threat">威脅</span><span class="bars"><span class="on"></span><span class="on"></span><span class="on"></span><span></span><span></span><span></span></span><span class="val" data-phase-i18n="v1">遞增 · 有終點</span></div>
+</button>
+<button class="phase-card endless" data-phase-mode="endless">
+<div class="row-top"><span class="tag">ENDLESS</span><span class="chip phase-lock-chip" id="phase-endless-chip">LOCKED</span></div>
+<div class="name"><span data-phase-i18n="m2">無限模式</span><span class="arrow">→</span></div>
+<p class="desc" data-phase-i18n="d2">通過第五戰區後循環，敵人逐輪強化。</p>
+<div class="meter"><span class="cap" data-phase-i18n="threat">威脅</span><span class="bars hot"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span></span><span class="val" data-phase-i18n="v2">無上限</span></div>
+</button>
+<button class="phase-card lab" data-phase-mode="test"><div class="row-top"><span class="tag">LAB</span></div><div class="name"><span data-phase-i18n="m3">測試模式</span><span class="arrow">→</span></div><p class="desc" data-phase-i18n="d3">自訂機體、駕駛、滿級武器與不死條件。</p><div class="meter"><span class="cap" data-phase-i18n="threat">威脅</span><span class="bars"><span></span><span></span><span></span><span></span><span></span><span></span></span><span class="val" data-phase-i18n="v3">不計入進度</span></div></button>
+<button class="phase-card archive" id="phase-codex"><div class="row-top"><span class="tag">ARCHIVE</span></div><div class="name"><span data-phase-i18n="m4">圖鑑</span><span class="arrow">→</span></div><p class="desc" data-phase-i18n="d4">檢視所有機體、駕駛、副武器、被動與合成配方。</p></button>
+<div class="phase-utils">
+<button aria-pressed="false" class="phase-toggle" id="phase-max-toggle"><span class="switch"></span><span><span class="t-name" data-phase-i18n="maxName">MAX 模式</span><span class="t-sub" data-phase-i18n="maxSub">全數值上限開放</span></span></button>
+<button class="phase-lang-btn" id="phase-menu-lang"><span class="globe">⌘</span><span class="now">繁體中文</span></button>
+<button class="phase-reset" data-phase-i18n="reset" id="phase-reset">重置進度</button>
+</div>
+</div>
+</section>
+<div aria-modal="true" class="phase-sheet" id="phase-lang-sheet" role="dialog">
+<div class="sheet-box"><div class="sheet-head"><span>LANGUAGE</span><span data-phase-i18n="langLabel">語言</span><button aria-label="close" class="x" id="phase-sheet-close">✕</button></div><div class="lang-list" id="phase-lang-list"></div></div>
+</div>
+</div>
+<div aria-hidden="true" class="legacy-title-controls">
+<div class="title-meta-bar">
+<div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
+<div class="meta-bar-actions"><label class="max-mode-flag"><input id="max-mode" type="checkbox"/> MAX模式</label><button aria-label="重置升級與源晶礦" class="reset-meta-button" id="reset-meta">重置進度</button></div>
+</div>
+<button class="mode-card hangar-button" id="hangar-button"><small>HANGAR</small><b>UPGRADE</b><span>消耗源晶礦強化機體、解鎖新機體與駕駛員。</span></button>
+<div aria-label="選擇遊戲模式" class="setup-step" id="mode-select"></div>
+<button class="mode-card codex-button" id="codex-button"><small>ARCHIVE</small><b>圖鑑</b><span>檢視所有機體、駕駛、副武器、被動與合成配方。</span></button>
+</div>
+<div aria-label="配置本次出擊" class="setup-step hidden" id="loadout-select">
+<div class="setup-heading" id="setup-mode-heading"><button class="back-text-btn" id="setup-back" type="button">返回</button><b id="setup-mode-title">一般模式</b></div>
+<div id="craft-step">
+<small class="setup-label">SELECT AIRCRAFT · 選擇機體</small>
+<div aria-label="選擇戰機" class="aircraft-grid" id="aircraft-select"></div>
+</div>
+<div class="hidden" id="pilot-step">
+<div class="setup-heading"><button class="back-text-btn" id="pilot-back" type="button">返回</button><b>SELECT PILOT · 選擇駕駛</b></div>
+<div aria-label="選擇駕駛" class="pilot-grid" id="pilot-select"></div>
+<div aria-live="polite" class="selection-confirm hidden" id="selection-confirm"><div class="selection-summary" id="selection-summary"></div><button class="back-text-btn" id="confirm-back" type="button">重選駕駛</button></div>
+<div class="test-options hidden" id="test-options">
+<label class="stage-select">起始關卡
                 <select id="test-stage">
-                  <option value="1">S01 · 霓虹外環</option>
-                  <option value="2">S02 · 軌道鑄造廠</option>
-                  <option value="3">S03 · 水晶風暴</option>
-                  <option value="4">S04 · 日冕要塞</option>
-                  <option value="5">S05 · 虛空王座</option>
-                </select>
-              </label>
-              <label class="boss-start-flag"><input id="test-start-boss" type="checkbox"> 直接從 Boss 開始</label>
-              <label class="boss-start-flag"><input id="test-endless" type="checkbox"> 無限模式規則</label>
-              <fieldset><legend>滿級副武器 <span id="test-secondary-count">0 / 4</span></legend><div id="test-secondaries" class="test-chip-grid"></div></fieldset>
-              <fieldset><legend>滿級被動 <span id="test-passive-count">0 / 8</span></legend><div id="test-passives" class="test-chip-grid"></div></fieldset>
-              <div class="test-flags">
-                <label><input id="test-player-invincible" type="checkbox"> 自身無敵</label>
-                <label><input id="test-enemies-immortal" type="checkbox"> 敵人不死</label>
-              </div>
-            </div>
-            <button id="deploy-button" class="primary-button deploy-button hidden">開始出擊</button>
-          </div>
-        </div>
-        <p class="start-help">桌面：WASD / 方向鍵移動，Space 射擊，X/B/Shift 炸彈，P 暫停<br>手機：拖曳移動、自動射擊，右下 BOMB</p>
-      </section>
-
-      <section id="upgrade-overlay" class="overlay upgrade-overlay hidden" aria-live="polite">
-        <div class="upgrade-heading"><small id="upgrade-kicker">LEVEL UP</small><h2 id="upgrade-title">選擇一項強化</h2></div>
-        <div id="upgrade-options" class="upgrade-options"></div>
-      </section>
-
-      <section id="pause-overlay" class="overlay pause-overlay hidden" aria-label="暫停與裝備狀態">
-        <div class="pause-heading"><small>TACTICAL STATUS</small><h2>PAUSED</h2></div>
-        <div class="pause-loadout">
-          <article><small>主武器與駕駛員被動</small><div id="pause-primary" class="pause-item-list"></div></article>
-          <article><small>副武器</small><div id="pause-secondary" class="pause-item-list"></div></article>
-          <article><small>被動能力</small><div id="pause-passive" class="pause-item-list"></div></article>
-          <div id="pause-pilot" class="pause-mode-line">—</div>
-        </div>
-        <div id="pause-test-controls" class="pause-test-controls hidden">
-          <label><input id="pause-player-invincible" type="checkbox"> 自身無敵</label>
-          <label><input id="pause-enemies-immortal" type="checkbox"> 敵人不死</label>
-        </div>
-        <div class="pause-actions">
-          <button id="resume-button" class="primary-button">繼續作戰</button>
-          <button id="pause-codex-button" class="secondary-action-button">圖鑑 ARCHIVE</button>
-          <button id="title-button" class="text-button">結束任務並結算</button>
-        </div>
-      </section>
-
-      <section id="end-overlay" class="overlay end-overlay hidden">
-        <p id="end-kicker">RUN TERMINATED</p>
-        <h2 id="end-title">MISSION FAILED</h2>
-        <div id="run-summary" class="run-summary"></div>
-        <div class="end-actions"><button id="review-button" class="secondary-action-button" type="button">戰鬥回顧</button><button id="retry-button" class="primary-button">重新出擊</button></div>
-        <div id="damage-review" class="damage-review hidden"></div>
-      </section>
-
-      <section id="review-overlay" class="overlay review-overlay hidden" aria-label="戰鬥回顧">
-        <div class="setup-heading review-heading"><button id="review-back" class="back-text-btn" type="button">返回結算</button><b>COMBAT REVIEW · 戰鬥回顧</b></div>
-        <div id="review-summary" class="review-summary"></div>
-      </section>
-
-      <section id="clear-overlay" class="overlay clear-overlay hidden" aria-label="通關獎勵">
-        <div class="clear-dialog">
-          <small>MISSION COMPLETE</small>
-          <h2>一般模式通關！</h2>
-          <div id="clear-body" class="clear-body"></div>
-          <button id="clear-confirm" class="primary-button">確認</button>
-        </div>
-      </section>
-
-      <section id="hangar-overlay" class="overlay hangar-overlay hidden" aria-label="升級清單">
-        <div class="setup-heading"><button id="hangar-back" class="back-text-btn" type="button">返回</button><b>UPGRADE HANGAR · 升級機庫</b></div>
-        <b id="hangar-ore" class="hangar-ore">◆ 0</b>
-        <small class="setup-label">UPGRADES · 機體強化</small>
-        <div id="hangar-upgrades" class="hangar-list"></div>
-        <small class="setup-label">AIRCRAFT · 解鎖機體</small>
-        <div id="hangar-unlock-crafts" class="hangar-list"></div>
-        <small class="setup-label">PILOTS · 解鎖駕駛員</small>
-        <div id="hangar-unlock-pilots" class="hangar-list"></div>
-      </section>
-
-      <section id="codex-overlay" class="overlay codex-overlay hidden" aria-label="圖鑑">
-        <div class="setup-heading"><button id="codex-back" class="back-text-btn" type="button">返回</button><b>ARCHIVE · 圖鑑</b></div>
-        <p class="codex-hint">尚未取得過的內容顯示為未解鎖。重置進度會一併清除此圖鑑。</p>
-        <div id="codex-body"></div>
-      </section>
-
-      <div id="announcement" class="announcement hidden"></div>
-      <div class="frame-action-bar">
-        <button id="mute-fab" class="sound-fab hidden" aria-label="切換聲音">♪</button>
-        <button id="pause-fab" class="pause-fab hidden" aria-label="暫停並查看駕駛與裝備">Ⅱ</button>
-      </div>
-      <button id="bomb-button" class="bomb-button hidden" aria-label="使用炸彈">BOMB<span id="bomb-count">2</span></button>
-    </section>
-
-    <footer class="build-strip">
-      <div><small>PRIMARY</small><span id="primary-build">—</span></div>
-      <div><small>SECONDARY</small><span id="secondary-build">—</span></div>
-      <div><small>PASSIVE</small><span id="passive-build">—</span></div>
-    </footer>
-  </main>
-  <script type="module" src="./src/main.js?v=86"></script>
+<option value="1">S01 · 霓虹外環</option>
+<option value="2">S02 · 軌道鑄造廠</option>
+<option value="3">S03 · 水晶風暴</option>
+<option value="4">S04 · 日冕要塞</option>
+<option value="5">S05 · 虛空王座</option>
+</select>
+</label>
+<label class="boss-start-flag"><input id="test-start-boss" type="checkbox"> 直接從 Boss 開始</input></label>
+<label class="boss-start-flag"><input id="test-endless" type="checkbox"/> 無限模式規則</label>
+<fieldset><legend>滿級副武器 <span id="test-secondary-count">0 / 4</span></legend><div class="test-chip-grid" id="test-secondaries"></div></fieldset>
+<fieldset><legend>滿級被動 <span id="test-passive-count">0 / 8</span></legend><div class="test-chip-grid" id="test-passives"></div></fieldset>
+<div class="test-flags">
+<label><input id="test-player-invincible" type="checkbox"/> 自身無敵</label>
+<label><input id="test-enemies-immortal" type="checkbox"/> 敵人不死</label>
+</div>
+</div>
+<button class="primary-button deploy-button hidden" id="deploy-button">開始出擊</button>
+</div>
+</div>
+<p class="start-help">桌面：WASD / 方向鍵移動，Space 射擊，X/B/Shift 炸彈，P 暫停<br/>手機：拖曳移動、自動射擊，右下 BOMB</p>
+</section>
+<section aria-live="polite" class="overlay upgrade-overlay hidden" id="upgrade-overlay">
+<div class="upgrade-heading"><small id="upgrade-kicker">LEVEL UP</small><h2 id="upgrade-title">選擇一項強化</h2></div>
+<div class="upgrade-options" id="upgrade-options"></div>
+</section>
+<section aria-label="暫停與裝備狀態" class="overlay pause-overlay hidden" id="pause-overlay">
+<div class="pause-heading"><small>TACTICAL STATUS</small><h2>PAUSED</h2></div>
+<div class="pause-loadout">
+<article><small>主武器與駕駛員被動</small><div class="pause-item-list" id="pause-primary"></div></article>
+<article><small>副武器</small><div class="pause-item-list" id="pause-secondary"></div></article>
+<article><small>被動能力</small><div class="pause-item-list" id="pause-passive"></div></article>
+<div class="pause-mode-line" id="pause-pilot">—</div>
+</div>
+<div class="pause-test-controls hidden" id="pause-test-controls">
+<label><input id="pause-player-invincible" type="checkbox"/> 自身無敵</label>
+<label><input id="pause-enemies-immortal" type="checkbox"/> 敵人不死</label>
+</div>
+<div class="pause-actions">
+<button class="primary-button" id="resume-button">繼續作戰</button>
+<button class="secondary-action-button" id="pause-codex-button">圖鑑 ARCHIVE</button>
+<button class="text-button" id="title-button">結束任務並結算</button>
+</div>
+</section>
+<section class="overlay end-overlay hidden" id="end-overlay">
+<p id="end-kicker">RUN TERMINATED</p>
+<h2 id="end-title">MISSION FAILED</h2>
+<div class="run-summary" id="run-summary"></div>
+<div class="end-actions"><button class="secondary-action-button" id="review-button" type="button">戰鬥回顧</button><button class="primary-button" id="retry-button">重新出擊</button></div>
+<div class="damage-review hidden" id="damage-review"></div>
+</section>
+<section aria-label="戰鬥回顧" class="overlay review-overlay hidden" id="review-overlay">
+<div class="setup-heading review-heading"><button class="back-text-btn" id="review-back" type="button">返回結算</button><b>COMBAT REVIEW · 戰鬥回顧</b></div>
+<div class="review-summary" id="review-summary"></div>
+</section>
+<section aria-label="通關獎勵" class="overlay clear-overlay hidden" id="clear-overlay">
+<div class="clear-dialog">
+<small>MISSION COMPLETE</small>
+<h2>一般模式通關！</h2>
+<div class="clear-body" id="clear-body"></div>
+<button class="primary-button" id="clear-confirm">確認</button>
+</div>
+</section>
+<section aria-label="升級清單" class="overlay hangar-overlay hidden" id="hangar-overlay">
+<div class="setup-heading"><button class="back-text-btn" id="hangar-back" type="button">返回</button><b>UPGRADE HANGAR · 升級機庫</b></div>
+<b class="hangar-ore" id="hangar-ore">◆ 0</b>
+<small class="setup-label">UPGRADES · 機體強化</small>
+<div class="hangar-list" id="hangar-upgrades"></div>
+<small class="setup-label">AIRCRAFT · 解鎖機體</small>
+<div class="hangar-list" id="hangar-unlock-crafts"></div>
+<small class="setup-label">PILOTS · 解鎖駕駛員</small>
+<div class="hangar-list" id="hangar-unlock-pilots"></div>
+</section>
+<section aria-label="圖鑑" class="overlay codex-overlay hidden" id="codex-overlay">
+<div class="setup-heading"><button class="back-text-btn" id="codex-back" type="button">返回</button><b>ARCHIVE · 圖鑑</b></div>
+<p class="codex-hint">尚未取得過的內容顯示為未解鎖。重置進度會一併清除此圖鑑。</p>
+<div id="codex-body"></div>
+</section>
+<div class="announcement hidden" id="announcement"></div>
+<div class="frame-action-bar">
+<button aria-label="切換聲音" class="sound-fab hidden" id="mute-fab">♪</button>
+<button aria-label="暫停並查看駕駛與裝備" class="pause-fab hidden" id="pause-fab">Ⅱ</button>
+</div>
+<button aria-label="使用炸彈" class="bomb-button hidden" id="bomb-button">BOMB<span id="bomb-count">2</span></button>
+</section>
+<footer class="build-strip">
+<div><small>PRIMARY</small><span id="primary-build">—</span></div>
+<div><small>SECONDARY</small><span id="secondary-build">—</span></div>
+<div><small>PASSIVE</small><span id="passive-build">—</span></div>
+</footer>
+</main>
+<script src="./src/main.js?v=87" type="module"></script>
 </body>
 </html>
