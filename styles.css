@@ -5,7 +5,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;width:100%;height:100%;height:100dvh;overflow:hidden;background:#02040c;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 body{display:grid;place-items:center;background:radial-gradient(circle at 50% 0,#11294a 0,#050816 42%,#010207 100%);padding:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left))}
-button{font:inherit;color:inherit}.app-shell{width:min(100%,520px);height:auto;max-height:920px;min-width:0;min-height:0;align-self:stretch;justify-self:center;display:grid;grid-template-rows:auto auto auto 4px auto minmax(0,1fr) auto;gap:6px}
+button{font:inherit;color:inherit}.app-shell{width:min(100%,520px);height:auto;max-height:920px;min-width:0;min-height:0;align-self:stretch;justify-self:center;display:grid;grid-template-rows:auto auto auto minmax(0,1fr);gap:6px}
 .topbar,.hud,.build-strip{border:1px solid rgba(66,232,255,.25);background:rgba(2,8,20,.82);backdrop-filter:blur(10px)}
 .topbar{display:flex;justify-content:space-between;align-items:center;padding:7px 10px}.brand{display:flex;align-items:baseline;gap:9px}.brand strong{font-size:19px;letter-spacing:.14em;color:var(--green);text-shadow:0 0 15px rgba(76,255,155,.75)}.brand span{font-size:10px;color:var(--cyan);letter-spacing:.18em}
 .status-actions{display:flex;gap:5px}.icon-button{border:1px solid rgba(66,232,255,.3);background:rgba(12,30,50,.8);font-size:10px;padding:6px 8px;cursor:pointer}.icon-button:active{transform:translateY(1px)}
@@ -64,3 +64,17 @@ canvas{display:block;width:100%;height:100%;object-fit:contain;touch-action:none
 /* v84: vertically rebalance legacy generated passive icons whose artwork sits high inside the source square. */
 :is(.upgrade-icon,.codex-icon,.pause-item-icon) img:is([src$="/payload.webp"],[src$="/harvester.webp"],[src$="/bombcap.webp"],[src$="/flux.webp"],[src$="/critical.webp"],[src$="/salvage.webp"],[src$="/armor.webp"],[src$="/capacitor.webp"]){transform:translateY(3px) scale(.78)!important}
 .skill-token i img:is([src$="/payload.webp"],[src$="/harvester.webp"],[src$="/bombcap.webp"],[src$="/flux.webp"],[src$="/critical.webp"],[src$="/salvage.webp"],[src$="/armor.webp"],[src$="/capacitor.webp"]){transform:translateY(1px) scale(.86)!important}
+
+
+/* v85 streamlined runtime HUD */
+.hud.hud-compact{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.hud.hud-compact>.hud-score,.hud.hud-compact>.hud-sector{display:none!important}
+.hud.hud-compact>div{min-width:0}
+.hud.hud-compact b{font-size:13px;font-variant-numeric:tabular-nums}
+.hud.hud-compact small{font-size:8px}
+.route-progress{padding:7px 10px 8px}
+.route-meta{margin-bottom:6px;font-size:9px}
+.route-track{height:7px;margin:0 7px}
+body.title-hud-minimal .hud,body.title-hud-minimal .route-progress{display:none}
+body.title-hud-minimal .app-shell{grid-template-rows:auto minmax(0,1fr)}
+.xp-track,.dps-strip,.build-strip{display:none!important}

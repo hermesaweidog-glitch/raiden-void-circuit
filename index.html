@@ -19,13 +19,13 @@
       </div>
     </header>
 
-    <section class="hud" aria-label="遊戲狀態">
-      <div><small>SCORE</small><b id="score">0000000</b></div>
-      <div><small>ORE</small><b id="ore" class="hud-ore">◆0</b></div>
-      <div><small>SECTOR</small><b id="stage">—</b></div>
-      <div><small>HP</small><b id="hp">●●●●</b></div>
-      <div><small>LIVES</small><b id="lives">—</b></div>
-      <div><small>BOMB</small><b id="bombs">◆◆</b></div>
+    <section class="hud hud-compact" aria-label="遊戲狀態">
+      <div class="hud-score"><small>SCORE</small><b id="score">0000000</b></div>
+      <div class="hud-ore-slot"><small>ORE</small><b id="ore" class="hud-ore">◆0</b></div>
+      <div class="hud-sector"><small>SECTOR</small><b id="stage">—</b></div>
+      <div class="hud-hp-slot"><small>HP</small><b id="hp">●●●●</b></div>
+      <div class="hud-lives-slot"><small>LIVES</small><b id="lives">—</b></div>
+      <div class="hud-bombs-slot"><small>BOMB</small><b id="bombs">◆◆</b></div>
     </section>
     <section id="route-progress" class="route-progress" aria-label="戰區進度">
       <div class="route-meta"><span id="route-label">AWAITING DEPLOYMENT</span><b id="route-status">STANDBY</b></div>
@@ -49,7 +49,7 @@
         <div class="title-lockup">
           <p class="eyebrow">相位入侵</p>
           <h1>PHASE<br><span>INCURSION</span></h1>
-          <p class="title-version" id="title-version">ver.84</p>
+          <p class="title-version" id="title-version">ver.85</p>
         </div>
         <div class="title-meta-bar">
           <div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
@@ -165,12 +165,12 @@
       <button id="bomb-button" class="bomb-button hidden" aria-label="使用炸彈">BOMB<span id="bomb-count">2</span></button>
     </section>
 
-    <footer class="build-strip">
+    <footer class="build-strip hidden">
       <div><small>PRIMARY</small><span id="primary-build">—</span></div>
       <div><small>SECONDARY</small><span id="secondary-build">—</span></div>
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js?v=84"></script>
+  <script type="module" src="./src/main.js?v=85"></script>
 </body>
 </html>

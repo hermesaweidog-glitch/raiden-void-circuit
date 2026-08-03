@@ -2856,6 +2856,7 @@ export class Game {
     const setText = (id, value) => { const el = this.dom[id]; if (!el) return; const next = String(value); if (el.textContent !== next) el.textContent = next; };
     const setStyle = (id, property, value) => { const el = this.dom[id]; if (el && el.style[property] !== value) el.style[property] = value; };
     const setClass = (id, name, active) => { const el = this.dom[id]; if (el && el.classList.contains(name) !== active) el.classList[active ? 'add' : 'remove'](name); };
+    if (typeof document !== 'undefined' && document.body) document.body.classList.toggle('title-hud-minimal', !p && this.mode === 'title');
     setText('score', String(this.score).padStart(7, '0'));
     setText('stage', p ? `${this.isEndless() ? `∞${this.endlessCycle + 1}·` : ''}S${String(stage.id).padStart(2, '0')}` : '—');
     setText('level', p ? String(p.level).padStart(2, '0') : '—');
