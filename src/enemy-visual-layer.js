@@ -344,13 +344,22 @@ export class EnemyVisualLayer {
   }
 
   alignBossShowcase(instance, enemy) {
-    if (!enemy.arriving || enemy.orbiting) return;
+    if (!enemy.arriving || enemy.orbiting) {
+      enemy.visualOffsetY = 0;
+      return;
+    }
     const holding = (enemy.entranceHold || 0) > 0;
     const settling = !holding && enemy.y < 118;
-    if (!holding && !settling) return;
+    if (!holding && !settling) {
+      enemy.visualOffsetY = 0;
+      return;
+    }
 
     const bounds = this.projectedVisibleBounds(instance.modelGroup);
-    if (!bounds || bounds.height < 1) return;
+    if (!bounds || bounds.height < 1) {
+      enemy.visualOffsetY = 0;
+      return;
+    }
     const topSafe = clamp(this.height * 0.055, 34, 48);
     const bottomSafe = this.height * 0.55;
     const preferredCenter = this.height * 0.31;
@@ -369,6 +378,7 @@ export class EnemyVisualLayer {
     }
     const settleBlend = holding ? clamp((enemy.y + 8) / 42, 0, 1) : clamp((118 - enemy.y) / 84, 0, 1);
     const offsetPixels = (instance.showcaseOffsetPx || 0) * settleBlend;
+    enemy.visualOffsetY = offsetPixels;
     if (Math.abs(offsetPixels) < 0.01) return;
 
     const planeY = 7.5;
@@ -403,6 +413,7 @@ export class EnemyVisualLayer {
   updateAlive(instance, enemy, timeSeconds, deltaSeconds) {
     this.restorePose(instance);
     this.placeInstance(instance, enemy);
+    enemy.visualOffsetY = 0;
     instance.lastEnemy = { ...enemy };
 
     if ((enemy.phase || 0) !== instance.lastPhase) {

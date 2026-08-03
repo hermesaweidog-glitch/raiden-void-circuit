@@ -2541,3 +2541,82 @@ test('lancer chain lightning bounce damage uses three times the previous coeffic
   assert.ok(Math.abs(chainTotal - 57.6) < 1e-9, 'three bounces each deal 1 × 1.92 × STAT_SCALE damage');
   assert.equal(game.damageHits['primary:LANCER｜連鎖電擊'], 3);
 });
+
+test('time fields affect only enemies and bullets already inside the active view', () => {
+  const { game } = makeGame();
+  const active = { id: 900, type: 'scout', alive: true, x: 240, y: 120, radius: 14 };
+  const incoming = { id: 901, type: 'scout', alive: true, x: 240, y: -8, radius: 14 };
+  const arrivingBoss = { id: 902, type: 'boss', alive: true, arriving: true, x: 240, y: 70, radius: 52 };
+  const visibleBullet = { id: 903, x: 120, y: 180, radius: 5 };
+  const incomingBullet = { id: 904, x: 120, y: -10, radius: 5 };
+  game.enemies = [active, incoming, arrivingBoss];
+  game.enemyBullets = [visibleBullet, incomingBullet];
+
+  game.applyWorldFieldToVisibleObjects(120);
+
+  assert.equal(active.worldSlowTimer, 120);
+  assert.equal(incoming.worldSlowTimer, undefined);
+  assert.equal(arrivingBoss.worldSlowTimer, undefined);
+  assert.equal(visibleBullet.worldSlowTimer, 120);
+  assert.equal(incomingBullet.worldSlowTimer, undefined);
+
+  const laterEnemy = { id: 905, type: 'scout', alive: true, x: 200, y: 100, radius: 14 };
+  game.enemies.push(laterEnemy);
+  assert.equal(laterEnemy.worldSlowTimer, undefined, 'objects entering after activation are not retroactively slowed');
+});
+
+test('kiai clears and freezes only objects visible at activation', () => {
+  const { game } = makeGame();
+  const active = { id: 910, type: 'scout', alive: true, x: 240, y: 120, radius: 14 };
+  const incoming = { id: 911, type: 'scout', alive: true, x: 240, y: -8, radius: 14 };
+  const visibleBullet = { id: 912, x: 100, y: 100, radius: 5 };
+  const incomingBullet = { id: 913, x: 100, y: -12, radius: 5 };
+  game.enemies = [active, incoming];
+  game.enemyBullets = [visibleBullet, incomingBullet];
+
+  game.applyKiaiToVisibleObjects(42);
+
+  assert.equal(active.kiaiFreezeTimer, 42);
+  assert.equal(incoming.kiaiFreezeTimer, undefined);
+  assert.deepEqual(game.enemyBullets.map(bullet => bullet.id), [913]);
+});
+
+test('enemy status damage continues while that enemy movement is frozen', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  const enemy = {
+    id: 920, type: 'scout', alive: true, x: 80, y: 120, originX: 80, radius: 14,
+    hp: 10000, maxHp: 10000, score: 0, xp: 0, color: '#fff', age: 0, speed: 2,
+    formation: 0, index: 0, cooldown: 999, burnTimer: 40, burnDamage: 1,
+    burnSource: 'primary:test', kiaiFreezeTimer: 10,
+  };
+  game.enemies = [enemy];
+  game.frame = 20;
+  const startY = enemy.y;
+  const startHp = enemy.hp;
+
+  game.updateEnemies();
+
+  assert.equal(enemy.y, startY, 'movement is frozen');
+  assert.ok(enemy.hp < startHp, 'real-time damage ticks are not frozen with movement');
+  assert.equal(enemy.kiaiFreezeTimer, 9);
+});
+
+test('world slowdown is per bullet instead of a global enemy clock', () => {
+  const { game } = makeGame();
+  game.start('falcon');
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.player.invincible = 999;
+  const slowed = { id: 930, x: 100, y: 100, vx: 10, vy: 0, radius: 4, life: 100, damage: 1, entryGrace: 0, worldSlowTimer: 2 };
+  const normal = { id: 931, x: 100, y: 160, vx: 10, vy: 0, radius: 4, life: 100, damage: 1, entryGrace: 0 };
+  game.enemyBullets = [slowed, normal];
+
+  game.updateEnemyBullets();
+
+  assert.equal(slowed.x, 102);
+  assert.equal(normal.x, 110);
+  assert.equal(slowed.worldSlowTimer, 1);
+});

@@ -45,7 +45,7 @@ export const SECONDARIES = {
 };
 
 export const KUNGFU_SECONDARIES = {
-  kiai: { id: 'kiai', icon: 'assets/icons/kiai.svg', name: '大喝爆音', max: 3, color: '#fde68a', description: '消滅全場敵彈；敵方行動暫停 0.3／0.7／1.2 秒。' },
+  kiai: { id: 'kiai', icon: 'assets/icons/kiai.svg', name: '大喝爆音', max: 3, color: '#fde68a', description: '消除畫面內敵彈；使畫面內敵人暫停 0.3／0.7／1.2 秒。' },
   jointStrike: { id: 'jointStrike', icon: 'assets/icons/joint-strike.svg', name: '關節打擊', max: 3, color: '#fb7185', description: '極短距離環形攻擊，使目標速度下降 20%／30%／40%。' },
   pushHands: { id: 'pushHands', icon: 'assets/icons/push-hands.svg', name: '推手', max: 3, color: '#67e8f9', description: '持續向前打出極短距離的橫向掌風。' },
   ironBell: { id: 'ironBell', icon: 'assets/icons/iron-bell.svg', name: '金鐘罩', max: 3, color: '#facc15', description: '週期性恢復一層有時限、可抵擋一次攻擊的護罩。' },
@@ -90,7 +90,7 @@ export const FUSIONS = {
   overclockDirect: { id: 'overclockDirect', icon: 'assets/icons/overclock-direct.svg', name: '超頻核心（直擊）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'directCore'], description: '保留滿級超頻模組效果，直擊類傷害提高至 25%。' },
   overclockPierce: { id: 'overclockPierce', icon: 'assets/icons/overclock-pierce.svg', name: '超頻核心（貫穿）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'pierceCore'], description: '保留滿級超頻模組效果，貫穿類傷害提高至 25%。' },
   overclockArea: { id: 'overclockArea', icon: 'assets/icons/overclock-area.svg', name: '超頻核心（擴散）', category: 'fusion', kind: 'passive', set: 'standard', exclusiveGroup: 'damageCore', requires: [], requiresPassives: ['overclock', 'areaCore'], description: '保留滿級超頻模組效果，範圍類傷害提高至 25%；全畫面炸彈除外。' },
-  world: { id: 'world', icon: 'assets/icons/world.svg', name: '光速超越', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['fieldAmp', 'capacitor'], description: '影響範圍增加，副武器冷卻時間減少；每 10 秒降低全場速度 80%，持續 2 秒。' },
+  world: { id: 'world', icon: 'assets/icons/world.svg', name: '光速超越', category: 'fusion', kind: 'passive', set: 'standard', requires: [], requiresPassives: ['fieldAmp', 'capacitor'], description: '影響範圍增加，副武器冷卻時間減少；每 10 秒使畫面內敵人與敵彈減速 80%，持續 2 秒。' },
 };
 
 export const STAGES = [

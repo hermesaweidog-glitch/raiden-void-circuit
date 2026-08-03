@@ -35,3 +35,24 @@ test('boss showcase uses projected visible model bounds and eases back to combat
   assert.match(source, /topSafe = clamp\(this\.height \* 0\.055, 34, 48\)/);
   assert.match(source, /settleBlend = holding/);
 });
+
+test('boss 2D arrival overlays follow the same projected showcase offset as the 3D model', () => {
+  assert.match(enemyLayer, /enemy\.visualOffsetY = offsetPixels/);
+  assert.match(game, /const displayY = rendered3D && enemy\.type === 'boss'/);
+  assert.match(game, /ctx\.translate\(enemy\.x, displayY\)/);
+  assert.match(game, /const barY = displayY - enemy\.radius - 14/);
+});
+
+test('equipment icons keep their original colors', () => {
+  const styles = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(styles, /filter:grayscale\(1\)/);
+  assert.match(styles, /filter:drop-shadow/);
+});
+
+test('time effects use per-object snapshots instead of a global enemy time scale', () => {
+  assert.match(game, /applyWorldFieldToVisibleObjects\(120\)/);
+  assert.match(game, /applyKiaiToVisibleObjects\(freezeDuration\)/);
+  assert.match(game, /updateEnemyFieldTime\(enemy\)/);
+  assert.doesNotMatch(game, /this\.enemyTimeScale = this\.worldFreezeTimer/);
+  assert.match(game, /this\.updateDirector\(\)/);
+});

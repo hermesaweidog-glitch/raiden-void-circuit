@@ -664,27 +664,73 @@ export class Game {
       this.worldCooldown -= 1;
       if (this.worldCooldown <= 0) {
         this.worldFreezeTimer = 120; this.worldCooldown = 600;
+        this.applyWorldFieldToVisibleObjects(120);
         this.addEffect({ type: 'worldStop', x: this.w / 2, y: this.h / 2, life: 120, maxLife: 120 });
         this.announce('光速超越', 'LIGHT SPEED EXCEEDED', 700);
       }
     }
-    const kungfuFrozen = this.kungfuFreezeTimer > 0;
     if (this.kungfuFreezeTimer > 0) this.kungfuFreezeTimer -= 1;
-    this.enemyTimeScale = this.worldFreezeTimer > 0 ? .2 : 1;
-    if (kungfuFrozen) this.updateKungfuCollisionOnly();
-    else {
-      this.updateEnemies();
-      this.updateEnemyBullets();
-    }
+    // Time-field effects are attached only to the objects that were already
+    // inside the combat view when the effect began. Combat/status updates keep
+    // running at the normal simulation rate, while only movement and enemy
+    // firing clocks are slowed or stopped per affected object.
+    this.updateEnemies();
+    this.updateEnemyBullets();
     this.updateXpOrbs();
     this.updateEffects();
     this.updateEndlessBossWarning();
-    if (!kungfuFrozen) this.updateDirector();
+    this.updateDirector();
     this.updateHud();
   }
 
   worldScrollSpeed() {
     return 1.2 + this.stageIndex * .14;
+  }
+
+  enemyInsideActiveView(enemy) {
+    if (!enemy?.alive) return false;
+    if (enemy.type === 'boss' && enemy.arriving) return false;
+    if (enemy.type === 'midboss' && !enemy.orbiting) return false;
+    const radius = Math.max(0, Number(enemy.radius) || 0);
+    return enemy.x + radius >= 0
+      && enemy.x - radius <= this.w
+      && enemy.y >= 0
+      && enemy.y - radius <= this.h;
+  }
+
+  enemyBulletInsideActiveView(bullet) {
+    if (!bullet) return false;
+    return bullet.x >= 0 && bullet.x <= this.w && bullet.y >= 0 && bullet.y <= this.h;
+  }
+
+  applyWorldFieldToVisibleObjects(duration = 120) {
+    for (const enemy of this.enemies) {
+      if (!this.enemyInsideActiveView(enemy)) continue;
+      enemy.worldSlowTimer = Math.max(enemy.worldSlowTimer || 0, duration);
+    }
+    for (const bullet of this.enemyBullets) {
+      if (!this.enemyBulletInsideActiveView(bullet)) continue;
+      bullet.worldSlowTimer = Math.max(bullet.worldSlowTimer || 0, duration);
+    }
+  }
+
+  applyKiaiToVisibleObjects(duration) {
+    for (const enemy of this.enemies) {
+      if (!this.enemyInsideActiveView(enemy)) continue;
+      enemy.kiaiFreezeTimer = Math.max(enemy.kiaiFreezeTimer || 0, duration);
+    }
+    // Kiai destroys only bullets that are already visible. Bullets waiting
+    // outside the playfield and bullets spawned afterward continue normally.
+    this.enemyBullets = this.enemyBullets.filter(bullet => !this.enemyBulletInsideActiveView(bullet));
+  }
+
+  updateEnemyFieldTime(enemy) {
+    const kiaiActive = (enemy.kiaiFreezeTimer || 0) > 0;
+    const worldActive = (enemy.worldSlowTimer || 0) > 0;
+    if (kiaiActive) enemy.kiaiFreezeTimer = Math.max(0, enemy.kiaiFreezeTimer - 1);
+    if (worldActive) enemy.worldSlowTimer = Math.max(0, enemy.worldSlowTimer - 1);
+    if (kiaiActive) return 0;
+    return worldActive ? .2 : 1;
   }
 
   updateRouteProgress() {
@@ -1377,8 +1423,9 @@ export class Game {
       p.secondaryCooldowns[id] = (p.secondaryCooldowns[id] || 0) - 1;
       if (p.secondaryCooldowns[id] > 0) continue;
       if (id === 'kiai') {
-        this.enemyBullets = [];
-        this.kungfuFreezeTimer = Math.max(this.kungfuFreezeTimer, [0, 18, 42, 72][rank]);
+        const freezeDuration = [0, 18, 42, 72][rank];
+        this.kungfuFreezeTimer = Math.max(this.kungfuFreezeTimer, freezeDuration);
+        this.applyKiaiToVisibleObjects(freezeDuration);
         this.addEffect({ type: 'kiai', x: p.x, y: p.y, life: 24, maxLife: 24 });
         this.setSecondaryCooldown(id, [0, 720, 660, 600][rank]);
       } else if (id === 'jointStrike') {
@@ -1609,7 +1656,7 @@ export class Game {
     for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
       const enemy = this.enemies[i];
       if (!enemy.alive) { this.enemies.splice(i, 1); continue; }
-      const motionScale = this.updateEnemyStatus(enemy) * (this.enemyTimeScale || 1);
+      const motionScale = this.updateEnemyStatus(enemy) * this.updateEnemyFieldTime(enemy);
       if (!enemy.alive) { this.enemies.splice(i, 1); continue; }
       enemy.age += motionScale;
       enemy.motionScale = motionScale;
@@ -1852,8 +1899,10 @@ export class Game {
     let playerHitDamage = 0;
     for (let i = this.enemyBullets.length - 1; i >= 0; i -= 1) {
       const bullet = this.enemyBullets[i];
-      const enemyTimeScale = this.enemyTimeScale || 1;
-      bullet.x += bullet.vx * enemyTimeScale; bullet.y += bullet.vy * enemyTimeScale; bullet.life -= enemyTimeScale;
+      const worldSlowed = (bullet.worldSlowTimer || 0) > 0;
+      if (worldSlowed) bullet.worldSlowTimer = Math.max(0, bullet.worldSlowTimer - 1);
+      const bulletTimeScale = worldSlowed ? .2 : 1;
+      bullet.x += bullet.vx * bulletTimeScale; bullet.y += bullet.vy * bulletTimeScale; bullet.life -= bulletTimeScale;
       const rr = bullet.radius + this.player.hitRadius;
       if (canHitPlayer && distanceSq(bullet, this.player) < rr * rr) { this.enemyBullets.splice(i, 1); playerHitDamage = Math.max(playerHitDamage, bullet.damage || 5); continue; }
       const scale = this.player.scale || 1;
@@ -3760,8 +3809,11 @@ export class Game {
 
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
+      const displayY = rendered3D && enemy.type === 'boss'
+        ? enemy.y + (Number(enemy.visualOffsetY) || 0)
+        : enemy.y;
       ctx.save();
-      ctx.translate(enemy.x, enemy.y);
+      ctx.translate(enemy.x, displayY);
       if (!rendered3D) {
         ctx.fillStyle = 'rgba(255,255,255,.08)';
         ctx.beginPath(); ctx.arc(0, 0, enemy.radius * 1.45, 0, TAU); ctx.fill();
@@ -3797,7 +3849,7 @@ export class Game {
       if (enemy.type === 'boss' || enemy.type === 'elite' || enemy.type === 'midboss') {
         const width = enemy.type === 'boss' ? 180 : enemy.type === 'midboss' ? 110 : 55;
         const barX = enemy.x - width / 2;
-        const barY = enemy.y - enemy.radius - 14;
+        const barY = displayY - enemy.radius - 14;
         ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(barX, barY, width, 6);
         ctx.fillStyle = enemy.color; ctx.fillRect(barX, barY, width * clamp(enemy.hp / enemy.maxHp, 0, 1), 6);
         if (enemy.type === 'boss') {
