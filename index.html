@@ -49,7 +49,7 @@
         <div class="title-lockup">
           <p class="eyebrow">相位入侵</p>
           <h1>PHASE<br><span>INCURSION</span></h1>
-          <p class="title-version" id="title-version">ver.85</p>
+          <p class="title-version" id="title-version">ver.86</p>
         </div>
         <div class="title-meta-bar">
           <div class="meta-wallet"><small>源晶礦</small><b id="meta-ore-balance">◆ 0</b></div>
@@ -161,16 +161,19 @@
       </section>
 
       <div id="announcement" class="announcement hidden"></div>
-      <button id="pause-fab" class="pause-fab hidden" aria-label="暫停並查看駕駛與裝備">Ⅱ</button>
+      <div class="frame-action-bar">
+        <button id="mute-fab" class="sound-fab hidden" aria-label="切換聲音">♪</button>
+        <button id="pause-fab" class="pause-fab hidden" aria-label="暫停並查看駕駛與裝備">Ⅱ</button>
+      </div>
       <button id="bomb-button" class="bomb-button hidden" aria-label="使用炸彈">BOMB<span id="bomb-count">2</span></button>
     </section>
 
-    <footer class="build-strip hidden">
+    <footer class="build-strip">
       <div><small>PRIMARY</small><span id="primary-build">—</span></div>
       <div><small>SECONDARY</small><span id="secondary-build">—</span></div>
       <div><small>PASSIVE</small><span id="passive-build">—</span></div>
     </footer>
   </main>
-  <script type="module" src="./src/main.js?v=85"></script>
+  <script type="module" src="./src/main.js?v=86"></script>
 </body>
 </html>

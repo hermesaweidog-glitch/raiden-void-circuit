@@ -343,14 +343,15 @@ document.querySelector('#bomb-button').addEventListener('pointerdown', event => 
   event.stopPropagation();
   game.useBomb();
 });
-document.querySelector('#pause-button').addEventListener('click', () => game.togglePause());
+document.querySelector('#pause-button')?.addEventListener('click', () => game.togglePause());
 document.querySelector('#pause-fab').addEventListener('click', () => game.togglePause());
 document.querySelector('#resume-button').addEventListener('click', () => game.togglePause());
 document.querySelector('#title-button').addEventListener('click', () => game.abandonRun());
 for (const [id, flag] of [['pause-player-invincible', 'playerInvincible'], ['pause-enemies-immortal', 'enemiesImmortal']]) {
   document.querySelector(`#${id}`).addEventListener('change', event => game.setTestFlag(flag, event.target.checked));
 }
-document.querySelector('#mute-button').addEventListener('click', () => game.toggleMute());
+document.querySelector('#mute-button')?.addEventListener('click', () => game.toggleMute());
+document.querySelector('#mute-fab')?.addEventListener('click', () => game.toggleMute());
 document.querySelector('#retry-button').addEventListener('click', () => game.restart());
 
 const debugApi = {

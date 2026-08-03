@@ -36,7 +36,7 @@ export class Game {
     this.dom = Object.fromEntries([
       'score', 'stage', 'level', 'hp', 'bombs', 'xp-bar', 'title-overlay', 'upgrade-overlay',
       'upgrade-options', 'upgrade-kicker', 'upgrade-title', 'end-overlay', 'end-kicker', 'end-title', 'run-summary', 'announcement',
-      'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'pause-button',
+      'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'mute-fab', 'pause-button',
       'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node', 'ore', 'lives', 'clear-overlay', 'clear-body', 'clear-confirm',
       'pause-overlay', 'pause-primary', 'pause-secondary', 'pause-passive',
       'pause-pilot', 'pause-fab', 'pause-test-controls', 'pause-player-invincible', 'pause-enemies-immortal', 'dps-1s', 'dps-10s', 'dps-total', 'review-button', 'damage-review', 'review-overlay', 'review-back', 'review-summary',
@@ -468,7 +468,7 @@ export class Game {
   abandonRun() {
     if (this.mode !== 'paused' || !this.player) return false;
     this.dom['pause-overlay'].classList.add('hidden');
-    this.dom['pause-button'].textContent = 'PAUSE';
+    if (this.dom['pause-button']) this.dom['pause-button'].textContent = 'PAUSE';
     this.pauseReturnMode = null;
     this.endRun(false);
     return true;
@@ -515,7 +515,7 @@ export class Game {
     this.dom['review-overlay']?.classList.add('hidden');
     this.dom['title-overlay'].classList.remove('hidden');
     this.dom.announcement.classList.add('hidden');
-    this.dom['pause-button'].textContent = 'PAUSE';
+    if (this.dom['pause-button']) this.dom['pause-button'].textContent = 'PAUSE';
     document.getElementById('bomb-button').classList.add('hidden');
     this.dom['pause-fab'].classList.add('hidden');
     this.player = null;
@@ -1773,11 +1773,11 @@ export class Game {
     } else if (this.stageIndex === 3) {
       for (let shot = 0; shot < 14; shot += 1) {
         const angle = shot / 14 * TAU + enemy.age * .018;
-        this.addEnemyBullet(enemy.x, enemy.y, Math.cos(angle) * speed * .7, Math.sin(angle) * speed * .7, 5, enemy.color, 360, 0, 10);
+        this.addEnemyBullet(enemy.x, enemy.y, Math.cos(angle) * speed * .7, Math.sin(angle) * speed * .7, 5, enemy.color, 360, 0, 10, enemy);
       }
     } else {
       for (const x of [-36, this.w + 36]) {
-        for (let row = 0; row < 4; row += 1) this.addEnemyBullet(x, 170 + row * 88, x < this.w / 2 ? speed * .82 : -speed * .82, speed * .58, 5, '#c084fc', 360, 30, 10);
+        for (let row = 0; row < 4; row += 1) this.addEnemyBullet(x, 170 + row * 88, x < this.w / 2 ? speed * .82 : -speed * .82, speed * .58, 5, '#c084fc', 360, 30, 10, enemy);
       }
     }
     this.sound('enemy');
@@ -1789,23 +1789,25 @@ export class Game {
     return Math.max(28, base / stage.fireRate / enemy.pressure + rand(-12, 16));
   }
 
-  addEnemyBullet(x, y, vx, vy, radius = 5, color = '#ff6b6b', life = 360, entryGrace = 0, damage = 5) {
+  addEnemyBullet(x, y, vx, vy, radius = 5, color = '#ff6b6b', life = 360, entryGrace = 0, damage = 5, source = null) {
     if (this.enemyBullets.length >= WORLD.maxEnemyBullets) return false;
-    this.enemyBullets.push({
+    const bullet = {
       x, y, vx, vy, radius, color, life, entryGrace, damage: this.endlessDamage(damage),
       visualStageId: this.currentStageSceneId(),
       visualPhase: rand(0, TAU),
-    });
+    };
+    if ((source?.worldSlowTimer || 0) > 0) bullet.worldSlowTimer = Math.max(1, source.worldSlowTimer);
+    this.enemyBullets.push(bullet);
     return true;
   }
 
   aim(enemy, speed, angleOffset = 0) {
-    this.aimFrom(enemy.x, enemy.y, speed, angleOffset, enemy.color, enemyDamage(enemy.type));
+    this.aimFrom(enemy.x, enemy.y, speed, angleOffset, enemy.color, enemyDamage(enemy.type), enemy);
   }
 
-  aimFrom(x, y, speed, angleOffset = 0, color = '#ff6b6b', damage = 5) {
+  aimFrom(x, y, speed, angleOffset = 0, color = '#ff6b6b', damage = 5, source = null) {
     const angle = Math.atan2(this.player.y - y, this.player.x - x) + angleOffset;
-    this.addEnemyBullet(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 4.5, color, 360, 0, damage);
+    this.addEnemyBullet(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 4.5, color, 360, 0, damage, source);
   }
 
   enemyShoot(enemy) {
@@ -1817,7 +1819,7 @@ export class Game {
     else if (enemy.type === 'striker') for (let n = -1; n <= 1 + countBonus; n += 1) this.aim(enemy, speed * .92, n * .13 - countBonus * .065);
     else if (enemy.type === 'gunship') {
       const count = 6 + countBonus * 2;
-      for (let n = 0; n < count; n += 1) { const a = n / count * TAU + this.frame * .015; this.addEnemyBullet(enemy.x, enemy.y, Math.cos(a) * speed * .78, Math.sin(a) * speed * .78, 5, enemy.color); }
+      for (let n = 0; n < count; n += 1) { const a = n / count * TAU + this.frame * .015; this.addEnemyBullet(enemy.x, enemy.y, Math.cos(a) * speed * .78, Math.sin(a) * speed * .78, 5, enemy.color, 360, 0, 5, enemy); }
     } else if (enemy.type === 'elite') {
       for (let n = -2 - countBonus; n <= 2 + countBonus; n += 1) this.aim(enemy, speed, n * .14);
     }
@@ -1864,12 +1866,12 @@ export class Game {
     const s = this.activeStage();
     const speed = (1.75 + boss.phase * .22) * s.bulletSpeed;
     const radial = (count, bulletSpeed, offset = 0, skip = () => false) => {
-      for (let n = 0; n < count; n += 1) { if (skip(n)) continue; const a = n / count * TAU + offset; this.addEnemyBullet(boss.x, boss.y, Math.cos(a) * bulletSpeed, Math.sin(a) * bulletSpeed, 5, boss.color, 360, 0, 10); }
+      for (let n = 0; n < count; n += 1) { if (skip(n)) continue; const a = n / count * TAU + offset; this.addEnemyBullet(boss.x, boss.y, Math.cos(a) * bulletSpeed, Math.sin(a) * bulletSpeed, 5, boss.color, 360, 0, 10, boss); }
     };
     if (boss.bossId === 'manta') {
       for (let n = -3; n <= 3; n += 1) this.aim(boss, speed, n * .13);
       if (boss.phase >= 1) radial(10, speed * .88, boss.age * .025);
-      if (boss.phase >= 2) for (let x = 25; x < this.w; x += 42) if (Math.abs(x - this.player.x) > 45) this.addEnemyBullet(x, boss.y + 12, 0, speed * 1.28, 5.5, '#ff3158', 360, 0, 10);
+      if (boss.phase >= 2) for (let x = 25; x < this.w; x += 42) if (Math.abs(x - this.player.x) > 45) this.addEnemyBullet(x, boss.y + 12, 0, speed * 1.28, 5.5, '#ff3158', 360, 0, 10, boss);
     } else if (boss.bossId === 'carrier') {
       for (let turret = -1; turret <= 1; turret += 1) {
         const x = boss.x + turret * 42;
@@ -1887,7 +1889,7 @@ export class Game {
       if (boss.phase >= 2) radial(22, speed, boss.age * .02, n => n % 11 === 5 || n % 11 === 6);
     } else {
       const gateTop = 145 + Math.sin(boss.age * .055) * 75;
-      for (const x of [-36, this.w + 36]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, gateTop + n * 110, x < this.w / 2 ? speed * .9 : -speed * .9, speed * .62, 5, '#c084fc', 360, 30, 10);
+      for (const x of [-36, this.w + 36]) for (let n = 0; n < 4; n += 1) this.addEnemyBullet(x, gateTop + n * 110, x < this.w / 2 ? speed * .9 : -speed * .9, speed * .62, 5, '#c084fc', 360, 30, 10, boss);
       if (boss.phase >= 1) radial(20, speed * .82, boss.age * .075);
       if (boss.phase >= 2) { radial(28, speed * 1.05, boss.age * .028, n => n >= 12 && n <= 15); this.aim(boss, speed * 1.7); }
     }
@@ -2654,7 +2656,7 @@ export class Game {
   endRun(victory) {
     this.mode = victory ? 'victory' : 'gameover';
     this.dom['pause-overlay'].classList.add('hidden');
-    this.dom['pause-button'].textContent = 'PAUSE';
+    if (this.dom['pause-button']) this.dom['pause-button'].textContent = 'PAUSE';
     // Results are intentionally silent; let the active track recede instead of
     // adding a victory/game-over jingle.
     this.music.stop({ duration: 3.2, clearDesired: true });
@@ -2768,12 +2770,12 @@ export class Game {
       this.keys.clear();
       this.updatePausePanel();
       this.dom['pause-overlay'].classList.remove('hidden');
-      this.dom['pause-button'].textContent = 'RESUME';
+      if (this.dom['pause-button']) this.dom['pause-button'].textContent = 'RESUME';
       this.music.pause();
     } else if (!paused && this.mode === 'paused') {
       this.mode = this.pauseReturnMode || 'playing';
       this.dom['pause-overlay'].classList.add('hidden');
-      this.dom['pause-button'].textContent = 'PAUSE';
+      if (this.dom['pause-button']) this.dom['pause-button'].textContent = 'PAUSE';
       this.music.resume();
     }
   }
@@ -2856,7 +2858,10 @@ export class Game {
     const setText = (id, value) => { const el = this.dom[id]; if (!el) return; const next = String(value); if (el.textContent !== next) el.textContent = next; };
     const setStyle = (id, property, value) => { const el = this.dom[id]; if (el && el.style[property] !== value) el.style[property] = value; };
     const setClass = (id, name, active) => { const el = this.dom[id]; if (el && el.classList.contains(name) !== active) el.classList[active ? 'add' : 'remove'](name); };
-    if (typeof document !== 'undefined' && document.body) document.body.classList.toggle('title-hud-minimal', !p && this.mode === 'title');
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.toggle('title-hud-minimal', !p && this.mode === 'title');
+      document.body.classList.toggle('levelup-build', Boolean(p) && this.mode === 'levelup');
+    }
     setText('score', String(this.score).padStart(7, '0'));
     setText('stage', p ? `${this.isEndless() ? `∞${this.endlessCycle + 1}·` : ''}S${String(stage.id).padStart(2, '0')}` : '—');
     setText('level', p ? String(p.level).padStart(2, '0') : '—');
@@ -2866,6 +2871,7 @@ export class Game {
     setText('dps-10s', this.dps ? this.dps.ten.toFixed(1) : '0.0');
     setText('dps-total', this.dps ? this.dps.total.toFixed(1) : '0.0');
     setClass('pause-fab', 'hidden', !p || ['title', 'levelup', 'gameover', 'victory'].includes(this.mode));
+    setClass('mute-fab', 'hidden', !p || ['title', 'levelup', 'gameover', 'victory'].includes(this.mode));
     const displayedHp = p ? clamp(Math.ceil(p.hp), 0, p.maxHp) : 0;
     setText('hp', p ? `${displayedHp} / ${p.maxHp}` : '—');
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
@@ -2910,6 +2916,7 @@ export class Game {
       this.hudBuildRevision = buildRevision;
     }
     setText('mute-button', this.muted ? 'MUTED' : 'SOUND');
+    setText('mute-fab', this.muted ? '✕' : '♪');
   }
 
   render() {
