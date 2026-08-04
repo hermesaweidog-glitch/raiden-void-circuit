@@ -146,7 +146,7 @@ export class Game {
       const geometryCanvas = document.createElement('canvas');
       geometryCanvas.width = this.w;
       geometryCanvas.height = this.h;
-      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=88');
+      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=89');
       const stageId = this.stageIndex + 1;
       this.stageGeometryCanvas = geometryCanvas;
       this.stageGeometry = new SceneGeometryLayer({
@@ -371,6 +371,10 @@ export class Game {
     // Record craft + pilot in the codex (skip MAX-mode probing so it can't fake unlocks).
     if (!this.maxMode) { this.recordCodex(`craft:${craft.id}`); this.recordCodex(`pilot:${pilot.id}`); }
     this.dom['title-overlay'].classList.add('hidden');
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('title-hud-minimal');
+      document.body.classList.add('run-active');
+    }
     this.dom['end-overlay'].classList.add('hidden');
     this.dom['pause-overlay'].classList.add('hidden');
     document.getElementById('bomb-button').classList.remove('hidden');
@@ -488,6 +492,10 @@ export class Game {
       this.bankOre(0);
     }
     this.mode = 'title';
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('run-active', 'levelup-build');
+      document.body.classList.add('title-hud-minimal');
+    }
     this.frame = 0;
     this.worldScroll = 0;
     this.sceneScroll = 0;
@@ -2903,6 +2911,7 @@ export class Game {
     const setClass = (id, name, active) => { const el = this.dom[id]; if (el && el.classList.contains(name) !== active) el.classList[active ? 'add' : 'remove'](name); };
     if (typeof document !== 'undefined' && document.body) {
       document.body.classList.toggle('title-hud-minimal', !p && this.mode === 'title');
+      document.body.classList.toggle('run-active', Boolean(p) && this.mode !== 'title');
       document.body.classList.toggle('levelup-build', Boolean(p) && this.mode === 'levelup');
     }
     setText('score', String(this.score).padStart(7, '0'));

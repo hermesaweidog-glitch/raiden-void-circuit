@@ -260,3 +260,103 @@ body.levelup-build .build-strip{display:grid!important}
   .selection-card{grid-template-columns:82px 1fr}.selection-card img{width:82px;height:68px}
   .xp-status{gap:5px;padding-inline:6px}.xp-status span{font-size:7px}
 }
+
+
+/* v89: persistent XP visibility and portrait upgrade choices */
+body.run-active .xp-status{
+  display:grid!important;
+  position:relative;
+  z-index:3;
+  min-height:30px;
+  padding:5px 8px 6px;
+  border-left:2px solid var(--phase-cyan);
+}
+body.run-active .xp-status .xp-track{
+  display:block!important;
+  height:8px;
+  min-width:72px;
+  border-color:#2B4A8F;
+  background:#050914;
+}
+body.run-active #xp-bar{
+  display:block!important;
+  min-height:100%;
+  background:linear-gradient(90deg,var(--phase-blue),var(--phase-cyan));
+}
+body.run-active .xp-status small,
+body.run-active .xp-status span{font-size:8px}
+body.run-active .xp-status small b{font-size:11px}
+
+.upgrade-overlay{
+  justify-content:flex-start;
+  overflow-y:auto;
+  padding:clamp(18px,4vh,32px) 12px 18px;
+}
+.upgrade-heading{flex:0 0 auto;margin-bottom:14px}
+.upgrade-options{
+  width:100%;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  align-items:stretch;
+}
+.upgrade-card{
+  position:relative;
+  min-width:0;
+  min-height:238px;
+  padding:14px 9px 12px!important;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  overflow:hidden;
+}
+.upgrade-card::before{width:100%;height:2px;left:0;right:0;top:-1px;bottom:auto}
+.upgrade-card .upgrade-icon{
+  position:static;
+  flex:0 0 auto;
+  width:72px;
+  height:72px;
+  margin:10px auto 12px;
+  transform:none!important;
+  font-size:38px;
+  border-color:#2B4A8F;
+  background:#080D18;
+}
+.upgrade-card .upgrade-icon img{
+  width:100%;
+  height:100%;
+  transform:scale(.88)!important;
+}
+.upgrade-card .key{right:8px;top:7px}
+.upgrade-card small{
+  display:block;
+  width:100%;
+  min-height:28px;
+  font-size:8px;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.upgrade-card strong{
+  display:block;
+  width:100%;
+  margin:7px 0 6px;
+  font-size:14px;
+  line-height:1.25;
+  overflow-wrap:anywhere;
+}
+.upgrade-card p{
+  margin:0;
+  font-size:9px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+@media(max-width:390px){
+  .upgrade-overlay{padding-inline:8px}
+  .upgrade-options{gap:6px}
+  .upgrade-card{min-height:224px;padding-inline:6px!important}
+  .upgrade-card .upgrade-icon{width:62px;height:62px;margin-top:9px}
+  .upgrade-card strong{font-size:12px}
+  .upgrade-card p{font-size:8px;line-height:1.42}
+  .upgrade-card small{font-size:7px}
+}
