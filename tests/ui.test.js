@@ -24,7 +24,7 @@ test('page is installable and loads modular entry point', () => {
   assert.match(html, /相位入侵/);
   assert.match(html, /PHASE INCURSION/);
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /src=["']\.\/src\/main\.js\?v=89["']/);
+  assert.match(html, /src=["']\.\/src\/main\.js\?v=90["']/);
   assert.match(html, /type=["']module["']/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
@@ -132,7 +132,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.89/i);
+  assert.match(html, /ver\.90/i);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {
@@ -174,4 +174,11 @@ test('upgrade choices use portrait cards with enlarged icons', () => {
   assert.match(css, /\.upgrade-options\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(css, /\.upgrade-card\{[^}]*flex-direction:column/);
   assert.match(css, /\.upgrade-card \.upgrade-icon\{[^}]*width:72px[^}]*height:72px/);
+});
+
+
+test('entry and main menu expose synchronized sound controls', () => {
+  for (const id of ['phase-title-sound', 'phase-menu-sound']) assert.match(html, new RegExp(`id=["']${id}["']`));
+  assert.match(main, /onSoundToggle:\s*\(\) => game\.toggleMute\(\)/);
+  assert.match(css, /\.phase-sound-btn/);
 });

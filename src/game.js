@@ -87,6 +87,7 @@ export class Game {
     this.lastSoundFrame = {};
     this.lastTime = 0;
     this.accumulator = 0;
+    this.lastMusicHealthCheck = 0;
     this.performanceProfile = { samples:0, totalMs:0, averageMs:0, slowWindows:0, adaptiveLowPower:false };
     this.lastStaticRender = 0;
     this.announcementToken = 0;
@@ -146,7 +147,7 @@ export class Game {
       const geometryCanvas = document.createElement('canvas');
       geometryCanvas.width = this.w;
       geometryCanvas.height = this.h;
-      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=89');
+      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=90');
       const stageId = this.stageIndex + 1;
       this.stageGeometryCanvas = geometryCanvas;
       this.stageGeometry = new SceneGeometryLayer({
@@ -477,6 +478,15 @@ export class Game {
     this.showTitle();
   }
 
+  requestMenuMusic({ autoplay = false } = {}) {
+    this.music.prepare('menu');
+    if (autoplay) return this.music.attemptAutoplay();
+    if (this.music.unlocked && !this.muted && !this.music.pausedByGame) {
+      return this.music.scene('menu', { fadeOut: .18, fadeIn: .28, restart: false });
+    }
+    return false;
+  }
+
   abandonRun() {
     if (this.mode !== 'paused' || !this.player) return false;
     this.dom['pause-overlay'].classList.add('hidden');
@@ -492,6 +502,7 @@ export class Game {
       this.bankOre(0);
     }
     this.mode = 'title';
+    this.music.clearGamePause();
     if (typeof document !== 'undefined' && document.body) {
       document.body.classList.remove('run-active', 'levelup-build');
       document.body.classList.add('title-hud-minimal');
@@ -548,7 +559,7 @@ export class Game {
     if (this.pointer.id !== null && this.canvas.hasPointerCapture?.(this.pointer.id)) this.canvas.releasePointerCapture?.(this.pointer.id);
     this.pointer = { active: false, id: null, x: 0, y: 0, startX: 0, startY: 0, playerX: 0, playerY: 0 };
     this.onShowTitle?.();
-    this.music.scene('menu', { fadeOut: .35, fadeIn: .60, restart: true });
+    this.music.scene('menu', { fadeOut: .35, fadeIn: .60, restart: false });
     this.updateHud();
   }
 
@@ -608,6 +619,11 @@ export class Game {
       if (!this.lastTime) this.lastTime = time;
       const frameDelta = Math.min(50, time - this.lastTime);
       this.lastTime = time;
+
+      if (time - this.lastMusicHealthCheck >= 900) {
+        this.lastMusicHealthCheck = time;
+        this.music.ensurePlayback();
+      }
 
       if (this.mode === 'title') {
         this.accumulator = 0;
@@ -2703,6 +2719,7 @@ export class Game {
 
   endRun(victory) {
     this.mode = victory ? 'victory' : 'gameover';
+    this.music.clearGamePause();
     this.dom['pause-overlay'].classList.add('hidden');
     if (this.dom['pause-button']) this.dom['pause-button'].textContent = 'PAUSE';
     // Results are intentionally silent; let the active track recede instead of
@@ -2839,8 +2856,10 @@ export class Game {
   toggleMute() {
     this.muted = !this.muted;
     writeStorage('void-circuit-muted', this.muted ? '1' : '0');
-    this.dom['mute-button'].textContent = this.muted ? 'MUTED' : 'SOUND';
+    if (this.dom['mute-button']) this.dom['mute-button'].textContent = this.muted ? 'MUTED' : 'SOUND';
     this.music.setMuted(this.muted);
+    this.onMuteChange?.(this.muted);
+    return this.muted;
   }
 
   initAudio() {

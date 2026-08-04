@@ -2115,6 +2115,10 @@ test('abandoning from pause enters failed-run settlement instead of returning di
   assert.equal(game.dom['end-overlay'].classList.contains('hidden'), false);
   assert.equal(game.dom['end-title'].textContent, 'MISSION FAILED');
   assert.match(game.dom['run-summary'].innerHTML, /獲得源晶礦/);
+  assert.equal(game.music.pausedByGame, false, 'settlement must clear the pause-owned music state');
+  game.restart();
+  assert.equal(game.music.desiredKey, 'menu');
+  assert.equal(game.music.pausedByGame, false);
 });
 
 // --- Meta progression & ore economy ---------------------------------------

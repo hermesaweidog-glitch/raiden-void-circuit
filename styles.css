@@ -360,3 +360,13 @@ body.run-active .xp-status small b{font-size:11px}
   .upgrade-card p{font-size:8px;line-height:1.42}
   .upgrade-card small{font-size:7px}
 }
+
+
+/* v90 persistent title/menu audio controls */
+.phase-title-controls{position:absolute;top:calc(env(safe-area-inset-top) + 16px);right:18px;z-index:20;display:flex;align-items:center;gap:8px}
+#phase-title-lang{position:static!important}
+.phase-sound-btn{width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border:1px solid var(--phase-rule);background:rgba(8,12,20,.62);color:var(--phase-cyan);font-family:"JetBrains Mono",monospace;font-size:17px;line-height:1;cursor:pointer;transition:border-color .18s,color .18s,background .18s}
+.phase-sound-btn[aria-pressed="true"]{color:var(--phase-rose);border-color:rgba(255,61,87,.55);background:rgba(255,61,87,.08)}
+.phase-sound-btn.menu-sound{width:30px;height:30px;flex-basis:30px;font-size:15px;margin-left:2px}
+@media(hover:hover){.phase-sound-btn:hover{border-color:var(--phase-cyan);background:rgba(95,227,227,.08)}}
+@media(pointer:coarse){.phase-sound-btn{width:40px;height:40px;flex-basis:40px}.phase-sound-btn.menu-sound{width:36px;height:36px;flex-basis:36px}}

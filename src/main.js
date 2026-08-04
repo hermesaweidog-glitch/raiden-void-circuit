@@ -131,7 +131,7 @@ const selectCard = (container, attribute, value) => {
 
 const refreshOreBalance = () => {
   document.querySelector('#meta-ore-balance').textContent = `◆ ${game.meta.ore}`;
-  titleShell?.refresh({ ore: game.meta.ore, endlessUnlocked: isEndlessUnlocked(), maxMode: isMaxMode(), cleared: game.meta.cleared });
+  titleShell?.refresh({ ore: game.meta.ore, endlessUnlocked: isEndlessUnlocked(), maxMode: isMaxMode(), cleared: game.meta.cleared, muted: game.muted });
 };
 
 const showModeSelect = () => {
@@ -368,7 +368,12 @@ titleShell = initTitleShell({
     refreshOreBalance();
   },
   onReset: () => document.querySelector('#reset-meta').click(),
+  onSoundToggle: () => game.toggleMute(),
+  onScreenChange: () => game.requestMenuMusic(),
 });
+game.onMuteChange = muted => titleShell?.setMuted(muted);
+titleShell.setMuted(game.muted);
+game.requestMenuMusic({ autoplay: true });
 refreshOreBalance();
 
 document.querySelector('#bomb-button').addEventListener('pointerdown', event => {

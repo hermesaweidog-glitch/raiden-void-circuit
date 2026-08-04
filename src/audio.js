@@ -18,6 +18,8 @@ export class MusicController {
     this.currentKey = null;
     this.desiredKey = null;
     this.fadeToken = 0;
+    this.lastPlayAttempt = 0;
+    this.recoveryTimer = 0;
     this.audio = this.createPlayer();
   }
 
@@ -31,8 +33,14 @@ export class MusicController {
     audio.setAttribute?.('webkit-playsinline', '');
     audio.addEventListener?.('ended', () => {
       const scene = MUSIC_SCENES[this.currentKey];
-      if (scene && !scene.loop) this.currentKey = null;
+      if (scene?.loop && !this.muted && !this.pausedByGame) {
+        try { audio.currentTime = 0; } catch { /* ignore */ }
+        this.ensurePlayback(true);
+      } else if (scene && !scene.loop) this.currentKey = null;
     });
+    for (const eventName of ['stalled', 'suspend']) {
+      audio.addEventListener?.(eventName, () => this.scheduleRecovery());
+    }
     return audio;
   }
 
@@ -45,6 +53,12 @@ export class MusicController {
   unlock() {
     this.unlocked = true;
     if (this.muted || this.pausedByGame || !this.desiredKey) return false;
+    return this.startDesired(false);
+  }
+
+  attemptAutoplay() {
+    if (this.muted || this.pausedByGame || !this.desiredKey) return false;
+    this.unlocked = true;
     return this.startDesired(false);
   }
 
@@ -104,6 +118,7 @@ export class MusicController {
   stop({ duration = .35, clearDesired = true } = {}) {
     if (clearDesired) this.desiredKey = null;
     this.currentKey = null;
+    if (this.recoveryTimer) { clearTimeout(this.recoveryTimer); this.recoveryTimer = 0; }
     if (this.audio) this.fade(0, duration, true);
   }
 
@@ -117,6 +132,10 @@ export class MusicController {
     if (!this.muted && this.unlocked) this.startDesired(false);
   }
 
+  clearGamePause() {
+    this.pausedByGame = false;
+  }
+
   pauseAll() {
     this.fadeToken += 1;
     this.audio?.pause();
@@ -124,17 +143,43 @@ export class MusicController {
 
   safePlay() {
     if (!this.audio) return false;
+    this.lastPlayAttempt = now();
     let result;
     try { result = this.audio.play(); }
     catch {
       this.unlocked = false;
       return false;
     }
-    Promise.resolve(result).catch(() => {
+    Promise.resolve(result).then(() => {
+      this.unlocked = true;
+    }).catch(error => {
+      // AbortError commonly occurs when a scene switch cancels an in-flight
+      // play request. It is not an autoplay permission failure and must not
+      // permanently lock music until the player pauses and resumes again.
+      if (error?.name === 'AbortError') {
+        this.scheduleRecovery();
+        return;
+      }
       // Keep the desired scene queued and retry on the next real user gesture.
       this.unlocked = false;
     });
     return true;
+  }
+
+  scheduleRecovery(delay = 180) {
+    if (this.recoveryTimer || this.muted || this.pausedByGame || !this.desiredKey) return;
+    this.recoveryTimer = setTimeout(() => {
+      this.recoveryTimer = 0;
+      this.ensurePlayback();
+    }, delay);
+  }
+
+  ensurePlayback(force = false) {
+    if (!this.audio || this.muted || this.pausedByGame || !this.desiredKey || !this.unlocked) return false;
+    if (this.currentKey !== this.desiredKey || !this.audio.src) return this.startDesired(false);
+    if (!this.audio.paused) return true;
+    if (!force && now() - this.lastPlayAttempt < 450) return false;
+    return this.safePlay();
   }
 
   fade(target, duration, stopAtEnd = false, onComplete = null) {

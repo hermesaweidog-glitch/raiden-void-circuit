@@ -1,5 +1,13 @@
 # 相位入侵｜PHASE INCURSION
 
+
+## v90
+
+- Entry and main-menu screens now share the persistent menu track without restarting its playback position.
+- Added synchronized sound toggles to the entry screen and main menu.
+- Added music playback recovery for transient browser media interruptions.
+- Fixed pause → settle run → retry leaving music in the game-paused state.
+
 以「3D 世界侵入 2D 戰場」為核心、可於手機與桌面瀏覽器遊玩的 Roguelite 垂直射擊遊戲，使用純 HTML、CSS 與原生 JavaScript 製作，無外部 runtime 依賴。
 
 ## v89

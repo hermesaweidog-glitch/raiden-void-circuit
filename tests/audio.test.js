@@ -79,3 +79,50 @@ test('a blocked first play remains queued and succeeds on the next gesture', asy
   assert.equal(music.audio.paused, false);
   assert.equal(music.unlocked, true);
 });
+
+
+test('an aborted scene-switch play does not relock audio and recovery can resume it', async () => {
+  FakeAudio.instances = [];
+  FakeAudio.rejectFirstFor = '';
+  const music = new MusicController();
+  music.fade = (target) => { music.audio.volume = target; };
+  music.prepare('menu');
+  music.unlock();
+  await flushPromises();
+  const originalPlay = music.audio.play.bind(music.audio);
+  let abortOnce = true;
+  music.audio.play = () => {
+    if (abortOnce) {
+      abortOnce = false;
+      music.audio.paused = true;
+      const error = new Error('scene switch');
+      error.name = 'AbortError';
+      return Promise.reject(error);
+    }
+    return originalPlay();
+  };
+  music.audio.pause();
+  music.ensurePlayback(true);
+  await flushPromises();
+  assert.equal(music.unlocked, true);
+  music.ensurePlayback(true);
+  await flushPromises();
+  assert.equal(music.audio.paused, false);
+});
+
+test('clearing the game-pause state allows a queued menu track to resume', async () => {
+  FakeAudio.instances = [];
+  FakeAudio.rejectFirstFor = '';
+  const music = new MusicController();
+  music.fade = (target) => { music.audio.volume = target; };
+  music.prepare('stage');
+  music.unlock();
+  await flushPromises();
+  music.pause();
+  music.prepare('menu');
+  music.clearGamePause();
+  music.startDesired(false);
+  await flushPromises();
+  assert.match(music.audio.src, /menu\.mp3/);
+  assert.equal(music.audio.paused, false);
+});

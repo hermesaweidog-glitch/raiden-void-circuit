@@ -30,7 +30,7 @@ const I18N = {
 
 const byId = id => document.getElementById(id);
 
-export function initTitleShell({ onMode, onHangar, onCodex, onMaxMode, onReset }) {
+export function initTitleShell({ onMode, onHangar, onCodex, onMaxMode, onReset, onSoundToggle, onScreenChange }) {
   const shellRoot = byId('phase-shell');
   const title = byId('phase-title-screen');
   const menu = byId('phase-menu-screen');
@@ -48,6 +48,7 @@ export function initTitleShell({ onMode, onHangar, onCodex, onMaxMode, onReset }
     menu.classList.toggle('on', id === 'menu');
     if (id === 'title') startAnimation(); else stopAnimation();
     byId('title-overlay')?.scrollTo?.(0, 0);
+    onScreenChange?.(id);
   };
 
   const setLang = code => {
@@ -87,6 +88,20 @@ export function initTitleShell({ onMode, onHangar, onCodex, onMaxMode, onReset }
   byId('phase-codex').addEventListener('click', onCodex);
   maxToggle.addEventListener('click', () => onMaxMode(maxToggle.getAttribute('aria-pressed') !== 'true'));
   reset.addEventListener('click', onReset);
+
+
+  const soundButtons = [byId('phase-title-sound'), byId('phase-menu-sound')].filter(Boolean);
+  const setMuted = muted => {
+    for (const button of soundButtons) {
+      button.textContent = muted ? '✕' : '♪';
+      button.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      button.setAttribute('aria-label', muted ? '開啟聲音' : '關閉聲音');
+    }
+  };
+  for (const button of soundButtons) button.addEventListener('click', () => {
+    const result = onSoundToggle?.();
+    if (typeof result === 'boolean') setMuted(result);
+  });
 
   if (legacyReset && globalThis.MutationObserver) {
     const syncReset = () => { reset.textContent = legacyReset.textContent; reset.classList.toggle('confirming', legacyReset.classList.contains('confirming')); };
@@ -136,7 +151,9 @@ export function initTitleShell({ onMode, onHangar, onCodex, onMaxMode, onReset }
   return {
     showEntry: () => show('title'),
     showMenu: () => show('menu'),
-    refresh({ ore=0, endlessUnlocked=false, maxMode=false, cleared=false }) {
+    setMuted,
+    refresh({ ore=0, endlessUnlocked=false, maxMode=false, cleared=false, muted=false }) {
+      setMuted(muted);
       byId('phase-menu-ore').textContent = Number(ore || 0).toLocaleString();
       byId('phase-campaign-progress').textContent = cleared ? 'CLEAR' : 'NEW';
       const endless = document.querySelector('[data-phase-mode="endless"]');
