@@ -24,7 +24,7 @@ test('page is installable and loads modular entry point', () => {
   assert.match(html, /相位入侵/);
   assert.match(html, /PHASE INCURSION/);
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /src=["']\.\/src\/main\.js\?v=87["']/);
+  assert.match(html, /src=["']\.\/src\/main\.js\?v=88["']/);
   assert.match(html, /type=["']module["']/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
@@ -99,12 +99,24 @@ test('title page exposes the upgrade hangar, ore balance, and max mode toggle', 
 });
 
 test('aircraft and pilot selection advance directly into a confirmation step', () => {
-  for (const id of ['craft-step', 'pilot-step', 'pilot-back', 'selection-confirm', 'selection-summary', 'confirm-back']) {
+  for (const id of ['craft-step', 'pilot-step', 'pilot-back', 'selection-confirm', 'selection-summary']) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
   }
   assert.match(css, /\.aircraft-grid\{[^}]*grid-template-columns:1fr/);
   assert.match(css, /\.pilot-card i\{[^}]*flex:0 0 52px/);
   assert.match(css, /\.aircraft-card\.locked,\.pilot-card\.locked/);
+});
+
+test('confirmation cards are centered, editable, and do not expose a redundant pilot reset button', () => {
+  assert.doesNotMatch(html, /id=["']confirm-back["']/);
+  assert.match(main, /data-edit-selection="craft"/);
+  assert.match(main, /data-edit-selection="pilot"/);
+  assert.match(css, /#pilot-step\.confirming-selection\{[^}]*justify-content:center/);
+});
+
+test('runtime HUD exposes a labelled XP progress bar', () => {
+  for (const id of ['xp-status', 'xp-level', 'xp-bar', 'xp-value']) assert.match(html, new RegExp(`id=["']${id}["']`));
+  assert.match(css, /\.xp-status\{[^}]*grid-template-columns/);
 });
 
 test('HUD shows run ore before sector and styles it like the title wallet', () => {
@@ -120,7 +132,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.87/i);
+  assert.match(html, /ver\.88/i);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {

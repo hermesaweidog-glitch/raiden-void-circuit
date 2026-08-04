@@ -1766,6 +1766,18 @@ test('cluster stars fires piercing rays toward multiple locked targets', () => {
   assert.ok(game.enemies.every(enemy => enemy.hp < 100), 'each locked target receives one-time damage');
   assert.equal(game.effects.filter(effect => effect.type === 'clusterLock').length, 3, 'each target receives a lock-on marker');
   assert.ok(game.effects.some(effect => effect.type === 'clusterFlash'), 'launch produces a muzzle starburst');
+  assert.equal(game.player.secondaryCooldowns.clusterStars, 90, 'cluster stars repeats every 1.5 seconds at 60 fps');
+});
+
+test('pause loadout shows explicit overdrive level and firepower percentage', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'test', craftId: 'falcon', pilotId: 'imperial' });
+  game.player.build.overdrive = 3;
+  game.player.build.overdriveStep = 10;
+  game.updatePausePanel();
+  assert.match(game.dom['pause-primary'].innerHTML, /超頻火力/);
+  assert.match(game.dom['pause-primary'].innerHTML, /Lv\.3/);
+  assert.match(game.dom['pause-primary'].innerHTML, /攻擊增幅 \+30%/);
 });
 
 test('black hole gravity wells apply the acid amplification debuff', () => {

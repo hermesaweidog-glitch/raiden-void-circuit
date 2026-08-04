@@ -143,7 +143,7 @@ const showModeSelect = () => {
   document.querySelector('.title-meta-bar').classList.remove('hidden');
   document.querySelector('#hangar-button').classList.remove('hidden');
   document.querySelector('#codex-button').classList.remove('hidden');
-  document.querySelector('#title-overlay').classList.remove('setup-open');
+  document.querySelector('#title-overlay').classList.remove('setup-open', 'selection-confirm-open');
   refreshOreBalance();
 };
 
@@ -160,11 +160,13 @@ const showLoadout = mode => {
   craftStep.classList.remove('hidden');
   pilotStep.classList.add('hidden');
   testOptions.classList.toggle('hidden', mode !== 'test');
+  document.querySelector('#title-overlay').classList.remove('selection-confirm-open');
   document.querySelector('#title-overlay').classList.add('setup-open');
   renderAircraft();
 };
 
 const showPilotStep = () => {
+  document.querySelector('#title-overlay').classList.remove('selection-confirm-open');
   craftStep.classList.add('hidden');
   pilotStep.classList.remove('hidden');
   loadoutSelect.classList.add('pilot-open');
@@ -176,21 +178,42 @@ const showPilotStep = () => {
 };
 
 
+const showCraftChoices = () => {
+  selectionConfirm.classList.add('hidden');
+  document.querySelector('#title-overlay').classList.remove('selection-confirm-open');
+  pilotStep.classList.remove('confirming-selection');
+  pilotStep.classList.add('hidden');
+  craftStep.classList.remove('hidden');
+  loadoutSelect.classList.remove('pilot-open');
+  document.querySelector('#deploy-button').classList.add('hidden');
+  renderAircraft();
+};
+
 const showSelectionConfirm = () => {
   const craft = AIRCRAFT[selectedCraft];
   const pilot = PILOTS[selectedPilot];
   pilotSelect.classList.add('hidden');
   selectionConfirm.classList.remove('hidden');
+  document.querySelector('#title-overlay').classList.add('selection-confirm-open');
+  pilotStep.classList.add('confirming-selection');
   selectionSummary.innerHTML = `
-    <article style="--accent:${craft.color}"><img src="${craft.art}" alt=""><span><small>機體</small><strong>${craft.name}</strong><em>${craft.subtitle}</em></span></article>
-    <article style="--accent:#c084fc"><img src="${pilot.art}" alt=""><span><small>駕駛員</small><strong>${pilot.name}</strong><em>${pilot.subtitle}</em></span></article>`;
+    <button type="button" class="selection-card craft-choice" data-edit-selection="craft" style="--accent:${craft.color}"><img src="${craft.art}" alt=""><span><small>機體</small><strong>${craft.name}</strong><em>${craft.subtitle}</em></span></button>
+    <button type="button" class="selection-card pilot-choice" data-edit-selection="pilot" style="--accent:#8B6BFF"><img src="${pilot.art}" alt=""><span><small>駕駛員</small><strong>${pilot.name}</strong><em>${pilot.subtitle}</em></span></button>`;
   document.querySelector('#deploy-button').classList.remove('hidden');
 };
 const showPilotChoices = () => {
   selectionConfirm.classList.add('hidden');
+  document.querySelector('#title-overlay').classList.remove('selection-confirm-open');
+  pilotStep.classList.remove('confirming-selection');
   pilotSelect.classList.remove('hidden');
   document.querySelector('#deploy-button').classList.add('hidden');
 };
+selectionSummary.addEventListener('click', event => {
+  const target = event.target.closest('[data-edit-selection]');
+  if (!target) return;
+  if (target.dataset.editSelection === 'craft') showCraftChoices();
+  else showPilotChoices();
+});
 
 // --- Hangar (meta shop) ----------------------------------------------------
 const renderHangar = () => {
@@ -313,13 +336,7 @@ resetButton.addEventListener('click', () => {
   showModeSelect();
 });
 
-document.querySelector('#confirm-back').addEventListener('click', showPilotChoices);
-document.querySelector('#pilot-back').addEventListener('click', () => {
-  pilotStep.classList.add('hidden');
-  craftStep.classList.remove('hidden');
-  loadoutSelect.classList.remove('pilot-open');
-  renderAircraft();
-});
+document.querySelector('#pilot-back').addEventListener('click', showCraftChoices);
 
 document.querySelector('#setup-back').addEventListener('click', () => { showModeSelect(); titleShell?.showMenu(); });
 document.querySelector('#deploy-button').addEventListener('click', () => {

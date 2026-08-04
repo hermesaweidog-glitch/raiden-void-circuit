@@ -34,7 +34,7 @@ export class Game {
     this.w = WORLD.width;
     this.h = WORLD.height;
     this.dom = Object.fromEntries([
-      'score', 'stage', 'level', 'hp', 'bombs', 'xp-bar', 'title-overlay', 'upgrade-overlay',
+      'score', 'stage', 'level', 'hp', 'bombs', 'xp-bar', 'xp-level', 'xp-value', 'title-overlay', 'upgrade-overlay',
       'upgrade-options', 'upgrade-kicker', 'upgrade-title', 'end-overlay', 'end-kicker', 'end-title', 'run-summary', 'announcement',
       'bomb-count', 'primary-build', 'secondary-build', 'passive-build', 'mute-button', 'mute-fab', 'pause-button',
       'route-label', 'route-status', 'route-fill', 'midboss-node', 'boss-node', 'ore', 'lives', 'clear-overlay', 'clear-body', 'clear-confirm',
@@ -146,7 +146,7 @@ export class Game {
       const geometryCanvas = document.createElement('canvas');
       geometryCanvas.width = this.w;
       geometryCanvas.height = this.h;
-      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=87');
+      const { SceneGeometryLayer } = await import('./stage1-geometry-layer.js?v=88');
       const stageId = this.stageIndex + 1;
       this.stageGeometryCanvas = geometryCanvas;
       this.stageGeometry = new SceneGeometryLayer({
@@ -1224,9 +1224,9 @@ export class Game {
         }
         for (const target of targets) {
           this.addEffect({ type: 'clusterLock', x: target.x, y: target.y, life: 22, maxLife: 22 });
-          this.fireKungfuBeam(target, { width: 8, damage: 7 + level * 2.4, source: 'fusion:群星', hitCounts, maxHitsPerTarget: 1, color: '#f0abfc' });
+          this.fireKungfuBeam(target, { width: 8, damage: (7 + level * 2.4) * .8, source: 'fusion:群星', hitCounts, maxHitsPerTarget: 1, color: '#f0abfc' });
         }
-        this.setSecondaryCooldown('clusterStars', Math.max(40, 100 - level * 10));
+        this.setSecondaryCooldown('clusterStars', 90);
       }
     }
     if (p.build.fusions?.blackHole) {
@@ -1409,7 +1409,7 @@ export class Game {
         const targets = this.enemies.filter(e => e.alive && e.y + e.radius >= 0).sort((a,b) => distanceSq(p,b)-distanceSq(p,a)).slice(0,5);
         const hitCounts = new Map();
         for (const target of targets) {
-          this.fireKungfuBeam(target, { width: 10, damage: 4, source: 'fusion:六脈神劍', near: 1.5, far: 1, hitCounts, maxHitsPerTarget: 2, color: '#c4b5fd' });
+          this.fireKungfuBeam(target, { width: 10, damage: 4, source: 'fusion:飛龍勁', near: 1.5, far: 1, hitCounts, maxHitsPerTarget: 2, color: '#c4b5fd' });
         }
         p.secondaryCooldowns[key]=90;
       }
@@ -1607,7 +1607,7 @@ export class Game {
   inferDamageType(source) {
     const text = String(source || '');
     if (/爆炸|雷神之錘|酸性噴霧|微型重力井|黑洞|轟炸莢艙|關節打擊|推手|太極|相位領域/.test(text)) return 'area';
-    if (/LANCER|磁軌|稜鏡|槍騎|群星|發勁|穿雲|六脈|連鎖電擊/.test(text)) return 'pierce';
+    if (/LANCER|磁軌|稜鏡|槍騎|群星|發勁|穿雲|飛龍|連鎖電擊/.test(text)) return 'pierce';
     return 'direct';
   }
 
@@ -2313,6 +2313,7 @@ export class Game {
       return;
     }
     this.mode = 'levelup';
+    this.updateHud();
     this.pointer.active = false;
     this.keys.clear();
     const isStarterUpgrade = this.upgradeReturnMode === 'stageIntro' && this.player.level === 1;
@@ -2759,9 +2760,12 @@ export class Game {
     const primaryDescription = kungfu
       ? `傷害 +${KUNGFU_FIST_DAMAGE_BONUS[p.build.primaryLevel]}%；${p.build.primaryLevel >= WORLD.maxUpgradeRank ? '宗師境界已啟動。' : '提升拳法傷害與招式強度。'}`
       : `${p.craft.description}${p.build.primaryLevel >= WORLD.maxUpgradeRank ? ` ${p.craft.mastery}已啟動。` : ''}`;
-    const overdrive = p.build.overdrive ? ` 攻擊增幅 +${p.build.overdrive * (p.build.overdriveStep ?? 1)}%。` : '';
+    const overdriveRank = p.build.overdrive || 0;
+    const overdriveStep = p.build.overdriveStep ?? 1;
+    const overdriveBonus = overdriveRank * overdriveStep;
     this.dom['pause-primary'].innerHTML =
-      itemCard(primaryIcon, primaryName, rankLabel(p.build.primaryLevel), primaryDescription + overdrive, 'primary') +
+      itemCard(primaryIcon, primaryName, rankLabel(p.build.primaryLevel), primaryDescription, 'primary') +
+      itemCard('assets/icons/overdrive.webp', '超頻火力', `Lv.${overdriveRank}`, `攻擊增幅 +${overdriveBonus}% · 每級 +${overdriveStep}%`, 'overdrive') +
       itemCard(p.pilot.art, `${p.pilot.name} · ${p.pilot.subtitle}`, '駕駛員被動', p.pilot.ability, 'pilot');
 
     const secondaryCatalog = this.secondaryCatalog(p);
@@ -2916,6 +2920,8 @@ export class Game {
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
     setText('bomb-count', p?.bombs ?? 0);
     setStyle('xp-bar', 'width', p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%');
+    setText('xp-level', p ? (p.level >= WORLD.maxLevel ? 'MAX' : p.level) : '—');
+    setText('xp-value', p ? (p.level >= WORLD.maxLevel ? 'MAX' : `${Math.floor(p.xp)} / ${p.xpNeed}`) : '—');
     if (this.dom['route-label']) this.dom['route-label'].innerHTML = p ? this.isEndless() ? `<span class="depth-label">DEPTH <b>${this.endlessDepth || 0}</b> km</span><span class="depth-stage"> · ${stage.name}</span>` : `${stage.name} · ${stage.subtitle}` : 'AWAITING DEPLOYMENT';
     setText('route-status', routeStatus);
     setStyle('route-fill', 'width', `${progress * 100}%`);

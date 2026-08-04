@@ -107,3 +107,7 @@ test('music scenes include the selected menu and boss tracks, extended original 
     '../assets/audio/boss.mp3',
   ]) assert.ok(existsSync(new URL(path, import.meta.url)), `missing ${path}`);
 });
+
+test('kungfu beam fusion uses the original Flying Dragon Force name', () => {
+  assert.equal(FUSIONS.sixMeridians.name, '飛龍勁');
+});

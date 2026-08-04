@@ -35,7 +35,7 @@
 <span aria-label="戰區頭目" class="route-node boss-node" id="boss-node" title="戰區頭目"></span>
 </div>
 </section>
-<div aria-label="升級經驗" class="xp-track"><div id="xp-bar"></div></div>
+<section aria-label="升級經驗" class="xp-status" id="xp-status"><small>XP · LV <b id="xp-level">1</b></small><div class="xp-track"><div id="xp-bar"></div></div><span id="xp-value">0 / 0</span></section>
 <section aria-label="即時傷害統計" class="dps-strip">
 <div><small>DPS · 1S</small><b id="dps-1s">0.0</b></div>
 <div><small>DPS · 10S</small><b id="dps-10s">0.0</b></div>
@@ -52,13 +52,13 @@
 <h1 class="phase-wordmark"><span class="a">Phase</span><span class="b">Incursion</span></h1>
 <button class="phase-start" id="phase-start"><span class="txt" data-phase-i18n="start">點擊開始</span></button>
 </div>
-<div class="phase-title-foot"><span id="title-version">VER.87</span><span data-phase-i18n="build">建置 2026.08</span></div>
+<div class="phase-title-foot"><span id="title-version">VER.88</span><span data-phase-i18n="build">建置 2026.08</span></div>
 </section>
 <section class="phase-screen" id="phase-menu-screen">
 <div class="phase-app">
 <div class="phase-status">
 <button aria-label="back" class="back" id="phase-back">←</button>
-<span class="ver">VER.87</span><span class="spacer"></span>
+<span class="ver">VER.88</span><span class="spacer"></span>
 <span class="link"><span class="dot"></span><span data-phase-i18n="link">相位鏈路 穩定</span></span>
 </div>
 <section class="phase-vault">
@@ -109,7 +109,7 @@
 <div class="hidden" id="pilot-step">
 <div class="setup-heading"><button class="back-text-btn" id="pilot-back" type="button">返回</button><b>SELECT PILOT · 選擇駕駛</b></div>
 <div aria-label="選擇駕駛" class="pilot-grid" id="pilot-select"></div>
-<div aria-live="polite" class="selection-confirm hidden" id="selection-confirm"><div class="selection-summary" id="selection-summary"></div><button class="back-text-btn" id="confirm-back" type="button">重選駕駛</button></div>
+<div aria-live="polite" class="selection-confirm hidden" id="selection-confirm"><div class="selection-summary" id="selection-summary"></div></div>
 <div class="test-options hidden" id="test-options">
 <label class="stage-select">起始關卡
                 <select id="test-stage">
@@ -203,6 +203,6 @@
 <div><small>PASSIVE</small><span id="passive-build">—</span></div>
 </footer>
 </main>
-<script src="./src/main.js?v=87" type="module"></script>
+<script src="./src/main.js?v=88" type="module"></script>
 </body>
 </html>
