@@ -24,7 +24,7 @@ test('page is installable and loads modular entry point', () => {
   assert.match(html, /相位入侵/);
   assert.match(html, /PHASE INCURSION/);
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /src=["']\.\/src\/main\.js\?v=90["']/);
+  assert.match(html, /src=["']\.\/src\/main\.js\?v=91["']/);
   assert.match(html, /type=["']module["']/);
   assert.match(html, /viewport-fit=cover/);
   assert.match(main, /class="aircraft-art"/);
@@ -114,6 +114,16 @@ test('confirmation cards are centered, editable, and do not expose a redundant p
   assert.match(css, /#pilot-step\.confirming-selection\{[^}]*justify-content:center/);
 });
 
+
+
+test('runtime HUD uses two visible rows and does not duplicate bomb stock', () => {
+  assert.doesNotMatch(html, /class=["']hud-bombs-slot["']/);
+  assert.doesNotMatch(html, /<small>BOMB<\/small>/);
+  assert.match(html, /class=["']upper-progress-row["']/);
+  assert.match(css, /\.hud\.hud-compact\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.upper-progress-row\{[^}]*display:grid[^}]*grid-template-columns/);
+  assert.match(html, /id=["']bomb-count["']/);
+});
 test('runtime HUD exposes a labelled XP progress bar', () => {
   for (const id of ['xp-status', 'xp-level', 'xp-bar', 'xp-value']) assert.match(html, new RegExp(`id=["']${id}["']`));
   assert.match(css, /\.xp-status\{[^}]*grid-template-columns/);
@@ -132,7 +142,7 @@ test('HUD shows run ore before sector and styles it like the title wallet', () =
 
 test('title shows version and exposes archive/codex from title and pause', () => {
   assert.match(html, /id=["']title-version["']/);
-  assert.match(html, /ver\.90/i);
+  assert.match(html, /ver\.91/i);
   assert.match(html, /back-text-btn/);
   assert.match(html, />返回</);
   for (const id of ['codex-button', 'codex-overlay', 'codex-body', 'codex-back', 'pause-codex-button']) {

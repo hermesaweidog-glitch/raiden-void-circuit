@@ -25,8 +25,8 @@
 <div class="hud-sector"><small>SECTOR</small><b id="stage">—</b></div>
 <div class="hud-hp-slot"><small>HP</small><b id="hp">●●●●</b></div>
 <div class="hud-lives-slot"><small>LIVES</small><b id="lives">—</b></div>
-<div class="hud-bombs-slot"><small>BOMB</small><b id="bombs">◆◆</b></div>
 </section>
+<div class="upper-progress-row" aria-label="任務與升級進度">
 <section aria-label="戰區進度" class="route-progress" id="route-progress">
 <div class="route-meta"><span id="route-label">AWAITING DEPLOYMENT</span><b id="route-status">STANDBY</b></div>
 <div class="route-track">
@@ -36,6 +36,7 @@
 </div>
 </section>
 <section aria-label="升級經驗" class="xp-status" id="xp-status"><small>XP · LV <b id="xp-level">1</b></small><div class="xp-track"><div id="xp-bar"></div></div><span id="xp-value">0 / 0</span></section>
+</div>
 <section aria-label="即時傷害統計" class="dps-strip">
 <div><small>DPS · 1S</small><b id="dps-1s">0.0</b></div>
 <div><small>DPS · 10S</small><b id="dps-10s">0.0</b></div>
@@ -55,13 +56,13 @@
 <h1 class="phase-wordmark"><span class="a">Phase</span><span class="b">Incursion</span></h1>
 <button class="phase-start" id="phase-start"><span class="txt" data-phase-i18n="start">點擊開始</span></button>
 </div>
-<div class="phase-title-foot"><span id="title-version">VER.90</span><span data-phase-i18n="build">建置 2026.08</span></div>
+<div class="phase-title-foot"><span id="title-version">VER.91</span><span data-phase-i18n="build">建置 2026.08</span></div>
 </section>
 <section class="phase-screen" id="phase-menu-screen">
 <div class="phase-app">
 <div class="phase-status">
 <button aria-label="back" class="back" id="phase-back">←</button>
-<span class="ver">VER.90</span><span class="spacer"></span>
+<span class="ver">VER.91</span><span class="spacer"></span>
 <span class="link"><span class="dot"></span><span data-phase-i18n="link">相位鏈路 穩定</span></span>
 <button aria-label="切換聲音" aria-pressed="false" class="phase-sound-btn menu-sound" id="phase-menu-sound" type="button">♪</button>
 </div>
@@ -207,6 +208,6 @@
 <div><small>PASSIVE</small><span id="passive-build">—</span></div>
 </footer>
 </main>
-<script src="./src/main.js?v=90" type="module"></script>
+<script src="./src/main.js?v=91" type="module"></script>
 </body>
 </html>
