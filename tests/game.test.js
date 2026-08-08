@@ -874,6 +874,20 @@ test('falcon vulcan spreads its outer shots into a visibly wider cone', () => {
   assert.ok(Math.min(...velocities) <= -3.0);
 });
 
+test('falcon shotgun fires 3 / 5 / 5 pellets across ranks 1 / 2 / 3', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'normal', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  for (const [rank, expected] of [[1, 3], [2, 5], [3, 5]]) {
+    game.player.build.primaryLevel = rank;
+    game.player.fireCooldown = 0;
+    game.playerBullets = [];
+    game.firePrimary();
+    assert.equal(game.playerBullets.length, expected, `rank ${rank}`);
+  }
+});
+
 test('field supplies magnetize like XP and a shield blocks one hit', () => {
   const { game } = makeGame();
   game.start('falcon');
@@ -1278,7 +1292,7 @@ test('gemini adds only primary projectiles and makes the craft twenty percent la
   game.playerBullets = [];
   game.firePrimary();
   assert.equal(game.player.scale, 1.2);
-  assert.equal(game.playerBullets.length, 3, 'Falcon rank 1 fires two pellets plus Gemini bonus');
+  assert.equal(game.playerBullets.length, 4, 'Falcon rank 1 fires three pellets plus Gemini bonus');
   game.player.build.secondaries = { rail: 1 };
   game.player.secondaryCooldowns.rail = 0;
   game.playerBullets = [];
@@ -2306,6 +2320,23 @@ test('endless cycle 2+ never drops below stage-5 aggressiveness', () => {
   assert.ok(cycleTwo.fireRate >= stageFive.fireRate - 1e-9, 'cycle2 fireRate >= S5');
   assert.ok(cycleTwo.bulletCount >= stageFive.bulletCount - 1e-9, 'cycle2 bulletCount >= S5');
   assert.ok(cycleTwo.enemySpeed >= stageFive.enemySpeed - 1e-9, 'cycle2 enemySpeed >= S5');
+});
+
+test('endless cycle 2+ keeps stage-5 assault density when the route loops to sector one', () => {
+  const { game } = makeGame();
+  game.start({ runMode: 'endless', craftId: 'falcon', pilotId: 'imperial' });
+  game.chooseUpgrade(0);
+  game.mode = 'playing';
+  game.endlessCycle = 1;
+  game.stageIndex = 0;
+  game.waveIndex = -1;
+  game.enemies = [];
+  assert.equal(game.combatStageTier(), 4);
+  game.spawnNextWave();
+  const normal = game.enemies.filter(enemy => ['scout', 'striker', 'gunship'].includes(enemy.type));
+  assert.equal(normal.length, 10, 'cycle-two sector one starts with stage-five wave density');
+  assert.ok(normal.some(enemy => enemy.type === 'striker'), 'strikers remain in the mix');
+  assert.ok(normal.some(enemy => enemy.type === 'gunship'), 'gunships remain in the mix');
 });
 
 test('endless HP grows per stage from sector six via endlessStageDepth', () => {

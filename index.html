@@ -19,12 +19,15 @@
 <button aria-label="暫停遊戲" class="icon-button" id="pause-button">PAUSE</button>
 </div>
 </header>
-<section aria-label="遊戲狀態" class="hud hud-compact">
+<section aria-label="遊戲狀態" class="hud hud-compact hud-survival">
 <div class="hud-score"><small>SCORE</small><b id="score">0000000</b></div>
-<div class="hud-ore-slot"><small>ORE</small><b class="hud-ore" id="ore">◆0</b></div>
 <div class="hud-sector"><small>SECTOR</small><b id="stage">—</b></div>
-<div class="hud-hp-slot"><small>HP</small><b id="hp">●●●●</b></div>
-<div class="hud-lives-slot"><small>LIVES</small><b id="lives">—</b></div>
+<div class="hud-hp-slot" id="hud-hp-meter">
+  <span class="hud-hp-fill" id="hud-hp-fill"></span>
+  <span class="hud-hp-copy"><small>HP</small><b id="hp">—</b></span>
+</div>
+<div class="hud-lives-slot" aria-label="殘機"><b id="lives">—</b></div>
+<div class="hud-ore-slot" aria-label="源晶礦"><b class="hud-ore" id="ore">◆0</b></div>
 </section>
 <div class="upper-progress-row" aria-label="任務與升級進度">
 <section aria-label="戰區進度" class="route-progress" id="route-progress">
@@ -56,13 +59,13 @@
 <h1 class="phase-wordmark"><span class="a">Phase</span><span class="b">Incursion</span></h1>
 <button class="phase-start" id="phase-start"><span class="txt" data-phase-i18n="start">點擊開始</span></button>
 </div>
-<div class="phase-title-foot"><span id="title-version">VER.91</span><span data-phase-i18n="build">建置 2026.08</span></div>
+<div class="phase-title-foot"><span id="title-version">VER.92</span><span data-phase-i18n="build">建置 2026.08</span></div>
 </section>
 <section class="phase-screen" id="phase-menu-screen">
 <div class="phase-app">
 <div class="phase-status">
 <button aria-label="back" class="back" id="phase-back">←</button>
-<span class="ver">VER.91</span><span class="spacer"></span>
+<span class="ver">VER.92</span><span class="spacer"></span>
 <span class="link"><span class="dot"></span><span data-phase-i18n="link">相位鏈路 穩定</span></span>
 <button aria-label="切換聲音" aria-pressed="false" class="phase-sound-btn menu-sound" id="phase-menu-sound" type="button">♪</button>
 </div>
@@ -158,7 +161,7 @@
 <div class="pause-actions">
 <button class="primary-button" id="resume-button">繼續作戰</button>
 <button class="secondary-action-button" id="pause-codex-button">圖鑑 ARCHIVE</button>
-<button class="text-button" id="title-button">結束任務並結算</button>
+<button class="secondary-action-button danger" id="title-button">結束任務並結算</button>
 </div>
 </section>
 <section class="overlay end-overlay hidden" id="end-overlay">
@@ -208,6 +211,6 @@
 <div><small>PASSIVE</small><span id="passive-build">—</span></div>
 </footer>
 </main>
-<script src="./src/main.js?v=91" type="module"></script>
+<script src="./src/main.js?v=92" type="module"></script>
 </body>
 </html>

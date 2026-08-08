@@ -448,6 +448,13 @@ export class Game {
     };
   }
 
+  // Endless cycle 2+ keeps the stage-5 assault density even when the visual
+  // route loops back to sectors 1-4. This prevents the composition, projectile
+  // speed and firing cadence from falling back with stageIndex.
+  combatStageTier() {
+    return this.isEndless() && this.endlessCycle >= 1 ? STAGES.length - 1 : this.stageIndex;
+  }
+
   endlessDamage(base) {
     if (!this.isEndless()) return base;
     const depth = this.endlessStageDepth();
@@ -892,13 +899,14 @@ export class Game {
     const cap = 20;
     if (normalCount >= cap) return;
     const stage = STAGES[this.stageIndex];
-    const pressure = stagePressure(stage, Math.max(0, this.waveIndex));
-    const formation = (this.waveIndex * 3 + this.stageIndex) % 7;
-    const count = Math.min(cap - normalCount, 6 + this.stageIndex + Math.floor(Math.max(0, this.waveIndex) * .35));
+    const combatTier = this.combatStageTier();
+    const pressure = stagePressure(STAGES[combatTier] || stage, Math.max(0, this.waveIndex));
+    const formation = (this.waveIndex * 3 + combatTier) % 7;
+    const count = Math.min(cap - normalCount, 6 + combatTier + Math.floor(Math.max(0, this.waveIndex) * .35));
     for (let i = 0; i < count; i += 1) {
       let type = 'scout';
-      if (this.stageIndex >= 1 && (i + this.waveIndex) % 4 === 0) type = 'striker';
-      if (this.stageIndex >= 2 && (i + this.waveIndex) % 5 === 0) type = 'gunship';
+      if (combatTier >= 1 && (i + this.waveIndex) % 4 === 0) type = 'striker';
+      if (combatTier >= 2 && (i + this.waveIndex) % 5 === 0) type = 'gunship';
       const x = 55 + (i % 6) * ((this.w - 110) / 5);
       const y = -45 - Math.floor(i / 6) * 60;
       this.spawnEnemy(type, x, y, pressure, formation, i);
@@ -921,20 +929,21 @@ export class Game {
   spawnNextWave() {
     this.waveIndex += 1;
     const stage = STAGES[this.stageIndex];
-    const pressure = stagePressure(stage, this.waveIndex);
+    const combatTier = this.combatStageTier();
+    const pressure = stagePressure(STAGES[combatTier] || stage, this.waveIndex);
     const waveNumber = this.waveIndex + 1;
     const isMidbossWave = waveNumber === stage.midbossWave;
     const isEliteWave = this.waveIndex === stage.waves - 1;
-    const count = 6 + this.stageIndex + Math.floor(this.waveIndex * .85);
-    const formation = (this.waveIndex * 3 + this.stageIndex) % 7;
+    const count = 6 + combatTier + Math.floor(this.waveIndex * .85);
+    const formation = (this.waveIndex * 3 + combatTier) % 7;
     if (isMidbossWave) {
       this.spawnEnemy('midboss', this.w / 2, -110, pressure, 7, 0);
       this.announce('CHECKPOINT LOCKED', 'MIDBOSS SIGNATURE · DESTROY TO ADVANCE', 1500);
     } else {
       for (let i = 0; i < count; i += 1) {
         let type = 'scout';
-        if (this.stageIndex >= 1 && (i + this.waveIndex) % 4 === 0) type = 'striker';
-        if (this.stageIndex >= 2 && (i + this.waveIndex) % 5 === 0) type = 'gunship';
+        if (combatTier >= 1 && (i + this.waveIndex) % 4 === 0) type = 'striker';
+        if (combatTier >= 2 && (i + this.waveIndex) % 5 === 0) type = 'gunship';
         const centerOffset = i - (count - 1) / 2;
         let x = 70 + (i % 6) * 68;
         let y = -45 - Math.floor(i / 6) * 60;
@@ -1087,7 +1096,7 @@ export class Game {
     let baseDps = 0;
     if (player.craft.primary === 'vulcan') {
       const cooldown = Math.max(4, Math.round((11 - level) / rate));
-      const count = 1 + Math.floor(level / 2) * 2 + projectileBonus;
+      const count = this.vulcanPelletCount(level) + projectileBonus;
       baseDps = this.vulcanPelletDamage(level) * count * 60 / cooldown;
     } else if (player.craft.primary === 'laser') {
       baseDps = (.35 + level * .08125) * (1 + projectileBonus) * 60;
@@ -1108,6 +1117,10 @@ export class Game {
   // All three ranks use the former rank-3 pellet damage.
   vulcanPelletDamage() {
     return 1.31;
+  }
+
+  vulcanPelletCount(level) {
+    return ({ 1: 3, 3: 5, 5: 5 }[level] || Math.max(3, level));
   }
 
   firePrimary() {
@@ -1132,7 +1145,7 @@ export class Game {
     });
     if (p.craft.primary === 'vulcan') {
       p.fireCooldown = Math.max(4, Math.round((11 - level) / rate));
-      const count = ({ 1: 2, 3: 3, 5: 5 }[level] || Math.max(2, level)) + this.primaryProjectileBonus();
+      const count = this.vulcanPelletCount(level) + this.primaryProjectileBonus();
       for (let i = 0; i < count; i += 1) {
         const offset = i - (count - 1) / 2;
         add(offset * 1.6, -10.8 + Math.abs(offset) * .22, { damage: this.vulcanPelletDamage(level), radius: 3.2, ox: offset * 5, color: '#ff4267' });
@@ -1821,7 +1834,7 @@ export class Game {
 
   midbossAttack(enemy) {
     enemy.visualFirePulse = 10;
-    const speed = (1.55 + this.stageIndex * .1) * this.activeStage().bulletSpeed;
+    const speed = (1.55 + this.combatStageTier() * .1) * this.activeStage().bulletSpeed;
     if (this.stageIndex === 0) {
       for (let shot = -3; shot <= 3; shot += 1) this.aim(enemy, speed, shot * .13);
     } else if (this.stageIndex === 1) {
@@ -1876,7 +1889,7 @@ export class Game {
   enemyShoot(enemy) {
     enemy.visualFirePulse = 10;
     const stage = this.activeStage();
-    const speed = (1.65 + this.stageIndex * .12) * stage.bulletSpeed;
+    const speed = (1.65 + this.combatStageTier() * .12) * stage.bulletSpeed;
     const countBonus = Math.floor((stage.bulletCount - .9) * 2.2);
     if (enemy.type === 'scout') this.aim(enemy, speed);
     else if (enemy.type === 'striker') for (let n = -1; n <= 1 + countBonus; n += 1) this.aim(enemy, speed * .92, n * .13 - countBonus * .065);
@@ -1891,6 +1904,7 @@ export class Game {
 
   updateBoss(boss) {
     const motionScale = boss.motionScale || 1;
+    const combatTier = this.combatStageTier();
     if (!boss.orbiting) {
       if (boss.y < 34) boss.y = Math.min(34, boss.y + 1.8 * motionScale);
       else if ((boss.entranceHold || 0) > 0) boss.entranceHold -= motionScale;
@@ -1903,7 +1917,7 @@ export class Game {
       }
     } else {
       boss.orbitAge += motionScale;
-      boss.x = boss.orbitCenterX + Math.sin(boss.orbitAge / (50 - this.stageIndex * 3)) * (105 + this.stageIndex * 8);
+      boss.x = boss.orbitCenterX + Math.sin(boss.orbitAge / (50 - combatTier * 3)) * (105 + combatTier * 8);
       boss.y = 118 + Math.sin(boss.orbitAge / 37) * 22;
     }
     const ratio = boss.hp / boss.maxHp;
@@ -1919,7 +1933,7 @@ export class Game {
       boss.cooldown -= motionScale;
       if (boss.y >= 105 && boss.cooldown <= 0) {
         this.bossAttack(boss);
-        boss.cooldown = Math.max(24, (90 - phase * 14 - this.stageIndex * 5) / this.activeStage().fireRate);
+        boss.cooldown = Math.max(24, (90 - phase * 14 - combatTier * 5) / this.activeStage().fireRate);
       }
     }
   }
@@ -2937,7 +2951,7 @@ export class Game {
     setText('stage', p ? `${this.isEndless() ? `∞${this.endlessCycle + 1}·` : ''}S${String(stage.id).padStart(2, '0')}` : '—');
     setText('level', p ? String(p.level).padStart(2, '0') : '—');
     setText('ore', p ? `◆${this.runOre}` : '—');
-    setText('lives', p ? '▲'.repeat(1 + this.runLives) : '—');
+    setText('lives', p ? '◆'.repeat(1 + this.runLives) : '—');
     setText('dps-1s', this.dps ? this.dps.one.toFixed(1) : '0.0');
     setText('dps-10s', this.dps ? this.dps.ten.toFixed(1) : '0.0');
     setText('dps-total', this.dps ? this.dps.total.toFixed(1) : '0.0');
@@ -2945,6 +2959,9 @@ export class Game {
     setClass('mute-fab', 'hidden', !p || ['title', 'levelup', 'gameover', 'victory'].includes(this.mode));
     const displayedHp = p ? clamp(Math.ceil(p.hp), 0, p.maxHp) : 0;
     setText('hp', p ? `${displayedHp} / ${p.maxHp}` : '—');
+    const hpRatio = p?.maxHp ? clamp(p.hp / p.maxHp, 0, 1) : 0;
+    setStyle('hud-hp-fill', 'width', `${hpRatio * 100}%`);
+    setClass('hud-hp-meter', 'low', Boolean(p) && hpRatio <= .35);
     setText('bombs', p ? '◆'.repeat(p.bombs) + '◇'.repeat(Math.max(0, p.maxBombs - p.bombs)) : '—');
     setText('bomb-count', p?.bombs ?? 0);
     setStyle('xp-bar', 'width', p ? `${clamp(p.xp / p.xpNeed * 100, 0, 100)}%` : '0%');

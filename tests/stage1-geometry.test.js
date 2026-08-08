@@ -19,7 +19,7 @@ test('all five approved hybrid 3D stage settings ship without validation pages',
   assert.equal(STAGE_GEOMETRY_SETTINGS[5].posts.count, 2);
   assert.match(game, /SceneGeometryLayer/);
   assert.match(game, /drawHybridStageBackground/);
-  assert.match(worker, /stage1-geometry-layer\.js\?v=91/);
+  assert.match(worker, /stage1-geometry-layer\.js\?v=92/);
   assert.equal(existsSync(new URL('../scene-preview.html', import.meta.url)), false);
   assert.equal(existsSync(new URL('../src/scene-preview.js', import.meta.url)), false);
 });
